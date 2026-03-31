@@ -41,48 +41,6 @@ def webhook():
     signature = request.headers.get('X-Line-Signature', '')
     body = request.get_data()
     if not verify_signature(body, signature):
-import json
-import hmac
-import hashlib
-import base64
-import requests
-from flask import Flask, request, abort
-from datetime import datetime
-
-app = Flask(__name__)
-
-LINE_CHANNEL_SECRET = os.environ.get('LINE_CHANNEL_SECRET', '')
-LINE_CHANNEL_ACCESS_TOKEN = os.environ.get('LINE_CHANNEL_ACCESS_TOKEN', '')
-
-messages = []
-
-
-def verify_signature(body, signature):
-    hash_val = hmac.new(
-        LINE_CHANNEL_SECRET.encode('utf-8'),
-        body,
-        hashlib.sha256
-    ).digest()
-    return base64.b64encode(hash_val).decode('utf-8') == signature
-
-
-def get_user_profile(user_id):
-    url = 'https://api.line.me/v2/bot/profile/' + user_id
-    headers = {'Authorization': 'Bearer ' + LINE_CHANNEL_ACCESS_TOKEN}
-    try:
-        res = requests.get(url, headers=headers, timeout=5)
-        if res.ok:
-            return res.json().get('displayName', 'Unknown')
-    except Exception:
-        pass
-    return 'Unknown'
-
-
-@app.route('/webhook', methods=['POST'])
-def webhook():
-    signature = request.headers.get('X-Line-Signature', '')
-    body = request.get_data()
-    if not verify_signature(body, signature):
         abort(400)
     data = json.loads(body)
     for event in data.get('events', []):
@@ -94,9 +52,9 @@ def webhook():
             if msg_type == 'text':
                 content = message.get('text', '')
             elif msg_type == 'image':
-                content = '[圖片]'
+                content = '[image]'
             elif msg_type == 'sticker':
-                content = '[貼圖]'
+                content = '[sticker]'
             else:
                 content = '[' + msg_type + ']'
             display_name = get_user_profile(user_id)
