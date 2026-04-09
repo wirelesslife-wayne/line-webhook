@@ -72,7 +72,16 @@ def webhook():
 
 @app.route('/messages', methods=['GET'])
 def get_messages():
-    return json.dumps(messages[-100:], ensure_ascii=False, indent=2), 200, {'Content-Type': 'application/json'}
+    limit = int(request.args.get('limit', 1000))
+    since = request.args.get('since')
+    until = request.args.get('until')
+    result = messages
+    if since:
+        result = [m for m in result if m['time'] >= since]
+    if until:
+        result = [m for m in result if m['time'] <= until]
+    result = result[-limit:]
+    return json.dumps(result, ensure_ascii=False, indent=2), 200, {'Content-Type': 'application/json'}
 
 
 @app.route('/', methods=['GET'])
