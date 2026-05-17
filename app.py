@@ -3,11 +3,27 @@ import json
 import hmac
 import hashlib
 import base64
+import pathlib
 import requests
-from flask import Flask, request, abort
+from flask import Flask, request, abort, render_template, jsonify
 from datetime import datetime
 
 app = Flask(__name__)
+
+DASHBOARD_JSON = pathlib.Path.home() / '.claude' / 'dashboard.json'
+
+
+def _read_dashboard():
+    if DASHBOARD_JSON.exists():
+        with open(DASHBOARD_JSON, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    return {'last_updated': None, 'schedules': []}
+
+
+def _write_dashboard(data):
+    DASHBOARD_JSON.parent.mkdir(parents=True, exist_ok=True)
+    with open(DASHBOARD_JSON, 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
 
 # 公司客服 OA (WirelessLife 無限) — 既有監控用
 LINE_CHANNEL_SECRET = os.environ.get('LINE_CHANNEL_SECRET', '')
@@ -168,6 +184,57 @@ def get_messages():
         result = [m for m in result if m['time'] <= until]
     result = result[-limit:]
     return json.dumps(result, ensure_ascii=False, indent=2), 200, {'Content-Type': 'application/json'}
+
+
+@app.route('/dashboard')
+def dashboard():
+    return render_template('dashboard.html')
+
+
+@app.route('/api/dashboard', methods=['GET'])
+def api_dashboard():
+    data = _read_dashboard()
+    return jsonify(data)
+
+
+@app.route('/api/schedule-result', methods=['POST'])
+def api_schedule_result():
+    auth = request.headers.get('X-Push-Token', '')
+    if PUSH_AUTH_TOKEN and auth != PUSH_AUTH_TOKEN:
+        abort(401)
+
+    entry = request.get_json(silent=True) or {}
+    name = (entry.get('name') or '').strip()
+    status = entry.get('status', 'success')
+    description = entry.get('description', '')
+
+    if not name:
+        return jsonify({'error': 'missing name'}), 400
+    if status not in ('success', 'failed', 'stuck', 'disabled'):
+        return jsonify({'error': 'invalid status'}), 400
+
+    data = _read_dashboard()
+    schedules = data.get('schedules', [])
+    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+    for s in schedules:
+        if s['name'] == name:
+            s['last_run'] = now
+            s['status'] = status
+            s['description'] = description
+            break
+    else:
+        schedules.append({
+            'name': name,
+            'last_run': now,
+            'status': status,
+            'description': description,
+        })
+
+    data['schedules'] = schedules
+    data['last_updated'] = now
+    _write_dashboard(data)
+    return jsonify({'ok': True})
 
 
 @app.route('/', methods=['GET'])

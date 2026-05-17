@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>排程儀表板 — WirelessLife</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #0f1117;
+      color: #e2e8f0;
+      min-height: 100vh;
+      padding: 24px;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 28px;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    header h1 {
+      font-size: 1.4rem;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      color: #f8fafc;
+    }
+
+    #meta {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      font-size: 0.82rem;
+      color: #64748b;
+    }
+
+    #last-updated { color: #94a3b8; }
+
+    #countdown {
+      background: #1e293b;
+      border-radius: 6px;
+      padding: 3px 10px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    #pulse {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: #22c55e;
+      animation: blink 2s ease-in-out infinite;
+      display: inline-block;
+    }
+
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.3; }
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.9rem;
+    }
+
+    thead th {
+      text-align: left;
+      padding: 10px 16px;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: #475569;
+      border-bottom: 1px solid #1e293b;
+    }
+
+    tbody tr {
+      border-bottom: 1px solid #1e293b;
+      transition: background 0.15s;
+    }
+
+    tbody tr:hover { background: #1e2a3a; }
+
+    td {
+      padding: 14px 16px;
+      vertical-align: middle;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      padding: 3px 10px;
+      border-radius: 999px;
+    }
+
+    .badge::before {
+      content: '';
+      width: 7px; height: 7px;
+      border-radius: 50%;
+    }
+
+    .badge.success  { background: #14532d44; color: #4ade80; }
+    .badge.success::before  { background: #4ade80; }
+
+    .badge.failed   { background: #7f1d1d44; color: #f87171; }
+    .badge.failed::before   { background: #f87171; }
+
+    .badge.stuck    { background: #7c2d1244; color: #fb923c; }
+    .badge.stuck::before    { background: #fb923c; }
+
+    .badge.disabled { background: #1e293b; color: #475569; }
+    .badge.disabled::before { background: #475569; }
+
+    .name-cell { font-weight: 500; color: #e2e8f0; }
+
+    .time-cell { font-variant-numeric: tabular-nums; color: #64748b; font-size: 0.83rem; }
+
+    .desc-cell { color: #94a3b8; }
+
+    .empty {
+      text-align: center;
+      padding: 60px 0;
+      color: #334155;
+      font-size: 0.9rem;
+    }
+
+    .error-banner {
+      background: #7f1d1d44;
+      border: 1px solid #f8717144;
+      border-radius: 8px;
+      padding: 12px 16px;
+      color: #f87171;
+      font-size: 0.85rem;
+      margin-bottom: 20px;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>📋 排程儀表板</h1>
+  <div id="meta">
+    <span id="pulse"></span>
+    <span id="last-updated">讀取中…</span>
+    <span id="countdown">60s</span>
+  </div>
+</header>
+
+<div class="error-banner" id="error-banner"></div>
+
+<table>
+  <thead>
+    <tr>
+      <th>排程名稱</th>
+      <th>狀態</th>
+      <th>最後執行</th>
+      <th>說明</th>
+    </tr>
+  </thead>
+  <tbody id="tbody">
+    <tr><td class="empty" colspan="4">載入中…</td></tr>
+  </tbody>
+</table>
+
+<script>
+  const INTERVAL = 60;
+  let remaining = INTERVAL;
+
+  const STATUS_LABEL = {
+    success:  '正常',
+    failed:   '失敗',
+    stuck:    '卡住',
+    disabled: '停用',
+  };
+
+  function esc(s) {
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+  }
+
+  function renderTable(schedules) {
+    const tbody = document.getElementById('tbody');
+    if (!schedules || schedules.length === 0) {
+      tbody.innerHTML = '<tr><td class="empty" colspan="4">尚無排程資料</td></tr>';
+      return;
+    }
+    tbody.innerHTML = schedules.map(s => {
+      const label = STATUS_LABEL[s.status] || s.status;
+      const cls   = ['success','failed','stuck','disabled'].includes(s.status) ? s.status : 'disabled';
+      return `
+        <tr>
+          <td class="name-cell">${esc(s.name)}</td>
+          <td><span class="badge ${cls}">${esc(label)}</span></td>
+          <td class="time-cell">${esc(s.last_run || '—')}</td>
+          <td class="desc-cell">${esc(s.description || '')}</td>
+        </tr>`;
+    }).join('');
+  }
+
+  function showError(msg) {
+    const el = document.getElementById('error-banner');
+    el.textContent = msg;
+    el.style.display = 'block';
+  }
+
+  function hideError() {
+    document.getElementById('error-banner').style.display = 'none';
+  }
+
+  async function fetchData() {
+    try {
+      const res = await fetch('/api/dashboard');
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      hideError();
+      renderTable(data.schedules || []);
+      const ts = data.last_updated
+        ? `最後更新：${data.last_updated}`
+        : '尚無更新記錄';
+      document.getElementById('last-updated').textContent = ts;
+    } catch (e) {
+      showError(`無法讀取儀表板資料：${e.message}`);
+    }
+    remaining = INTERVAL;
+  }
+
+  function tick() {
+    remaining = Math.max(0, remaining - 1);
+    document.getElementById('countdown').textContent = `${remaining}s`;
+    if (remaining === 0) fetchData();
+  }
+
+  fetchData();
+  setInterval(tick, 1000);
+</script>
+</body>
+</html>
