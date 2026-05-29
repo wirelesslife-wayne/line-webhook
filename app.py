@@ -23,6 +23,133 @@ PUSH_AUTH_TOKEN = os.environ.get('PUSH_AUTH_TOKEN', '')
 messages = []
 
 
+# ---- PostgreSQL 持久化（向下相容：DB 不可用時自動 fallback 回記憶體模式）----
+DATABASE_URL = os.environ.get('DATABASE_URL', '')
+
+try:
+    import psycopg2
+    import psycopg2.extras
+    _PSYCOPG2_AVAILABLE = True
+except ImportError:
+    _PSYCOPG2_AVAILABLE = False
+
+_db_ready = False
+
+
+def _db_enabled():
+    return bool(DATABASE_URL) and _PSYCOPG2_AVAILABLE
+
+
+def _get_conn():
+    conn = psycopg2.connect(DATABASE_URL)
+    conn.autocommit = True
+    return conn
+
+
+def init_db():
+    """啟動時確保資料表存在。任何失敗都只記 log、不影響服務（改用記憶體模式）。"""
+    global _db_ready
+    if not _db_enabled():
+        print('[DB] DATABASE_URL 未設定或 psycopg2 不可用 — 使用記憶體模式')
+        return
+    try:
+        conn = _get_conn()
+        with conn.cursor() as cur:
+            cur.execute('''
+                CREATE TABLE IF NOT EXISTS messages (
+                    id            BIGSERIAL PRIMARY KEY,
+                    time_str      TEXT NOT NULL,
+                    oa            TEXT,
+                    event_type    TEXT,
+                    user_id       TEXT,
+                    display_name  TEXT,
+                    message_type  TEXT,
+                    content       TEXT,
+                    raw_timestamp BIGINT,
+                    created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+            ''')
+            cur.execute('CREATE INDEX IF NOT EXISTS idx_messages_time_str ON messages(time_str)')
+        conn.close()
+        _db_ready = True
+        print('[DB] 連線成功，messages 資料表已就緒')
+    except Exception as e:
+        _db_ready = False
+        print('[DB] 初始化失敗，改用記憶體模式：' + repr(e))
+
+
+def db_insert(time_str, oa, event_type, user_id, display_name, message_type, content, raw_timestamp):
+    """寫入一筆訊息。失敗只記 log、不丟例外（避免 webhook 回非 200 導致 LINE 重送）。"""
+    if not _db_ready:
+        return
+    try:
+        conn = _get_conn()
+        with conn.cursor() as cur:
+            cur.execute(
+                '''INSERT INTO messages
+                   (time_str, oa, event_type, user_id, display_name, message_type, content, raw_timestamp)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s)''',
+                (time_str, oa, event_type, user_id, display_name, message_type, content, raw_timestamp)
+            )
+        conn.close()
+    except Exception as e:
+        print('[DB] 寫入失敗：' + repr(e))
+
+
+def _row_to_entry(row):
+    """把 DB 一列還原成與記憶體模式「完全相同」的 dict 格式（含 key 順序）。"""
+    if row['oa']:
+        entry = {
+            'time': row['time_str'],
+            'oa': row['oa'],
+            'event_type': row['event_type'],
+            'user_id': row['user_id'],
+        }
+        if row['message_type'] is not None:
+            entry['msg_type'] = row['message_type']
+            entry['content'] = row['content']
+        return entry
+    return {
+        'time': row['time_str'],
+        'user': row['display_name'],
+        'user_id': row['user_id'],
+        'msg': row['content'],
+        'type': row['message_type'],
+    }
+
+
+def db_fetch(limit, since, until, oa):
+    """從 DB 查詢，回傳與記憶體模式相同格式的 list；DB 不可用時回 None（呼叫端 fallback）。"""
+    if not _db_ready:
+        return None
+    try:
+        clauses = []
+        params = []
+        if oa:
+            clauses.append('oa = %s')
+            params.append(oa)
+        if since:
+            clauses.append('time_str >= %s')
+            params.append(since)
+        if until:
+            clauses.append('time_str <= %s')
+            params.append(until)
+        where = (' WHERE ' + ' AND '.join(clauses)) if clauses else ''
+        # 取最後 limit 筆（依插入順序），對齊原本記憶體模式的 result[-limit:]
+        sql = ('SELECT * FROM (SELECT * FROM messages' + where +
+               ' ORDER BY id DESC LIMIT %s) t ORDER BY id ASC')
+        params.append(limit)
+        conn = _get_conn()
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(sql, params)
+            rows = cur.fetchall()
+        conn.close()
+        return [_row_to_entry(r) for r in rows]
+    except Exception as e:
+        print('[DB] 查詢失敗，fallback 記憶體：' + repr(e))
+        return None
+
+
 def verify_signature(body, signature, secret):
     hash_val = hmac.new(
         secret.encode('utf-8'),
@@ -77,6 +204,8 @@ def webhook():
             }
             messages.append(entry)
             print(json.dumps(entry, ensure_ascii=False))
+            db_insert(ts, None, 'message', user_id, display_name, msg_type, content,
+                      event.get('timestamp'))
     return 'OK', 200
 
 
@@ -110,6 +239,8 @@ def webhook_xu():
                 entry['content'] = '[' + mt + ']'
         messages.append(entry)
         print('[XU]', json.dumps(entry, ensure_ascii=False))
+        db_insert(ts, 'xu_assistant', event_type, user_id, None,
+                  entry.get('msg_type'), entry.get('content'), event.get('timestamp'))
     return 'OK', 200
 
 
@@ -159,20 +290,28 @@ def get_messages():
     since = request.args.get('since')
     until = request.args.get('until')
     oa = request.args.get('oa')
-    result = messages
-    if oa:
-        result = [m for m in result if m.get('oa') == oa]
-    if since:
-        result = [m for m in result if m['time'] >= since]
-    if until:
-        result = [m for m in result if m['time'] <= until]
-    result = result[-limit:]
+
+    db_result = db_fetch(limit, since, until, oa)
+    if db_result is not None:
+        result = db_result
+    else:
+        result = messages
+        if oa:
+            result = [m for m in result if m.get('oa') == oa]
+        if since:
+            result = [m for m in result if m['time'] >= since]
+        if until:
+            result = [m for m in result if m['time'] <= until]
+        result = result[-limit:]
     return json.dumps(result, ensure_ascii=False, indent=2), 200, {'Content-Type': 'application/json'}
 
 
 @app.route('/', methods=['GET'])
 def health():
     return 'LINE Webhook Server is running - WirelessLife (monitor + push mode)', 200
+
+
+init_db()
 
 
 if __name__ == '__main__':
