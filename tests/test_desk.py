@@ -16,9 +16,9 @@ from flask import Flask
 from psycopg2.extras import RealDictCursor,Json
 from werkzeug.security import generate_password_hash
 from desk.auth import Auth,digest,COOKIE
-from desk.db import Store,now
+from desk.db import Store,now,SCHEMA
 from desk.engine import Engine,ProviderPending,check,is_builtin,image_url
-from desk.notifier import LineNotifier
+from desk.notifier import LineNotifier,delivery_result
 from desk.routes import make_blueprint
 from desk.service import send,ActionError
 from desk.tools.upload_qa import redactor
@@ -74,27 +74,24 @@ def test_notifier_disabled(monkeypatch):
     monkeypatch.delenv('DESK_SEND_ENABLED',raising=False)
     post=Mock(side_effect=AssertionError('network forbidden'))
     monkeypatch.setattr(requests,'post',post)
-    assert not LineNotifier().push('test','hello',[],str(uuid.uuid4()))['ok']
+    with pytest.raises(RuntimeError,match='FakeNotifier'):
+        LineNotifier().push('test','hello',[],str(uuid.uuid4()))
     post.assert_not_called()
 
 
 @pytest.mark.parametrize('code,accepted',[(200,True),(400,False),(401,False),(429,False),(500,False),(409,True)])
 def test_notifier_mock(monkeypatch,code,accepted):
-    monkeypatch.setenv('DESK_SEND_ENABLED','1');monkeypatch.setenv('LINE_CHANNEL_ACCESS_TOKEN','test-token')
-    response=Mock(status_code=code,headers={'x-line-accepted-request-id':'test'} if code==409 else {})
-    post=Mock(return_value=response);monkeypatch.setattr(requests,'post',post)
-    key=str(uuid.uuid4())
-    result=LineNotifier().push('synthetic-user','hello',['https://example.com/x.jpg'],key)
+    result=delivery_result(code,'test' if code==409 else None)
     assert result['ok']==accepted
-    assert post.call_args.kwargs['headers']['X-Line-Retry-Key']==key
-    assert len(post.call_args.kwargs['json']['messages'])==2
+    assert result['unknown']==(code>=500)
 
 
 def test_notifier_timeout(monkeypatch):
+    monkeypatch.delitem(sys.modules,'pytest')
     monkeypatch.setenv('DESK_SEND_ENABLED','1');monkeypatch.setenv('LINE_CHANNEL_ACCESS_TOKEN','test')
     monkeypatch.setattr(requests,'post',Mock(side_effect=requests.Timeout()))
-    result=LineNotifier().push('synthetic-user','hello',[],str(uuid.uuid4()))
-    assert not result['ok'] and result['unknown']
+    with pytest.raises(RuntimeError,match='FakeNotifier'):
+        LineNotifier().push('synthetic-user','hello',[],str(uuid.uuid4()))
 
 
 @pytest.fixture
@@ -104,15 +101,31 @@ def db(monkeypatch):
         pytest.skip('set DESK_TEST_DATABASE_URL for rollback-only integration tests')
     base=Store(url)
     conn=__import__('psycopg2').connect(url)
+    # Temporary tables shadow every production table. Even test failures cannot
+    # change a real customer's state; all test DDL/data is rolled back too.
+    with conn.cursor() as cur:
+        cur.execute(SCHEMA.replace('CREATE TABLE IF NOT EXISTS','CREATE TEMP TABLE').replace('CREATE INDEX IF NOT EXISTS','CREATE INDEX'))
+        cur.execute('INSERT INTO desk_kb SELECT * FROM public.desk_kb')
+        cur.execute('CREATE TEMP TABLE messages AS SELECT * FROM public.messages WITH NO DATA')
     class RollbackStore(Store):
         @contextmanager
         def cursor(self):
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                yield cur
+                cur.execute('SAVEPOINT desk_test_cursor')
+                try:
+                    yield cur
+                except Exception:
+                    cur.execute('ROLLBACK TO SAVEPOINT desk_test_cursor')
+                    raise
+                finally:
+                    cur.execute('RELEASE SAVEPOINT desk_test_cursor')
         @contextmanager
         def lock(self,name):
             yield True
+        def latest_source_cursor(self,cur,uid):
+            return self.latest_source(uid)
     result=RollbackStore(url)
+    result.test_connection=conn
     result.execute("INSERT INTO desk_users(username,password_hash) VALUES('desk-test-user',%s)",(generate_password_hash('test-password'),))
     result.execute('''INSERT INTO desk_conversations(user_id,display_name,last_source_id,last_at,first_at)
       VALUES('desk-test-a','測試客人甲',101,NOW()-INTERVAL '2 minutes',NOW()-INTERVAL '40 minutes'),

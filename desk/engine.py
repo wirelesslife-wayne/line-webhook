@@ -108,18 +108,15 @@ class Engine:
         best = topk(q, rows, lambda x: x['question'], k)
         return [f"客人：{r['question'][:150]}\n同事：{r['answer'][:350]}" for r in best]
 
-    def attachments(self, text=''):
-        canned = topk(text, self.CANNED, lambda x: x['topic']+x['text'], 4) if text else self.CANNED
-        urls = images_in(canned)
-        urls += images_in(self.WLF)
-        urls += self.store.meta('website_images', [])
-        return list(dict.fromkeys(u for u in urls if image_url(u)))[:40]
+    def attachments(self, text='', extract=None):
+        from .catalog import select_images
+        return select_images(self.store.meta('product_images', []),self.WLF,text,extract)
 
     def draft(self, timeline, now_local):
         if self.provider is None:
             raise ProviderPending('等 Claude 回答：雲端 AI 擬稿方式尚未核准；可由同事填寫回覆')
         convo = '\n'.join(f"{x['time']} {'我方' if x['role']=='assistant' else '客人'}：{x['text']}" for x in timeline)
-        ex = self.provider([{'role':'system','content':'從對話抽取 brand/model/year/products/location，回傳 JSON。車型清單：'+json.dumps(self.MODELS, ensure_ascii=False)},
+        ex = self.provider([{'role':'system','content':'從對話抽取 brand/model/year/products/series/location，回傳 JSON。products 是產品名稱陣列；series 是有明確提及的產品系列，未提及則為 null。車型清單：'+json.dumps(self.MODELS, ensure_ascii=False)},
                             {'role':'user','content':convo}])
         newtext = ' '.join(x['text'] for x in timeline if x['role']=='user' and x.get('new'))
         prices = self.price_lookup(ex)
@@ -132,7 +129,7 @@ class Engine:
         out = self.provider([{'role':'system','content':self.RULES},{'role':'user','content':prompt}])
         if not isinstance(out, dict) or not isinstance(out.get('draft'), str):
             raise ValueError('擬稿格式不符')
-        out.update(extract=ex,price_lines=prices,flags=check(out['draft'],context),images=self.attachments(newtext))
+        out.update(extract=ex,price_lines=prices,flags=check(out['draft'],context),images=self.attachments(newtext,ex))
         return out
 
     def price_lookup(self, ex):

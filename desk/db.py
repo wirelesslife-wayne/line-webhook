@@ -91,6 +91,18 @@ class Store:
     def execute(self, sql, args=()):
         with self.cursor() as cur:
             cur.execute(sql, args)
+            return cur.rowcount
+
+    @contextmanager
+    def conversation_transaction(self, uid):
+        """All state decisions and writes share the same locked row/transaction."""
+        with self.cursor() as cur:
+            cur.execute('SELECT * FROM desk_conversations WHERE user_id=%s FOR UPDATE', (uid,))
+            yield cur, cur.fetchone()
+
+    def latest_source_cursor(self, cur, uid):
+        cur.execute('SELECT COALESCE(MAX(id),0) AS id FROM messages WHERE oa IS NULL AND user_id=%s', (uid,))
+        return cur.fetchone()['id']
 
     def kb(self,names=None):
         rows = self.all('SELECT name,content FROM desk_kb WHERE name=ANY(%s)',(names,)) if names else self.all('SELECT name,content FROM desk_kb')
@@ -157,6 +169,9 @@ class Store:
                         if not r['user_id']:
                             continue
                         t = utc_time(r['time_str'])
+                        # Same row lock used by mark_done/send/redraft. The upsert also
+                        # locks new rows, including concurrent first ingestion.
+                        cur.execute('SELECT user_id FROM desk_conversations WHERE user_id=%s FOR UPDATE', (r['user_id'],))
                         cur.execute('''INSERT INTO desk_conversations
                           (user_id,display_name,last_source_id,last_at,first_at) VALUES(%s,%s,%s,%s,%s)
                           ON CONFLICT(user_id) DO UPDATE SET display_name=EXCLUDED.display_name,

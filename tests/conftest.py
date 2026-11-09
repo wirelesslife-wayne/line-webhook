@@ -6,6 +6,8 @@ import requests
 @pytest.fixture(autouse=True)
 def deny_external_http(monkeypatch):
     monkeypatch.delenv('OPENAI_API_KEY', raising=False)
+    monkeypatch.delenv('LINE_CHANNEL_ACCESS_TOKEN', raising=False)
+    monkeypatch.setenv('DESK_TEST', '1')
     monkeypatch.delenv('DESK_MODEL', raising=False)
     monkeypatch.delenv('DESK_MONTHLY_USD', raising=False)
     def denied(*args, **kwargs):

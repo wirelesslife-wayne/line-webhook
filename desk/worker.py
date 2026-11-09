@@ -43,7 +43,7 @@ def timeline(store, convo, for_ai=False, current=None):
     rows.sort(key=lambda r:r['sort'])
     if for_ai:
         end = current or now()
-        rows = [r for r in rows if end-timedelta(hours=24) <= r['sort'] <= end]
+        rows = [r for r in rows if r['sort'] <= end and (r['new'] or r['sort'] >= end-timedelta(hours=24))]
     for r in rows:
         r.pop('sort')
         if for_ai:
@@ -142,7 +142,9 @@ def draft_once(store, engine_factory=Engine):
             if builtin_only(pending):
                 store.execute("UPDATE desk_conversations SET status='skip',draft=NULL WHERE user_id=%s AND last_source_id=%s AND status='waiting'",(uid,upto))
                 continue
-            store.execute("UPDATE desk_conversations SET status='drafting',updated_at=NOW() WHERE user_id=%s AND last_source_id=%s AND status='waiting'",(uid,upto))
+            claimed = store.execute("UPDATE desk_conversations SET status='drafting',updated_at=NOW() WHERE user_id=%s AND last_source_id=%s AND status='waiting'",(uid,upto))
+            if claimed != 1:
+                continue
             try:
                 result = engine_factory(store).draft(timeline(store,c,for_ai=True), now().astimezone(TAIPEI))
                 state = 'ready'
@@ -166,6 +168,8 @@ def start_worker(store):
             try:
                 store.ingest()
                 refresh_prices(store)
+                from .catalog import refresh_catalog
+                refresh_catalog(store)
                 store.set_meta('reader_heartbeat',now().isoformat())
             except Exception:
                 pass  # Isolated from webhook, UI reports stale heartbeat.

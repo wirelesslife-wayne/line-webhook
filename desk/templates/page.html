@@ -5,35 +5,9 @@
 <div id="ai-budget" class="note" role="status" hidden></div><div id="price" class="note" hidden></div><div id="worker" class="note" hidden></div><div id="feedback" class="error" role="alert"></div>
 <div class="layout" id="layout"><section aria-label="對話清單"><div class="conversation-list" id="list">讀取中…</div><div class="actions"><button id="prev">上一頁</button><button id="next">下一頁</button></div></section>
 <section id="detail" class="card"><p class="muted">選擇一位客人，查看對話與回覆草稿。</p></section></div>
-<dialog id="confirm"><h2 id="recipient"></h2><p>請確認收件人與以下回覆，再按送出。</p><div id="preview"></div><p id="image-count" class="muted"></p><div class="actions"><button id="cancel">返回修改</button><button id="send" class="primary">確認送出</button></div></dialog>
+<dialog id="confirm"><h2 id="recipient"></h2><p>請確認收件人與以下回覆，再按送出。</p><div id="preview"></div><div id="preview-images" class="images"></div><p id="image-count" class="muted"></p><div class="actions"><button id="cancel">返回修改</button><button id="send" class="primary">確認送出</button></div></dialog>
 </main>
 <script nonce="{{ g.nonce }}">
 const csrf={{ staff.csrf|tojson }};
-let tab='todo',page=0,selected=null,current=null,retryKey=null,sending=false;
-const el=id=>document.getElementById(id);
-const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const statusText={waiting:'等待客人停止輸入',drafting:'擬稿中',ready:'草稿就緒',blocked:'可由同事填寫',error:'請重新擬稿',skip:'選單／貼圖',done:'已處理'};
-async function api(url,body){const r=await fetch('/desk/api/'+url,{method:body?'POST':'GET',headers:body?{'Content-Type':'application/json','X-CSRF-Token':csrf}:{},body:body?JSON.stringify(body):undefined});const data=await r.json();if(r.status===401){location.href='/desk/login';throw Error('請重新登入')}if(!r.ok)throw Error(data.error||'連線失敗，請稍後再試');return data}
-function feedback(s=''){el('feedback').textContent=s}
-async function loadList(){try{const d=await api(`list?tab=${tab}&page=${page}`);el('price').hidden=!d.price_warning;el('price').textContent=d.price_warning;el('worker').hidden=!d.worker_warning;el('worker').textContent=d.worker_warning;
- el('ai-budget').hidden=!d.ai_budget?.warning;el('ai-budget').textContent=d.ai_budget?.warning||'';el('ai-budget').className=d.ai_budget?.blocked?'error':'note';
- el('prev').disabled=page===0;el('next').disabled=!d.has_more;el('list').innerHTML=d.items.length?d.items.map(i=>`<button class="${i.urgent?'urgent ':''}${i.user_id===selected?'selected':''}" data-uid="${esc(i.user_id)}"><b>${esc(i.name)}</b><span class="${i.minutes>30&&tab==='todo'?'late':'muted'}">${tab==='todo'?`等待 ${i.minutes} 分鐘`:'最後訊息 '+esc(i.last.slice(5,16))}</span><span><span class="chip">${statusText[i.status]||esc(i.status)}</span> ${i.urgent?'<span class="late">客訴優先</span>':''}</span></button>`).join(''):'<p class="muted">目前沒有這類對話。</p>'}catch(e){feedback(e.message)}}
-async function select(uid,force=false){if(sending)return;if(!force&&el('draft')&&el('draft').value!==(current?.result?.draft||'')&&!window.confirm('尚未送出的修改會保留在目前頁面；切換對話會放棄修改，確定切換？'))return;
- try{const d=await api('conversation?user_id='+encodeURIComponent(uid));selected=uid;current=d;retryKey=d.pending?.retry_key||null;el('layout').classList.add('detail-open');
- const r=d.result||{};el('detail').innerHTML=`<button class="back" id="back">← 對話清單</button><h2>${esc(d.name)}</h2><p class="muted">${statusText[d.status]||esc(d.status)} · 時間為台灣時間</p><div class="messages">${d.messages.map(m=>`<div class="message ${m.role==='assistant'?'ours':''}"><small>${m.role==='assistant'?'我方':'客人'} · ${esc(m.time)}</small>${esc(m.text)}${(m.images||[]).map(u=>`<div><a href="${esc(u)}" target="_blank" rel="noopener noreferrer">查看已送圖片</a></div>`).join('')}</div>`).join('')||'<p class="muted">尚無對話內容</p>'}</div>${r.staff_note?`<p class="note">${esc(r.staff_note)}</p>`:''}${(r.flags||[]).map(f=>`<p class="error">${esc(f)}</p>`).join('')}<label for="draft">回覆草稿（可修改）</label><textarea id="draft" maxlength="5000" placeholder="在這裡填寫給客人的回覆">${esc(d.pending?.text??r.draft??'')}</textarea><details><summary>可附的商品圖片（最多 4 張）</summary><div class="images">${d.images.map(u=>`<label><input type="checkbox" name="image" value="${esc(u)}"><a href="${esc(u)}" target="_blank" rel="noopener noreferrer">${esc(u)}</a></label>`).join('')||'<p class="muted">沒有可附圖片</p>'}</div></details><div class="actions"><button class="primary" id="open-confirm">檢查並送出</button><button id="redraft">重新擬稿</button><button id="done">已在 LINE 後台回覆（不送）</button></div>`;
- if(d.pending){el('draft').readOnly=true;document.querySelectorAll('[name=image]').forEach(x=>{x.checked=d.pending.images.includes(x.value);x.disabled=true});feedback('前一筆傳送結果待確認。內容已鎖定；請以同一筆確認重試，或先到 LINE 後台查核後標記已回覆。')}else feedback();loadList()
- }catch(e){feedback(e.message)}}
-function images(){return current.pending?.images||[...document.querySelectorAll('[name=image]:checked')].map(x=>x.value)}
-document.addEventListener('click',async e=>{const b=e.target.closest('button');if(!b)return;
- try{if(b.dataset.tab){tab=b.dataset.tab;page=0;document.querySelectorAll('[data-tab]').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));await loadList();return}if(b.dataset.uid){await select(b.dataset.uid);return}
- if(b.id==='prev'||b.id==='next'){page+=b.id==='prev'?-1:1;await loadList()}
- if(b.id==='back')el('layout').classList.remove('detail-open');
- if(b.id==='cancel')el('confirm').close();
- if(b.id==='open-confirm'){const text=el('draft').value;if(!text.trim())throw Error('請先填寫回覆內容');if(images().length>4)throw Error('最多只能選 4 張圖片');retryKey=retryKey||crypto.randomUUID();el('recipient').textContent='送給 '+current.name;el('preview').textContent=text;el('image-count').textContent=images().length?'另附 '+images().length+' 張圖片':'只有文字，不附圖片';el('confirm').showModal()}
- if(b.id==='send'){sending=true;b.disabled=true;el('cancel').disabled=true;try{await api('send',{user_id:selected,text:el('draft').value,images:images(),retry_key:retryKey,confirmed:true,source_upto:current.pending?.source_upto??current.source_upto});el('confirm').close();retryKey=null;sending=false;await select(selected,true);feedback('已送出並記錄。')}catch(err){el('confirm').close();sending=false;const d=await api('conversation?user_id='+encodeURIComponent(selected));if(d.pending)await select(selected,true);feedback(err.message)}finally{sending=false;b.disabled=false;el('cancel').disabled=false}}
- if(b.id==='redraft'||b.id==='done'){await api('action',{action:b.id==='done'?'done':'redraft',user_id:selected,source_upto:current.source_upto});await select(selected,true)}
- }catch(e){feedback(e.message)}});
-document.addEventListener('input',e=>{if(e.target.id==='draft'&&!current?.pending)retryKey=null});
-document.addEventListener('change',e=>{if(e.target.name==='image'&&!current?.pending)retryKey=null});
-loadList();setInterval(loadList,15000);
+{% include 'workbench.js' %}
 </script>{% endblock %}

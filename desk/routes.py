@@ -6,7 +6,7 @@ from .auth import Auth,COOKIE
 from .db import now
 from .engine import Engine
 from .notifier import LineNotifier
-from .service import send,mark_done,ActionError
+from .service import send,mark_done,redraft,ActionError
 from .worker import local_time,utc_time,timeline
 from werkzeug.wsgi import get_input_stream
 
@@ -101,6 +101,7 @@ def make_blueprint(store,notifier=None):
             items.append({'user_id':c['user_id'],'name':c['display_name'],'status':c['status'],
               'first':local_time(c['first_at']),'last':local_time(c['last_at']),
               'minutes':max(0,int((now()-c['first_at']).total_seconds()/60)),
+              'source_upto':c['last_source_id'],'drafted_upto':c['drafted_upto'],
               'urgent':bool(r.get('urgent')),'scenario':r.get('scenario','')})
         price = store.meta('price_success')
         heartbeat = store.meta('reader_heartbeat')
@@ -122,13 +123,20 @@ def make_blueprint(store,notifier=None):
         if not c:
             raise ActionError('找不到對話',404)
         try:
-            images = Engine(store).attachments(' '.join(r['content'] or '' for r in store.incoming(c['user_id'],c['handled_upto'])))
+            images = Engine(store).attachments(' '.join(r['content'] or '' for r in store.incoming(c['user_id'],c['handled_upto'])),
+                (c['draft'] or {}).get('extract') if c['drafted_upto']==c['last_source_id'] else None)
         except ValueError:
             images = []
-        pending = store.one("SELECT retry_key,content,images,source_upto FROM desk_send_attempts WHERE user_id=%s AND staff_id=%s AND status IN ('sending','unknown') ORDER BY created_at DESC LIMIT 1",(c['user_id'],g.staff['id']))
+        pending = store.one("""SELECT a.retry_key,a.content,a.images,a.source_upto,a.staff_id,u.username,a.created_at
+          FROM desk_send_attempts a JOIN desk_users u ON u.id=a.staff_id
+          WHERE a.user_id=%s AND a.status IN ('sending','unknown') ORDER BY a.created_at DESC LIMIT 1""",(c['user_id'],))
+        latest = max(c['last_source_id'],store.latest_source(c['user_id']))
+        stale = bool(c['draft']) and (c['drafted_upto'] or 0) < latest
         return jsonify(user_id=c['user_id'],name=c['display_name'],status=c['status'],source_upto=c['last_source_id'],
-            result=c['draft'] or {},messages=timeline(store,c),images=images,
-            pending={'retry_key':str(pending['retry_key']),'text':pending['content'],'images':pending['images'],'source_upto':pending['source_upto']} if pending else None)
+            result=c['draft'] or {},stale_draft=stale,latest_source=latest,messages=timeline(store,c),images=images,
+            pending={'retry_key':str(pending['retry_key']),'text':pending['content'],'images':pending['images'],
+                'source_upto':pending['source_upto'],'staff':pending['username'],
+                'can_retry':pending['staff_id']==g.staff['id'] and (now()-pending['created_at']).total_seconds()<23*3600} if pending else None)
 
     @bp.post('/api/send')
     def do_send():
@@ -146,8 +154,7 @@ def make_blueprint(store,notifier=None):
         if data.get('action')=='done':
             mark_done(store,g.staff,uid,data.get('source_upto'))
         elif data.get('action')=='redraft':
-            store.execute("UPDATE desk_conversations SET status='waiting',updated_at=NOW() WHERE user_id=%s",(uid,))
-            store.execute("INSERT INTO desk_actions(user_id,staff_id,action) VALUES(%s,%s,'redraft')",(uid,g.staff['id']))
+            redraft(store,g.staff,uid,data.get('source_upto'))
         else:
             raise ActionError('操作不正確',400)
         return jsonify(ok=True)
