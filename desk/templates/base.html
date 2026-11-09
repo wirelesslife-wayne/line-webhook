@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{% block title %}無限科技・客服工作台{% endblock %}</title>
+<style nonce="{{ g.nonce }}">
+:root{--bg:#f3f5f4;--surface:#fff;--line:#d5dcd9;--ink:#16222e;--muted:#5b6a72;--brand:#0f3d5c;--soft:#e3edf4;--bad:#b3261e;--warn:#fff4cc}
+*{box-sizing:border-box}body{margin:0;font:15px/1.65 "Microsoft JhengHei",system-ui,sans-serif;background:var(--bg);color:var(--ink)}
+button,input,textarea{font:inherit}button{cursor:pointer;min-height:44px;border:1px solid var(--line);border-radius:8px;padding:8px 14px;background:white;color:var(--ink)}
+button:disabled{opacity:.5;cursor:wait}button.primary{background:var(--brand);border-color:var(--brand);color:white;font-weight:700}button:focus-visible,a:focus-visible{outline:3px solid #daa400;outline-offset:2px}
+header{background:var(--brand);color:white;padding:14px max(16px,calc((100vw - 1200px)/2));display:flex;gap:16px;align-items:center;justify-content:space-between}
+header b{font-size:19px}header small{display:block;opacity:.8}header form{display:flex;gap:12px;align-items:center}header button{background:transparent;color:white;border-color:#8ca6b7}
+main{max-width:1200px;margin:auto;padding:20px 16px 40px}.note,.error{padding:10px 14px;border-radius:8px;margin:10px 0}.note{background:var(--warn);color:#735100}.error{background:#fbe4e2;color:var(--bad)}
+.card{background:white;border:1px solid var(--line);border-radius:12px;padding:20px}.muted{color:var(--muted)}h1{font-size:24px;margin:0 0 8px}h2{font-size:19px;margin:0 0 12px}p{margin:8px 0}label{display:block;font-weight:600;margin:12px 0 5px}
+input[type=text],input[type=password],textarea{width:100%;background:#fff;border:1px solid #879da9;border-radius:8px;padding:10px;color:var(--ink)}textarea{min-height:180px;resize:vertical;line-height:1.7}
+.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.chip{background:var(--soft);padding:2px 8px;border-radius:20px;font-size:12px}.late{color:var(--bad);font-weight:bold}.urgent{border:2px solid var(--bad)!important}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px}.tabs button[aria-pressed=true]{background:var(--brand);color:#fff}.layout{display:grid;gap:16px;grid-template-columns:320px minmax(0,1fr)}
+.conversation-list{display:grid;gap:8px;align-content:start}.conversation-list button{text-align:left;display:grid;gap:4px;padding:12px 14px;border-radius:10px;width:100%;overflow-wrap:anywhere}.conversation-list button.selected{background:var(--soft);border-color:var(--brand)}
+.messages{display:grid;gap:10px;max-height:420px;overflow:auto;background:var(--bg);padding:14px;border-radius:10px}.message{max-width:94%;background:#fff;border:1px solid var(--line);padding:10px 12px;border-radius:10px;white-space:pre-wrap;overflow-wrap:anywhere}.message.ours{justify-self:end;background:var(--soft)}.message small{display:block;color:var(--muted);font-size:11px;margin-bottom:4px}
+.images{display:grid;gap:6px;max-height:180px;overflow:auto}.images label{display:flex;align-items:flex-start;gap:8px;font-size:12px;font-weight:normal;overflow-wrap:anywhere;margin:0;padding:6px;border-bottom:1px solid var(--line)}.images input{margin-top:6px}
+dialog{width:min(560px,calc(100% - 24px));border:0;border-radius:14px;padding:24px;max-height:90vh;box-shadow:0 20px 60px #0005}dialog::backdrop{background:#0a1a2a99}#preview{white-space:pre-wrap;overflow-wrap:anywhere;max-height:38vh;overflow:auto;background:var(--bg);padding:14px;border-radius:8px}.login{max-width:420px;margin:8vh auto}.login button{width:100%;margin-top:20px}.back{display:none}#feedback:empty{display:none}[hidden]{display:none!important}
+@media(max-width:700px){header{align-items:flex-start;padding:14px 16px}header b{font-size:17px}header small{font-size:11px}header form{gap:6px;font-size:12px}header button{padding:6px 10px}main{padding:16px 12px 30px}.layout{grid-template-columns:minmax(0,1fr)}.card{padding:16px}.layout.detail-open>section:first-child{display:none}.layout:not(.detail-open) #detail{display:none}.back{display:inline-block;margin-bottom:12px}.messages{max-height:36vh}.actions button{flex:1 1 45%}.tabs button{flex:1;padding:8px;font-size:13px}textarea{min-height:180px}h1{font-size:22px}.login{margin:6vh auto}}
+</style></head><body>
+<header><div><b>無限科技・客服工作台</b><small>LINE 對話集中處理 · 人員確認後送出</small></div>{% block user %}{% endblock %}</header>
+{% block body %}{% endblock %}</body></html>

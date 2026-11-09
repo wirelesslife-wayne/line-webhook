@@ -1,0 +1,8 @@
+{% extends 'base.html' %}
+{% block title %}登入・無限科技客服工作台{% endblock %}
+{% block body %}<main><section class="card login"><span class="chip">客服專用</span><h1>登入工作台</h1><p class="muted">查看對話、編輯草稿，再確認送給客人。</p>
+{% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+<form method="post" action="/desk/login"><input type="hidden" name="csrf" value="{{ csrf }}">
+<label for="username">帳號</label><input id="username" name="username" type="text" autocomplete="username" required maxlength="80" autofocus>
+<label for="password">密碼</label><input id="password" name="password" type="password" autocomplete="current-password" required maxlength="256">
+<button class="primary" type="submit">登入</button></form><p class="muted"><small>連續登入失敗 5 次，鎖定 15 分鐘。登入有效時間為 12 小時。</small></p></section></main>{% endblock %}

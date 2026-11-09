@@ -314,5 +314,13 @@ def health():
 init_db()
 
 
+# Optional desk is isolated: its import/configuration failure cannot break old routes.
+try:
+    from desk import install as install_desk
+    install_desk(app)
+except Exception:
+    print('[Desk] optional module unavailable; existing routes remain active')
+
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))

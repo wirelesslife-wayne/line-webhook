@@ -2,3 +2,16 @@
 __pycache__/
 *.pyc
 .env
+
+# Private runtime data must stay outside this public repository.
+*.env
+*.db
+*.sqlite*
+*.log
+*.pem
+*.key
+secrets/
+outputs/
+kb_v2/
+.pytest_cache/
+.desk_venv/

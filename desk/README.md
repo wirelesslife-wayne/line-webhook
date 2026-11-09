@@ -1,0 +1,75 @@
+# LINE 客服工作台（尚未部署）
+
+`desk` 是選擇性 Flask blueprint，掛在 `/desk`。只有設定 `DESK_SECRET_KEY` 才載入。載入失敗由主程式隔離，既有 webhook 與查詢路由保持原行為。此 repo 公開，請勿加入知識庫、歷史問答、客人資料、實際帳密、截圖或執行紀錄。
+
+客服後台雲端擬稿（line-webhook /desk）：Wayne 2026-11-09 核准使用 OpenAI API，月上限 US$30。本機程式已加入 Responses API adapter，仍須 Claude 審核後才 push／部署。失敗、金鑰未設定或額度不足時可人工填寫與確認送出。
+
+## 本機資料準備
+
+在 repo 根目錄以 Python 執行：
+
+```powershell
+.venv/Scripts/python.exe -m desk.tools.upload_kb
+.venv/Scripts/python.exe -m desk.tools.upload_qa
+.venv/Scripts/python.exe -m desk.tools.create_users
+```
+
+三支腳本讀取 `~/Desktop/Claude工作區/secrets/line_webhook_db.env`；只新增／更新 `desk_` 表。歷史問答 SQLite 以唯讀模式讀取，限定 2026-01-01 起，遮蔽已知客人姓名、電話、Email、車牌、LINE ID，沒有上傳姓名欄位。此為規則遮蔽，非保證自由文字去識別零遺漏；啟用任何外部 AI 前需另作資料範圍審核。
+
+既有資料已匯入時，只補資料表可執行 `.venv/Scripts/python.exe -c "from desk.tools.common import store; store()"`，不會重匯知識庫或重設密碼。
+
+建立 `Wayne`、`馨若`，使用 werkzeug 密碼 hash。隨機密碼只寫入 `~/Desktop/Claude工作區/secrets/cs_desk_users.env`。重跑只驗證既有帳號，不重設密碼；帳號檔缺失或不一致會停下。
+
+## 審核後才設定 Render
+
+| 變數 | 用途 |
+| --- | --- |
+| `DATABASE_URL` | 現有 PostgreSQL；沿用 |
+| `LINE_CHANNEL_ACCESS_TOKEN` | 公司客服 OA 的既有 LINE token；沿用，勿改用徐助理 token |
+| `DESK_SECRET_KEY` | 新增高熵隨機 session 簽章密鑰；至少 32 隨機位元組 |
+| `DESK_WORKER_ENABLED` | 設成 `1` 才啟動背景收訊及價格更新；預設不啟動 |
+| `DESK_SEND_ENABLED` | 設成 `1` 才允許登入員工確認後真正發送 LINE；預設不送 |
+| `OPENAI_API_KEY` | 經核准的客服擬稿 API 金鑰；只從環境讀取，不寫 log |
+| `DESK_MODEL` | 預設 `gpt-6.1-sol`；變更其他模型前須在 provider 設定其官方計價，未知價格會停擬稿 |
+| `DESK_MONTHLY_USD` | 客服擬稿每月美元額度，預設 `30`；`0` 停擬稿，格式錯誤也停擬稿 |
+
+保留 `gunicorn app:app`；模組安裝沒有網路與 DB 初始化動作。資料表由本機工具初始化；續作只新增 `desk_ai_usage` 表與索引，不重跑資料匯入或帳號建立。Wayne 已自行在 Render Save only 設定 `OPENAI_API_KEY` 與 `DESK_SECRET_KEY`，本次沒有查看或改動 Render，也未驗證雲端設定。禁止在審核前 push／部署／啟用上述開關。
+
+## 擬稿資料範圍與費用
+
+- 對話頁仍保留完整紀錄。背景擬稿只組裝該客人最近 24 小時（含邊界）的文字與我方成功送出的回覆，排除未來時間；不傳 userId、display_name、員工姓名或附件 metadata。圖片／影片改成 `[image]`／`[video]`，已送圖片只留標記。
+- 僅傳系統口吻規則、車型清單及 DB 知識檢索結果。所有請求內容（包含知識庫與問答）在 HTTP 邊界再次遮蔽電話、車牌、Email、身分證、居留證、LINE 識別碼與已知格式的姓名／地址。規則遮蔽無法保證非標準自由文字個資零遺漏；不會上傳媒體檔案。
+- 固定官方 `https://api.openai.com/v1/responses`，禁止 redirect，不帶 user metadata、不使用外部工具、不沿用 previous_response_id；`store=false`，輸出上限 3,000 tokens，單次輸入最多 80,000 UTF-8 bytes，超過就轉人工。此設定不等同供應商零資料保留政策。
+- 模型使用標準計價。2026-11-09 官方每百萬 tokens 為輸入 US$2、快取輸入 US$0.10、輸出 US$10，參見 [官方模型計價](https://developers.openai.com/api/docs/models/gpt-6.1-sol)。含推理的 output_tokens 只算一次。抽取與回覆兩次請求分別記帳，格式不符但有 usage 仍記實際費用。
+- `desk_ai_usage` 只存隨機請求 ID、台灣月份、模型、tokens、USD 與 settled／reserved 狀態，不存對話或金鑰。台灣時間每月 1 日自動換月，僅因上月額度而 blocked 的對話會自動重回等待；其他擬稿錯誤由人工重新擬稿。
+- 呼叫前在 DB advisory lock 內確認月額度並持久保存保守預留（UTF-8 bytes 加 framing 緩衝、輸入按較高 cache-write 價 US$2.50、輸出取最大量）；成功後改記 usage 實際估算。所有 worker 共用鎖與帳本。無足夠預留空間便提早停止，不等最後一筆超支。預留會計入門檻，80% 頂部標黃，100% 顯示「本月 AI 額度已用完，請手動回覆」。
+- 逾時、非 200、usage 不明、程序中斷均保留預留，避免重啟後遺失費用；無自動 HTTP 重試。核對供應商帳單後才能人工處理未結預留，程式不擅自歸零。僅計本客服後台的請求；同一金鑰供其他系統使用的費用不在本帳本內。金額是標準 token 估算，不是供應商整個帳戶的硬性花費上限。
+
+## 行為與維運
+
+- 首次收訊只接手最近 3 小時，之後用來源 ID 分頁追蹤，`messages` 僅 SELECT。每 30 秒收訊，靜默 60 秒才擬稿；來源新進線會使舊草稿失效。不同執行緒處理擬稿及收訊，DB advisory lock 協調多 worker。
+- 重啟時在擬稿鎖內回復中斷的擬稿狀態；背景失敗不影響 webhook，頁面顯示背景收訊逾時。
+- `time_str` 按 UTC 解讀，介面呈現台灣時間。完整對話串接客人原訊息與 `desk_outgoing` 成功紀錄；LINE 後台人工回覆只能標記，無法還原該後台未提供的文字。
+- 每日從官網 `branding` 的 `script#wlf-data` 更新價格，檢查 schema 後才覆寫 DB；失敗保留原資料並標黃。所有私有知識存 DB。
+- Session 為簽章 cookie＋DB session，有效 12 小時、Secure／HttpOnly／SameSite=Lax、路徑 `/desk`。5 次失敗鎖 15 分鐘；登入表單和登入後 API 都檢查 CSRF。桌機／手機採同一介面。
+- 只有人工 POST 確認才傳送。先保存 intent，再由 `desk.notifier.LineNotifier` 集中呼叫 LINE push；成功才寫 `desk_outgoing`。所有嘗試包含員工、時間、內容與 LINE HTTP 狀態；失敗保留草稿。
+- 每位客人用 DB 鎖串行傳送，10 秒限制；每個確認使用 UUID retry key。逾時／5xx 保留原 key，禁止換 key 另送。23 小時後拒絕自動重試，需人工到 LINE 後台查核。409 僅在含 `x-line-accepted-request-id` 時視為已接受。
+- 「已在 LINE 後台回覆（不送）」會留下人工處理紀錄，不捏造已送訊息。這也可結束經人工查核的未知傳送狀態。
+- 附圖只允許候選清單內 HTTPS JPG/JPEG/PNG，最多 4 張，文字＋圖片最多 5 則。影片以文字連結處理。候選來自制式回覆、官網 catalog 與頁面商品圖；未逐張下載檢查尺寸／容量，LINE 拒絕時顯示錯誤並保留草稿。
+
+## 驗證
+
+```powershell
+.venv/Scripts/python.exe -m pip install -r requirements-dev.txt
+.venv/Scripts/python.exe -m pytest tests -q
+```
+
+完整 DB 測試需以私密載入方式設定 `DESK_TEST_DATABASE_URL`，與部署 DB 相同即可。測試的 `desk_` 樣本只存在交易內，結束全部 rollback；來源表唯讀，LINE／AI 全部 mock。未提供測試 DB 時資料庫測試會 skip，不代表完整驗證通過。
+
+實際執行結果與六張以上截圖保存在本次交辦的 `outputs/ca_cs_desk_cloud/` 時戳目錄，請見交辦 `.result.md`。沒有任何正式客人發送測試，亦未驗證 Render 上線行為。
+
+## 回復
+
+未 push、未部署時，現有 Render 服務沒有變動。停止載入客服後台可移除 `DESK_SECRET_KEY` 並維持兩個開關不啟用；程式回復可還原本次備份的 `app.py`、`.gitignore`。保留 `desk_` 表與帳號檔，無須刪除資料。若要刪除任何多筆資料／檔案，先列出清單取得 Wayne 確認。
+
+參考： [Flask 安全說明](https://flask.palletsprojects.com/en/stable/web-security/)、[LINE 重試規則](https://developers.line.biz/en/docs/messaging-api/retrying-api-request/)、[LINE Messaging API](https://developers.line.biz/en/reference/messaging-api/)。
