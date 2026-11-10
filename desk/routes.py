@@ -8,6 +8,7 @@ from .engine import Engine
 from .notifier import LineNotifier
 from .service import send,mark_done,redraft,ActionError
 from .worker import local_time,utc_time,timeline
+from .knowledge import can_review,require_reviewer,submit,review
 from werkzeug.wsgi import get_input_stream
 
 
@@ -85,7 +86,61 @@ def make_blueprint(store,notifier=None):
     @bp.route('')
     @bp.route('/')
     def index():
-        return render_template('page.html',staff=g.staff)
+        return render_template('page.html',staff=g.staff,can_review=can_review(g.staff))
+
+    @bp.get('/knowledge')
+    def knowledge_page():
+        require_reviewer(g.staff)
+        return render_template('knowledge.html',staff=g.staff)
+
+    @bp.get('/api/knowledge')
+    def knowledge_list():
+        require_reviewer(g.staff)
+        status = request.args.get('status','pending')
+        if status not in ('pending','approved','rejected','withdrawn'):
+            raise ActionError('知識分類不正確',400)
+        try:
+            page = max(0,int(request.args.get('page',0)))
+        except ValueError:
+            raise ActionError('頁碼不正確',400)
+        rows = store.all('''SELECT k.*,u.username AS submitter,r.username AS reviewer FROM desk_knowledge k
+          JOIN desk_users u ON u.id=k.submitted_by LEFT JOIN desk_users r ON r.id=k.reviewed_by
+          WHERE k.status=%s ORDER BY k.id DESC LIMIT 51 OFFSET %s''',(status,page*50))
+        items = []
+        for row in rows[:50]:
+            item = dict(row)
+            for key in ('created_at','reviewed_at','updated_at'):
+                item[key] = local_time(item[key]) if item[key] else None
+            items.append(item)
+        return jsonify(items=items,page=page,has_more=len(rows)>50)
+
+    @bp.post('/api/knowledge')
+    def knowledge_submit():
+        return jsonify(submit(store,g.staff,request.get_json(silent=True))),201
+
+    @bp.post('/api/knowledge/<int:kid>/review')
+    def knowledge_review(kid):
+        return jsonify(review(store,g.staff,kid,request.get_json(silent=True)))
+
+    @bp.get('/api/knowledge/prefill')
+    def knowledge_prefill():
+        c = store.conversation(request.args.get('user_id',''))
+        if not c:
+            raise ActionError('找不到對話',404)
+        incoming = store.incoming(c['user_id'],c['handled_upto'])
+        latest = store.one('''SELECT o.content,a.source_upto FROM desk_outgoing o
+          JOIN desk_send_attempts a ON a.retry_key=o.retry_key WHERE o.user_id=%s
+          ORDER BY o.sent_at DESC,o.id DESC LIMIT 1''',(c['user_id'],))
+        # Recover questions for the latest successful send after handled_upto advanced.
+        if not incoming and latest:
+            previous = store.one('''SELECT a.source_upto FROM desk_outgoing o
+              JOIN desk_send_attempts a ON a.retry_key=o.retry_key WHERE o.user_id=%s
+              ORDER BY o.sent_at DESC,o.id DESC OFFSET 1 LIMIT 1''',(c['user_id'],))
+            incoming = [r for r in store.incoming(c['user_id'],previous['source_upto'] if previous else 0)
+                        if r['id'] <= latest['source_upto']]
+        question = '\n'.join(r['content'] or '' for r in incoming if r['message_type']=='text')[-5000:]
+        answer = latest['content'] if latest and not any(r['id']>latest['source_upto'] for r in incoming) else ''
+        return jsonify(question=question,answer=answer[:5000])
 
     @bp.get('/api/list')
     def listing():

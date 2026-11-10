@@ -1,4 +1,5 @@
 let tab='todo',page=0,selected=null,current=null,sending=false;
+let learnTarget=null,learning=false;
 let selectionVersion=0,listVersion=0,confirmation=null,editorBase='',retrySnapshot=null;
 const el=id=>document.getElementById(id);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -27,7 +28,7 @@ function render(d,preserve=null){
  current=d;const r=d.result||{},pending=d.pending;
  const text=preserve?.text??pending?.text??(d.stale_draft?'':r.draft??'');
  editorBase=text;
- el('detail').innerHTML=`<button class="back" id="back">← 對話清單</button><h2>${esc(d.name)}</h2><p class="muted">${statusText[d.status]||esc(d.status)} · 時間為台灣時間</p><button id="refresh-detail" class="note" hidden>有新訊息，按此重新載入</button><div class="messages">${d.messages.map(m=>`<div class="message ${m.role==='assistant'?'ours':''}"><small>${m.role==='assistant'?'我方':'客人'} · ${esc(m.time)}</small>${esc(m.text)}${(m.images||[]).map(u=>`<div><a href="${esc(u)}" target="_blank" rel="noopener noreferrer">查看已送圖片</a></div>`).join('')}</div>`).join('')||'<p class="muted">尚無對話內容</p>'}</div>${d.stale_draft?'<p class="note">草稿是舊的，客人有新訊息；請看完訊息並重新擬稿。</p>':''}${pending?`<p class="note">${esc(pending.staff)} 的傳送結果待確認。${pending.can_retry?'可用原確認框重試。':'請由原傳送同事重試，或到 LINE 後台查核後標記已回覆。'}</p>`:''}${r.staff_note?`<p class="note">${esc(r.staff_note)}</p>`:''}${(r.flags||[]).map(f=>`<p class="error">${esc(f)}</p>`).join('')}<label for="draft">回覆草稿（可修改）</label><textarea id="draft" maxlength="5000" placeholder="在這裡填寫給客人的回覆">${esc(text)}</textarea><details><summary>可附的商品圖片（最多 4 張）</summary><div class="images">${d.images.map(i=>`<label><input type="checkbox" name="image" value="${esc(i.url)}">${imageMarkup(i)}</label>`).join('')||'<p class="muted">沒有可附圖片</p>'}</div></details><div class="actions"><button class="primary" id="open-confirm">檢查並送出</button><button id="redraft">重新擬稿</button><button id="done">已在 LINE 後台回覆（不送）</button></div><div id="action-feedback" role="status" hidden></div>`;
+ el('detail').innerHTML=`<button class="back" id="back">← 對話清單</button><h2>${esc(d.name)}</h2><p class="muted">${statusText[d.status]||esc(d.status)} · 時間為台灣時間</p><button id="refresh-detail" class="note" hidden>有新訊息，按此重新載入</button><div class="messages">${d.messages.map(m=>`<div class="message ${m.role==='assistant'?'ours':''}"><small>${m.role==='assistant'?'我方':'客人'} · ${esc(m.time)}</small>${esc(m.text)}${(m.images||[]).map(u=>`<div><a href="${esc(u)}" target="_blank" rel="noopener noreferrer">查看已送圖片</a></div>`).join('')}</div>`).join('')||'<p class="muted">尚無對話內容</p>'}</div>${d.stale_draft?'<p class="note">草稿是舊的，客人有新訊息；請看完訊息並重新擬稿。</p>':''}${pending?`<p class="note">${esc(pending.staff)} 的傳送結果待確認。${pending.can_retry?'可用原確認框重試。':'請由原傳送同事重試，或到 LINE 後台查核後標記已回覆。'}</p>`:''}${r.staff_note?`<p class="note">${esc(r.staff_note)}</p>`:''}${(r.flags||[]).map(f=>`<p class="error">${esc(f)}</p>`).join('')}<label for="draft">回覆草稿（可修改）</label><textarea id="draft" maxlength="5000" placeholder="在這裡填寫給客人的回覆">${esc(text)}</textarea><details><summary>可附的商品圖片（最多 4 張）</summary><div class="images">${d.images.map(i=>`<label><input type="checkbox" name="image" value="${esc(i.url)}">${imageMarkup(i)}</label>`).join('')||'<p class="muted">沒有可附圖片</p>'}</div></details><div class="actions"><button class="primary" id="open-confirm">檢查並送出</button><button id="redraft">重新擬稿</button><button id="learn-open">存成知識</button><button id="done">已在 LINE 後台回覆（不送）</button></div><div id="action-feedback" role="status" hidden></div>`;
  if(pending)el('draft').readOnly=true;
  document.querySelectorAll('[name=image]').forEach(x=>{x.checked=(preserve?.images??pending?.images??[]).includes(x.value);x.disabled=!!pending});
  el('open-confirm').disabled=!!pending&&!pending.can_retry;
@@ -76,6 +77,14 @@ function snapshot(){
 document.addEventListener('click',async e=>{
  const b=e.target.closest('button');if(!b)return;
  try{
+ if(b.id==='learn-cancel'&&!learning){el('learn-dialog').close();learnTarget=null;return}
+ if(b.id==='learn-open'&&current){
+  const uid=selected,v=selectionVersion,draft=el('draft').value;b.disabled=true;
+  try{const d=await api('knowledge/prefill?user_id='+encodeURIComponent(uid));if(!matches(uid,v))return;
+   learnTarget=uid;el('learn-form').reset();el('learn-question').value=d.question;el('learn-answer').value=d.answer||draft;
+   el('learn-feedback').hidden=true;el('learn-dialog').showModal();
+  }finally{b.disabled=false}return;
+ }
  if(b.dataset.tab){tab=b.dataset.tab;page=0;document.querySelectorAll('[data-tab]').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));back();await loadList();return}
  if(b.dataset.uid){await select(b.dataset.uid);return}
  if(b.id==='prev'||b.id==='next'){page=Math.max(0,page+(b.id==='prev'?-1:1));await loadList();return}
@@ -121,3 +130,12 @@ document.addEventListener('input',e=>{if(e.target.id==='draft'&&!current?.pendin
 document.addEventListener('change',e=>{if(e.target.name==='image'&&!current?.pending)retrySnapshot=null});
 el('confirm').addEventListener('cancel',e=>{if(sending)e.preventDefault();else confirmation=null});
 loadList();setInterval(poll,15000);
+
+el('learn-dialog').addEventListener('cancel',e=>{if(learning)e.preventDefault();else learnTarget=null});
+el('learn-form').addEventListener('submit',async e=>{
+ e.preventDefault();if(learning||!learnTarget)return;learning=true;el('learn-submit').disabled=true;el('learn-cancel').disabled=true;
+ try{await api('knowledge',{user_id:learnTarget,question:el('learn-question').value,answer:el('learn-answer').value,summary:el('learn-summary').value,scope:el('learn-scope').value});
+  el('learn-dialog').close();learnTarget=null;feedback('已送交 Wayne 審核，核准後 AI 才會使用。');
+ }catch(err){el('learn-feedback').hidden=false;el('learn-feedback').textContent=err.message}
+ finally{learning=false;el('learn-submit').disabled=false;el('learn-cancel').disabled=false}
+});

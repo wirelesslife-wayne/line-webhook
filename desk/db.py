@@ -52,6 +52,18 @@ CREATE TABLE IF NOT EXISTS desk_ai_usage (
  input_tokens BIGINT, cached_tokens BIGINT, output_tokens BIGINT,
  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
 CREATE INDEX IF NOT EXISTS desk_ai_usage_month ON desk_ai_usage(month);
+CREATE TABLE IF NOT EXISTS desk_knowledge (
+ id BIGSERIAL PRIMARY KEY, conversation_id TEXT NOT NULL,
+ question TEXT NOT NULL, answer TEXT NOT NULL, summary TEXT NOT NULL, scope TEXT NOT NULL DEFAULT '',
+ status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected','withdrawn')),
+ submitted_by BIGINT NOT NULL REFERENCES desk_users(id), created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+ reviewed_by BIGINT REFERENCES desk_users(id), reviewed_at TIMESTAMPTZ,
+ version INT NOT NULL DEFAULT 1, updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
+CREATE INDEX IF NOT EXISTS desk_knowledge_status ON desk_knowledge(status,id);
+CREATE TABLE IF NOT EXISTS desk_knowledge_events (
+ id BIGSERIAL PRIMARY KEY, knowledge_id BIGINT NOT NULL REFERENCES desk_knowledge(id),
+ staff_id BIGINT NOT NULL REFERENCES desk_users(id), action TEXT NOT NULL,
+ snapshot JSONB NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
 '''
 
 

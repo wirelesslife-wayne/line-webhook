@@ -1,11 +1,21 @@
 {% extends 'base.html' %}
 {% block user %}<form method="post" action="/desk/logout"><span>{{ staff.username }}</span><input name="csrf" type="hidden" value="{{ staff.csrf }}"><button>登出</button></form>{% endblock %}
 {% block body %}<main>
+<style nonce="{{ g.nonce }}">#learn-dialog textarea{min-height:96px}</style>
+{% if can_review %}<p><a href="/desk/knowledge">知識待審／已核准</a></p>{% endif %}
 <div class="tabs" aria-label="對話分類"><button data-tab="todo" aria-pressed="true">待回覆</button><button data-tab="done" aria-pressed="false">已處理</button><button data-tab="skip" aria-pressed="false">按選單／貼圖</button></div>
 <div id="ai-budget" class="note" role="status" hidden></div><div id="price" class="note" hidden></div><div id="worker" class="note" hidden></div><div id="feedback" class="error" role="alert"></div>
 <div class="layout" id="layout"><section aria-label="對話清單"><div class="conversation-list" id="list">讀取中…</div><div class="actions"><button id="prev">上一頁</button><button id="next">下一頁</button></div></section>
 <section id="detail" class="card"><p class="muted">選擇一位客人，查看對話與回覆草稿。</p></section></div>
 <dialog id="confirm"><h2 id="recipient"></h2><p>請確認收件人與以下回覆，再按送出。</p><div id="preview"></div><div id="preview-images" class="images"></div><p id="image-count" class="muted"></p><div class="actions"><button id="cancel">返回修改</button><button id="send" class="primary">確認送出</button></div></dialog>
+<dialog id="learn-dialog" aria-labelledby="learn-title"><form id="learn-form">
+<h2 id="learn-title">存成知識</h2><p class="muted">送出後由 Wayne 審核，核准才會供 AI 參考。這不會傳送 LINE。</p>
+<label for="learn-question">客人問的</label><textarea id="learn-question" required maxlength="5000"></textarea>
+<label for="learn-answer">我們的回答</label><textarea id="learn-answer" required maxlength="5000"></textarea>
+<label for="learn-summary">一句話重點</label><input id="learn-summary" type="text" required maxlength="300">
+<label for="learn-scope">適用車款／產品（選填）</label><input id="learn-scope" type="text" maxlength="200">
+<p id="learn-feedback" class="error" role="alert" hidden></p><div class="actions"><button type="button" id="learn-cancel">取消</button><button type="submit" id="learn-submit" class="primary">送交 Wayne 審核</button></div>
+</form></dialog>
 </main>
 <script nonce="{{ g.nonce }}">
 const csrf={{ staff.csrf|tojson }};

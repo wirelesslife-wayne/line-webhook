@@ -1,0 +1,12 @@
+{% extends 'base.html' %}
+{% block user %}<span>{{ staff.username }}</span>{% endblock %}
+{% block body %}<main>
+<style nonce="{{ g.nonce }}">.knowledge-item{margin-bottom:16px}</style>
+<p><a href="/desk/">← 回對話工作台</a></p><h1>知識審核</h1>
+<p class="muted">核准後供新擬稿參考；價格仍以價格表／制式回覆為準。時間為台灣時間。</p>
+<div class="tabs"><button data-status="pending" aria-pressed="true">待審</button><button data-status="approved" aria-pressed="false">已核准</button><button data-status="rejected" aria-pressed="false">已退回</button><button data-status="withdrawn" aria-pressed="false">已撤回</button></div>
+<p id="feedback" role="status"></p><div id="knowledge-list"></div><div class="actions"><button id="prev">上一頁</button><button id="next">下一頁</button></div>
+</main><script nonce="{{ g.nonce }}">
+const csrf={{ staff.csrf|tojson }};
+{% include 'knowledge.js' %}
+</script>{% endblock %}
