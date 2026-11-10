@@ -173,12 +173,28 @@ def get_user_profile(user_id, token=None):
     return 'Unknown'
 
 
+def forward_line_event(body, signature):
+    """把 LINE 原始事件轉給其他客服系統（例如 Chatwoot）。
+    LINE 只能設一個 webhook 網址，所以由這裡轉發；原始 body 與簽章不變，對方用同一把 channel secret 驗證。
+    沒設 LINE_FORWARD_URLS 就什麼都不做；轉發失敗不影響本服務。"""
+    urls = [u.strip() for u in os.environ.get('LINE_FORWARD_URLS', '').split(',') if u.strip()]
+    for url in urls:
+        try:
+            requests.post(url, data=body, timeout=10,
+                          headers={'Content-Type': 'application/json', 'X-Line-Signature': signature})
+        except Exception as e:
+            print('[forward] 轉發失敗：' + repr(e)[:200])
+
+
 @app.route('/webhook', methods=['POST'])
 def webhook():
     signature = request.headers.get('X-Line-Signature', '')
     body = request.get_data()
     if not verify_signature(body, signature, LINE_CHANNEL_SECRET):
         abort(400)
+    if os.environ.get('LINE_FORWARD_URLS'):
+        import threading
+        threading.Thread(target=forward_line_event, args=(body, signature), daemon=True).start()
     data = json.loads(body)
     for event in data.get('events', []):
         if event.get('type') == 'message':
