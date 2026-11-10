@@ -1,4 +1,5 @@
 """Public product-image index. No whole-site image fallback."""
+import html
 import re
 from urllib.parse import urlsplit, urlunsplit
 import requests
@@ -7,9 +8,10 @@ from .db import now
 STORE_URL = 'https://carandroid.com.tw/wp-json/wc/store/v1/products'
 KINDS = [
     ('box', r'安卓盒|android\s*box|Z8|Z系列'),
-    ('mirror', r'後視鏡|後照鏡|四錄|S14|B42'),
+    ('mirror', r'後視鏡|後照鏡|四錄|S14|B42|418|WRM'), ('sunshade', r'遮陽簾'),
     ('android', r'安卓|車機|主機|android|\b(?:EX|DX|MX|T9|T10|T3|A3\d|H2\d)\b'),
-    ('camera', r'環景|360'), ('blind', r'盲點|BSD'),
+    # 「360」單獨出現不算環景（例：Tesla 360° 旋轉車用桌）；要搭配環景／鏡頭等字。
+    ('camera', r'環景|環視|360\s*[°度]?\s*(?:環|鏡頭|系統)|倒車鏡頭|鏡頭'), ('blind', r'盲點|BSD'),
     ('audio', r'音響|喇叭|重低音|擴大機|DSP'),
     ('tailgate', r'尾門|撐桿|腳踢'), ('light', r'氣氛燈|氛圍燈'),
     ('rear', r'吸頂|後座|背掛'), ('carplay', r'carplay'),
@@ -17,7 +19,11 @@ KINDS = [
 
 
 def norm(s):
-    return re.sub(r'[\s_\-]', '', str(s or '').lower())
+    return re.sub(r'[\s_\-–—]', '', html.unescape(str(s or '')).lower())
+
+
+# 配件類（模組、線材、天線…）只有客人明講才出，避免問主機卻附配件圖。
+ACCESSORY = r'模組|電源線|天線|外接|轉接|鏡蓋|配件|支架|線組|強光抑制'
 
 
 def kinds(s):
@@ -140,6 +146,10 @@ def select_images(index, wlf, text='', extract=None):
         if image_url(p.get('image','')):
             candidates.append({'name':p['name'],'url':p['image'],'categories':[]})
     known_models = {norm(c['model']) for c in wlf.get('cars',[]) if len(norm(c['model']))>=3}
+    known_brands = {norm(c.get('b')) for c in wlf.get('cars',[]) if len(norm(c.get('b')))>=3} | {'tesla','特斯拉'}
+    brand = norm(ex.get('brand'))
+    if brand == '特斯拉':
+        brand = 'tesla'
     if not model:
         model = next((m for m in sorted(known_models,key=len,reverse=True) if m in norm(text)), '')
     ranked = []
@@ -157,14 +167,22 @@ def select_images(index, wlf, text='', extract=None):
                 continue
         elif not exact:
             continue
+        # 品名帶有車廠（例：Tesla 專用品）時，客人車廠要相同才出現；不知道客人車廠就不出。
+        item_brands = {('tesla' if b=='特斯拉' else b) for b in known_brands if b in name_norm}
+        if item_brands and not (brand and any(b in brand or brand in b for b in item_brands)):
+            continue
         # Avoid a specific different vehicle even if a broad category matches.
         vehicle_models = {m for m in known_models if m in name_norm}
         if vehicle_models and (not model or not any(m in model or model in m for m in vehicle_models)):
             continue
         if series and norm(series) not in name_norm:
             continue
+        if re.search(ACCESSORY, html.unescape(name)) and not re.search(ACCESSORY, query):
+            continue
         rank = (4 if model and model in name_norm else 0)+(2 if exact else 0)
-        ranked.append((rank,item))
+        ranked.append((rank,dict(item,name=html.unescape(name),exact=exact)))
+    if any(i['exact'] for _,i in ranked):  # 客人點名的型號優先，只給那幾款
+        ranked = [(r,i) for r,i in ranked if i['exact']]
     result, seen = [], set()
     for _,item in sorted(ranked,key=lambda x:-x[0]):
         if item['url'] not in seen:
