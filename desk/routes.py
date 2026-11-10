@@ -1,10 +1,11 @@
 import hmac
 import os
 import secrets
-from flask import Blueprint,request,g,jsonify,redirect,render_template,make_response
+from io import BytesIO
+from flask import Blueprint,request,g,jsonify,redirect,render_template,make_response,send_file
 from .auth import Auth,COOKIE
 from .db import now
-from .engine import Engine
+from . import media
 from .notifier import LineNotifier
 from .service import send,mark_done,redraft,ActionError
 from .worker import local_time,utc_time,timeline
@@ -21,7 +22,11 @@ def make_blueprint(store,notifier=None):
     def protect():
         g.nonce = secrets.token_urlsafe(18)
         # Flask 3.0 has no per-request max_content_length setter.
-        request.stream = get_input_stream(request.environ,max_content_length=32768)
+        request.stream = get_input_stream(request.environ,max_content_length=(media.VIDEO_LIMIT+media.PREVIEW_LIMIT+32768)
+            if request.endpoint=='desk.media_upload' else 32768)
+        # Only GET/HEAD to this exact endpoint may bypass session/CSRF.
+        if request.endpoint == 'desk.media_read' and request.method in ('GET','HEAD'):
+            return
         if request.endpoint == 'desk.login':
             return
         try:
@@ -31,9 +36,11 @@ def make_blueprint(store,notifier=None):
         if not g.staff:
             return (jsonify(error='請先登入'),401) if '/api/' in request.path else redirect('/desk/login')
         if request.method != 'GET':
-            body = request.get_json(silent=True)
-            body = body if isinstance(body,dict) else request.form
-            token = request.headers.get('X-CSRF-Token') or body.get('csrf','')
+            token = request.headers.get('X-CSRF-Token')
+            if not token and request.endpoint!='desk.media_upload':
+                body = request.get_json(silent=True)
+                body = body if isinstance(body,dict) else request.form
+                token = body.get('csrf','')
             if not isinstance(token,str) or not hmac.compare_digest(token,g.staff['csrf']):
                 return jsonify(error='驗證已失效，請重新載入頁面'),403
 
@@ -44,7 +51,7 @@ def make_blueprint(store,notifier=None):
         response.headers['Referrer-Policy']='no-referrer'
         response.headers['X-Frame-Options']='DENY'
         response.headers['Content-Security-Policy']=("default-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; "
-            "img-src 'self' https:; style-src 'nonce-"+g.nonce+"'; script-src 'nonce-"+g.nonce+"'; connect-src 'self'")
+            "img-src 'self' https: blob:; media-src 'self' blob:; style-src 'nonce-"+g.nonce+"'; script-src 'nonce-"+g.nonce+"'; connect-src 'self'")
         return response
 
     @bp.errorhandler(ActionError)
@@ -177,21 +184,45 @@ def make_blueprint(store,notifier=None):
         c = store.conversation(request.args.get('user_id',''))
         if not c:
             raise ActionError('找不到對話',404)
-        try:
-            images = Engine(store).attachments(' '.join(r['content'] or '' for r in store.incoming(c['user_id'],c['handled_upto'])),
-                (c['draft'] or {}).get('extract') if c['drafted_upto']==c['last_source_id'] else None)
-        except ValueError:
-            images = []
         pending = store.one("""SELECT a.retry_key,a.content,a.images,a.source_upto,a.staff_id,u.username,a.created_at
           FROM desk_send_attempts a JOIN desk_users u ON u.id=a.staff_id
           WHERE a.user_id=%s AND a.status IN ('sending','unknown') ORDER BY a.created_at DESC LIMIT 1""",(c['user_id'],))
         latest = max(c['last_source_id'],store.latest_source(c['user_id']))
         stale = bool(c['draft']) and (c['drafted_upto'] or 0) < latest
         return jsonify(user_id=c['user_id'],name=c['display_name'],status=c['status'],source_upto=c['last_source_id'],
-            result=c['draft'] or {},stale_draft=stale,latest_source=latest,messages=timeline(store,c),images=images,
+            result={k:v for k,v in (c['draft'] or {}).items() if k!='images'},stale_draft=stale,latest_source=latest,
+            messages=timeline(store,c),media=media.available(store,g.staff,c['user_id']),
             pending={'retry_key':str(pending['retry_key']),'text':pending['content'],'images':pending['images'],
                 'source_upto':pending['source_upto'],'staff':pending['username'],
                 'can_retry':pending['staff_id']==g.staff['id'] and (now()-pending['created_at']).total_seconds()<23*3600} if pending else None)
+
+    @bp.post('/api/media')
+    def media_upload():
+        if set(request.files) != {'file','preview'} or any(len(request.files.getlist(k))!=1 for k in request.files):
+            raise ActionError('每次上傳一個檔案與預覽圖',400)
+        return jsonify(media=media.upload(store,g.staff,request.form.get('user_id'),request.files['file'],request.files['preview'])),201
+
+    @bp.post('/api/media/<token>/remove')
+    def media_remove(token):
+        body=request.get_json(silent=True) or {}
+        if not isinstance(body,dict) or not media.TOKEN.fullmatch(token):
+            raise ActionError('附件資料不正確',400)
+        media.remove(store,g.staff,token,body.get('user_id'))
+        return jsonify(ok=True)
+
+    @bp.get('/media/<token>')
+    def media_read(token):
+        if not media.TOKEN.fullmatch(token):
+            return jsonify(error='找不到附件'),404
+        row=store.one('''SELECT id,data,preview_data,content_type,removed_at,cleared_at,
+          uploaded_at > NOW()-INTERVAL '30 days' AS active FROM desk_media WHERE id=%s OR preview_token=%s''',(token,token))
+        if not row:
+            return jsonify(error='找不到附件'),404
+        if not row['active'] or row['removed_at'] or row['cleared_at'] or row['data'] is None:
+            return jsonify(error='附件已移除或超過保存期限'),410
+        preview=token!=row['id']
+        return send_file(BytesIO(bytes(row['preview_data'] if preview else row['data'])),
+            mimetype='image/jpeg' if preview else row['content_type'],conditional=True,etag=False,max_age=0)
 
     @bp.post('/api/send')
     def do_send():

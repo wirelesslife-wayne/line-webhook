@@ -19,5 +19,6 @@
 </main>
 <script nonce="{{ g.nonce }}">
 const csrf={{ staff.csrf|tojson }};
+{% include 'media.js' %}
 {% include 'workbench.js' %}
 </script>{% endblock %}

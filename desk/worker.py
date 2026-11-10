@@ -47,8 +47,8 @@ def timeline(store, convo, for_ai=False, current=None):
     for r in rows:
         r.pop('sort')
         if for_ai:
-            if r.pop('images',None):
-                r['text'] += ' [image]'
+            for item in r.pop('images',[]) or []:
+                r['text'] += ' [video]' if isinstance(item,dict) and item.get('type')=='video' else ' [image]'
     return rows
 
 
@@ -116,7 +116,6 @@ def refresh_prices(store, fetch=requests.get):
             data = json.loads(''.join(parser.payload))
             validate_prices(data)
             store.put_kb('wlf-data.json',data)
-            store.set_meta('website_images',list(dict.fromkeys(parser.images)))
             store.set_meta('price_success',now().isoformat())
             store.set_meta('price_error',False)
         except Exception:
@@ -168,8 +167,8 @@ def start_worker(store):
             try:
                 store.ingest()
                 refresh_prices(store)
-                from .catalog import refresh_catalog
-                refresh_catalog(store)
+                from .media import cleanup
+                cleanup(store)
                 store.set_meta('reader_heartbeat',now().isoformat())
             except Exception:
                 pass  # Isolated from webhook, UI reports stale heartbeat.

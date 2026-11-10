@@ -65,6 +65,8 @@ CREATE TABLE IF NOT EXISTS desk_knowledge_events (
  staff_id BIGINT NOT NULL REFERENCES desk_users(id), action TEXT NOT NULL,
  snapshot JSONB NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
 '''
+from .media import SCHEMA as MEDIA_SCHEMA
+SCHEMA += MEDIA_SCHEMA
 
 
 class Store:

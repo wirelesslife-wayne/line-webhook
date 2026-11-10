@@ -108,7 +108,7 @@ def test_webp_resolution_only_in_daily_refresh_and_db_cache(db):
     head.assert_called_once()
     fetch.assert_called_once()
     assert db.meta('product_image_originals')=={'https://example.com/a.webp':'https://example.com/a.jpg'}
-    assert Engine(db).attachments('EX 安卓主機',{'products':['安卓主機'],'series':'EX'})[0]['url']=='https://example.com/a.jpg'
+    assert Engine(db).attachments('EX 安卓主機',{'products':['安卓主機'],'series':'EX'})==[]
     head.assert_called_once()
 
 

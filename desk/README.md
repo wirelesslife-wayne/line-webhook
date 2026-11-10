@@ -1,4 +1,4 @@
-# LINE 客服工作台（尚未部署）
+# LINE 客服工作台（媒體上傳功能待審核）
 
 `desk` 是選擇性 Flask blueprint，掛在 `/desk`。只有設定 `DESK_SECRET_KEY` 才載入。載入失敗由主程式隔離，既有 webhook 與查詢路由保持原行為。此 repo 公開，請勿加入知識庫、歷史問答、客人資料、實際帳密、截圖或執行紀錄。
 
@@ -29,6 +29,7 @@
 | `DESK_SECRET_KEY` | 新增高熵隨機 session 簽章密鑰；至少 32 隨機位元組 |
 | `DESK_WORKER_ENABLED` | 設成 `1` 才啟動背景收訊及價格更新；預設不啟動 |
 | `DESK_SEND_ENABLED` | 設成 `1` 才允許登入員工確認後真正發送 LINE；預設不送 |
+| `DESK_MEDIA_BASE_URL` | 附件公開 HTTPS 站台根網址，例如 `https://你的服務網域`，不可含路徑；未設定時拒絕附檔送出，文字送出不受影響 |
 | `OPENAI_API_KEY` | 經核准的客服擬稿 API 金鑰；只從環境讀取，不寫 log |
 | `DESK_MODEL` | 預設 `gpt-6.1-sol`；變更其他模型前須在 provider 設定其官方計價，未知價格會停擬稿 |
 | `DESK_MONTHLY_USD` | 客服擬稿每月美元額度，預設 `30`；`0` 停擬稿，格式錯誤也停擬稿 |
@@ -64,7 +65,20 @@
 - 只有人工 POST 確認才傳送。先保存 intent，再由 `desk.notifier.LineNotifier` 集中呼叫 LINE push；成功才寫 `desk_outgoing`。所有嘗試包含員工、時間、內容與 LINE HTTP 狀態；失敗保留草稿。
 - 每位客人用 DB 鎖串行傳送，10 秒限制；每個確認使用 UUID retry key。逾時／5xx 保留原 key，禁止換 key 另送。23 小時後拒絕自動重試，需人工到 LINE 後台查核。409 僅在含 `x-line-accepted-request-id` 時視為已接受。
 - 「已在 LINE 後台回覆（不送）」會留下人工處理紀錄，不捏造已送訊息。這也可結束經人工查核的未知傳送狀態。
-- 附圖只允許候選清單內 HTTPS JPG/JPEG/PNG，最多 4 張，文字＋圖片最多 5 則。影片以文字連結處理。候選來自制式回覆、官網 catalog 與頁面商品圖；未逐張下載檢查尺寸／容量，LINE 拒絕時顯示錯誤並保留草稿。
+- 附件由員工在電腦／手機按「加入圖片／影片」自行選取，可混用 JPEG、PNG、MP4，最多 4 個檔案，順序為一則文字再依選取順序附檔。手機使用原生檔案選取器，可依裝置提供的相簿／相機選項選檔；不強制開啟相機。AI 只產生文字，不再回傳商品圖建議；舊 catalog 程式保留供回復，背景不再更新商品圖片索引，也不再保存 branding 圖片索引。每日價格更新維持原行為。制式文字中的影片連結維持文字。
+
+### 員工上傳媒體（本機待 Claude 審核）
+
+- 新增 `desk_media` 一張表及兩個索引，DDL 在 `desk/media.py:SCHEMA` 並納入 `desk/db.py:SCHEMA`。部署前由 Claude 以既有補表流程套用；本次未建正式表、未操作 Render、未 push。新依賴 `Pillow==13.0.0` 用於驗證圖片及預覽圖，須隨 requirements 安裝。
+- 每個檔案與其 JPEG 預覽各有獨立的 32 位十六進位隨機 token（128 bits）。表內保存原檔 BYTEA、預覽 BYTEA、MIME、兩者大小、檔名、上傳員工、對應客人、上傳／送出／移除／清空時間、最後一次 retry key。原檔／預覽皆經 `GET`／`HEAD /desk/media/<token>` 公開讀取，免登入；無目錄、無公開寫入，正確回傳 Content-Type、Content-Length，支援 Range。失效檔案回 410、未知 token 回 404，均 no-store、nosniff；只有這個確切讀取端點放行，其餘後台仍需原本登入與 CSRF。
+- 上傳採登入員工的 header CSRF，每次一個原檔加一個 JPEG 預覽；後端驗證真實圖片內容／尺寸、MIME、MP4 容器基本結構，不接受 SVG、GIF、WebP、HEIC 或偽造 MIME。圖片上限 10 MB；超過時瀏覽器縮至長邊 2048 px 內，以 JPEG 多階品質壓縮至上限，壓不下就拒收。預覽圖由瀏覽器產生，長邊最多 240 px；後端驗證後重編碼移除 metadata。伺服器拒收超過 4,000 萬像素及多影格圖片，以限制記憶體使用。
+- MP4 上限 50 MB，超過顯示「影片太大，請改傳 YouTube 連結」。預覽由瀏覽器讀取第一格畫面產生 JPEG，不上傳到任何 AI。影片不做伺服器轉檔；裝置無法解碼／擷取第一格時拒收並建議相容 MP4 或 YouTube 連結。MP4 容器有效不代表所有 LINE 用戶端都支援其編碼；建議 H.264／AAC，真機與實際 LINE 播放仍待 Claude 部署審核後驗收。
+- 上傳後立即顯示縮圖與檔名，可逐一移除；重新進入同一對話會載入自己尚未使用的上傳。附件與客人、員工綁定，送出端只接受 token，拒絕外部 URL、其他員工／客人的附件、重複 token、過期／已移除／已送出附件。確認框保存文字、收件人、順序、token 及 retry key；後端將可信的公開 URL 與預覽 URL 固定於原 `desk_send_attempts.images` JSONB，成功後同樣寫入 `desk_outgoing.images`，時間軸顯示圖片／影片縮圖。舊 URL 字串紀錄仍可顯示，舊待確認傳送只准依原快照重試，不能建立新的商品圖傳送。
+- 傳送中／結果不明的附件不可移除；沿用原 10 秒間隔、23 小時安全重試、同一 UUID 與相同媒體 URL。改網域設定也不會改掉既有 retry 的快照。LINE image／video 均使用各自原檔與 JPEG 預覽網址；依[官方媒體訊息規格](https://developers.line.biz/en/reference/messaging-api/nojs/#image-message)保留圖片 10MB、預覽 1MB 限制，影片採交辦要求較低的 50MB 上限。
+- 附件內容上傳滿 30 天失效並自動清空原檔與預覽，保留紀錄。沿用既有 reader 每 30 秒執行清理，另在上傳時清理，未新增或修改任何排程；worker 停用時仍會拒絕讀取過期檔案，實體內容待下一次上傳／worker 恢復時清空。
+- 原檔加預覽的邏輯容量合計上限 500 MB。上傳、送出宣告與清理共用 Postgres transaction advisory lock，避免多 worker 同時超額；不足時依送出時間先清空最舊已送出檔案，未送出或待查核附件受保護。無法騰出足夠空間回 507，請移除自己的未使用附件或改傳連結。自動清理只 UPDATE `desk_media` 內容欄位，保留紀錄，不刪客人、來源訊息或舊送出資料。此為活躍內容容量限制，Postgres 實體磁碟回收仍由 VACUUM 管理。
+- 測試僅使用交易內 TEMP TABLE、最後 rollback，既有來源 messages 僅唯讀；LINE 使用 FakeNotifier，全域拒絕外部 HTTP。瀏覽器測試只連本機 Flask 與測試圖片。測試用 ffmpeg 僅產生合成影片，正式服務不需要 ffmpeg。
+- 還原時用交辦證據中的 `source_before.zip` 還原對應程式，保留 `desk_media` 及其稽核紀錄即可，不需刪表。不要讓舊版程式重試新版的媒體快照；先查核所有 sending／unknown 傳送，或保持新版 service/notifier/routes/worker 讀取相容層，直到待確認項目結清。
 
 ## 驗證
 
@@ -82,3 +96,5 @@
 未 push、未部署時，現有 Render 服務沒有變動。停止載入客服後台可移除 `DESK_SECRET_KEY` 並維持兩個開關不啟用；程式回復可還原本次備份的 `app.py`、`.gitignore`。保留 `desk_` 表與帳號檔，無須刪除資料。若要刪除任何多筆資料／檔案，先列出清單取得 Wayne 確認。
 
 參考： [Flask 安全說明](https://flask.palletsprojects.com/en/stable/web-security/)、[LINE 重試規則](https://developers.line.biz/en/docs/messaging-api/retrying-api-request/)、[LINE Messaging API](https://developers.line.biz/en/reference/messaging-api/)。
+
+大小單位採保守的十進位 MB（1 MB＝1,000,000 bytes）；前後端一致，避免邊界超過上限。

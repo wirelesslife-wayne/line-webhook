@@ -12,7 +12,6 @@ async function api(url,body){
 function feedback(s=''){el('feedback').textContent=s}
 function actionFeedback(s='',error=false){const n=el('action-feedback');if(n){n.textContent=s;n.className=error?'error':'note';n.hidden=!s}}
 function matches(uid,v){return selected===uid&&selectionVersion===v}
-function imageMarkup(i){return `<a href="${esc(i.url)}" target="_blank" rel="noopener noreferrer"><img src="${esc(i.url)}" alt="${esc(i.name)}" loading="lazy" referrerpolicy="no-referrer"><span>${esc(i.name)}</span></a>`}
 async function loadList(){
  const v=++listVersion,t=tab,p=page;
  try{const d=await api(`list?tab=${t}&page=${p}`);if(v!==listVersion||t!==tab||p!==page)return null;
@@ -23,16 +22,17 @@ async function loadList(){
  return d;
  }catch(e){if(v===listVersion)feedback(e.message);return null}
 }
-function chosenImages(){return current?.pending?.images||[...document.querySelectorAll('[name=image]:checked')].map(x=>x.value)}
+function chosenImages(){return selectedMedia.map(i=>typeof i==='string'?i:Object.freeze({...i}))}
 function render(d,preserve=null){
  current=d;const r=d.result||{},pending=d.pending;
+ selectedMedia=[...(pending?.images??preserve?.images??d.media??[])];
  const text=preserve?.text??pending?.text??(d.stale_draft?'':r.draft??'');
  editorBase=text;
- el('detail').innerHTML=`<button class="back" id="back">← 對話清單</button><h2>${esc(d.name)}</h2><p class="muted">${statusText[d.status]||esc(d.status)} · 時間為台灣時間</p><button id="refresh-detail" class="note" hidden>有新訊息，按此重新載入</button><div class="messages">${d.messages.map(m=>`<div class="message ${m.role==='assistant'?'ours':''}"><small>${m.role==='assistant'?'我方':'客人'} · ${esc(m.time)}</small>${esc(m.text)}${(m.images||[]).map(u=>`<div><a href="${esc(u)}" target="_blank" rel="noopener noreferrer">查看已送圖片</a></div>`).join('')}</div>`).join('')||'<p class="muted">尚無對話內容</p>'}</div>${d.stale_draft?'<p class="note">草稿是舊的，客人有新訊息；請看完訊息並重新擬稿。</p>':''}${pending?`<p class="note">${esc(pending.staff)} 的傳送結果待確認。${pending.can_retry?'可用原確認框重試。':'請由原傳送同事重試，或到 LINE 後台查核後標記已回覆。'}</p>`:''}${r.staff_note?`<p class="note">${esc(r.staff_note)}</p>`:''}${(r.flags||[]).map(f=>`<p class="error">${esc(f)}</p>`).join('')}<label for="draft">回覆草稿（可修改）</label><textarea id="draft" maxlength="5000" placeholder="在這裡填寫給客人的回覆">${esc(text)}</textarea><details><summary>可附的商品圖片（最多 4 張）</summary><div class="images">${d.images.map(i=>`<label><input type="checkbox" name="image" value="${esc(i.url)}">${imageMarkup(i)}</label>`).join('')||'<p class="muted">沒有可附圖片</p>'}</div></details><div class="actions"><button class="primary" id="open-confirm">檢查並送出</button><button id="redraft">重新擬稿</button><button id="learn-open">存成知識</button><button id="done">已在 LINE 後台回覆（不送）</button></div><div id="action-feedback" role="status" hidden></div>`;
- if(pending)el('draft').readOnly=true;
- document.querySelectorAll('[name=image]').forEach(x=>{x.checked=(preserve?.images??pending?.images??[]).includes(x.value);x.disabled=!!pending});
- el('open-confirm').disabled=!!pending&&!pending.can_retry;
- el('redraft').disabled=!!pending||['done','skip','drafting'].includes(d.status);
+ el('detail').innerHTML=`<button class="back" id="back">← 對話清單</button><h2>${esc(d.name)}</h2><p class="muted">${statusText[d.status]||esc(d.status)} · 時間為台灣時間</p><button id="refresh-detail" class="note" hidden>有新訊息，按此重新載入</button><div class="messages">${d.messages.map(m=>`<div class="message ${m.role==='assistant'?'ours':''}"><small>${m.role==='assistant'?'我方':'客人'} · ${esc(m.time)}</small>${esc(m.text)}${(m.images||[]).map(i=>`<div class="images">${mediaMarkup(i)}</div>`).join('')}</div>`).join('')||'<p class="muted">尚無對話內容</p>'}</div>${d.stale_draft?'<p class="note">草稿是舊的，客人有新訊息；請看完訊息並重新擬稿。</p>':''}${pending?`<p class="note">${esc(pending.staff)} 的傳送結果待確認。${pending.can_retry?'可用原確認框重試。':'請由原傳送同事重試，或到 LINE 後台查核後標記已回覆。'}</p>`:''}${r.staff_note?`<p class="note">${esc(r.staff_note)}</p>`:''}${(r.flags||[]).map(f=>`<p class="error">${esc(f)}</p>`).join('')}<label for="draft">回覆草稿（可修改）</label><textarea id="draft" maxlength="5000" placeholder="在這裡填寫給客人的回覆">${esc(text)}</textarea><label for="media-input">加入圖片／影片</label><input id="media-input" type="file" accept="image/jpeg,image/png,video/mp4" multiple><p id="upload-status" class="muted" role="status"></p><div id="uploads" class="images"></div><div class="actions"><button class="primary" id="open-confirm">檢查並送出</button><button id="redraft">重新擬稿</button><button id="learn-open">存成知識</button><button id="done">已在 LINE 後台回覆（不送）</button></div><div id="action-feedback" role="status" hidden></div>`;
+ if(pending||retrySnapshot)el('draft').readOnly=true;
+ renderMedia();
+ el('open-confirm').disabled=uploading||(!!pending&&!pending.can_retry);
+ el('redraft').disabled=!!pending||!!retrySnapshot||['done','skip','drafting'].includes(d.status);
  if(d.latest_source>d.source_upto)el('refresh-detail').hidden=false;
 }
 async function select(uid,force=false,preserve=null){
@@ -59,7 +59,7 @@ async function poll(){
  }
  }catch(e){if(matches(uid,v))actionFeedback(e.message,true)}
 }
-function back(){++selectionVersion;selected=null;current=null;retrySnapshot=null;el('layout').classList.remove('detail-open')}
+function back(){selectedMedia=[];++selectionVersion;selected=null;current=null;retrySnapshot=null;el('layout').classList.remove('detail-open')}
 async function advance(uid,v,message){
  if(!matches(uid,v))return;
  feedback(message);
@@ -91,25 +91,29 @@ document.addEventListener('click',async e=>{
  if(b.id==='back'){back();return}
  if(b.id==='cancel'){el('confirm').close();confirmation=null;return}
  if(b.id==='refresh-detail'&&current){const uid=selected,v=selectionVersion;await refreshDetail(uid,v,{text:el('draft').value,images:chosenImages()});actionFeedback('訊息已重新載入，編輯內容已保留。');return}
- if(b.id==='open-confirm'&&current){
-  confirmation=snapshot();if(!confirmation.text.trim())throw Error('請先填寫回覆內容');if(confirmation.images.length>4)throw Error('最多只能選 4 張圖片');
+ if(b.dataset.removeMedia!==undefined&&current&&!uploading&&!sending&&!current.pending&&!retrySnapshot){
+  const uid=selected,v=selectionVersion,item=selectedMedia[Number(b.dataset.removeMedia)];uploading=true;renderMedia();
+  try{await api('media/'+item.id+'/remove',{user_id:uid});if(matches(uid,v)){selectedMedia=selectedMedia.filter(i=>i.id!==item.id);retrySnapshot=null}}finally{uploading=false;if(current)renderMedia()}return;
+ }
+ if(b.id==='open-confirm'&&current&&!uploading){
+  const s=snapshot();if(!s.text.trim())throw Error('請先填寫回覆內容');if(s.images.length>4)throw Error('最多只能加入 4 個檔案');confirmation=s;
   el('recipient').textContent='送給 '+confirmation.name;el('preview').textContent=confirmation.text;
-  el('preview-images').innerHTML=confirmation.images.map(u=>imageMarkup({url:u,name:current.images.find(i=>i.url===u)?.name||'原確認附件'})).join('');
-  el('image-count').textContent=confirmation.images.length?'另附 '+confirmation.images.length+' 張圖片':'只有文字，不附圖片';el('confirm').showModal();return;
+  el('preview-images').innerHTML=confirmation.images.map(mediaMarkup).join('');
+  el('image-count').textContent=confirmation.images.length?'另附 '+confirmation.images.length+' 個圖片／影片檔案':'只有文字，不附圖片／影片';el('confirm').showModal();return;
  }
  if(b.id==='send'&&confirmation&&!sending){
   const s=confirmation;sending=true;b.disabled=true;el('cancel').disabled=true;
-  try{await api('send',{user_id:s.uid,text:s.text,images:s.images,source_upto:s.source_upto,retry_key:s.retry_key,confirmed:true});el('confirm').close();confirmation=null;retrySnapshot=null;sending=false;await advance(s.uid,s.version,'已送出並記錄。')}
+  try{await api('send',{user_id:s.uid,text:s.text,media:s.images.filter(i=>typeof i!=='string').map(i=>i.id),images:s.images.filter(i=>typeof i==='string'),source_upto:s.source_upto,retry_key:s.retry_key,confirmed:true});el('confirm').close();confirmation=null;retrySnapshot=null;sending=false;await advance(s.uid,s.version,'已送出並記錄。')}
   catch(err){el('confirm').close();confirmation=null;sending=false;
    if(matches(s.uid,s.version)){
     // Never replace textarea after an error. Keep the exact retry snapshot for
     // unknown/network failures; definitive failures get a fresh confirmation.
     try{const d=await api('conversation?user_id='+encodeURIComponent(s.uid));if(matches(s.uid,s.version)){
      if(d.latest_source!==current.latest_source||d.source_upto!==current.source_upto)el('refresh-detail').hidden=false;
-     current={...current,pending:d.pending};retrySnapshot=d.pending?s:null;
-     el('draft').readOnly=!!d.pending;el('open-confirm').disabled=!!d.pending&&!d.pending.can_retry;
+     current={...current,pending:d.pending};retrySnapshot=d.pending||!err.status?s:null;renderMedia();
+     el('draft').readOnly=!!d.pending||!!retrySnapshot;el('open-confirm').disabled=!!d.pending&&!d.pending.can_retry;
      if(err.status===409){await refreshDetail(s.uid,s.version,{text:s.text,images:s.images})}
-    }}catch(_){retrySnapshot=s;el('draft').readOnly=true}
+    }}catch(_){retrySnapshot=s;el('draft').readOnly=true;renderMedia()}
     if(matches(s.uid,s.version))actionFeedback(err.message,true);
    }
   }finally{sending=false;b.disabled=false;el('cancel').disabled=false}return;
@@ -126,8 +130,7 @@ document.addEventListener('click',async e=>{
  }
  }catch(e){if(el('action-feedback'))actionFeedback(e.message,true);else feedback(e.message)}
 });
-document.addEventListener('input',e=>{if(e.target.id==='draft'&&!current?.pending)retrySnapshot=null});
-document.addEventListener('change',e=>{if(e.target.name==='image'&&!current?.pending)retrySnapshot=null});
+document.addEventListener('input',e=>{if(e.target.id==='draft'&&!current?.pending&&!el('draft').readOnly)retrySnapshot=null});
 el('confirm').addEventListener('cancel',e=>{if(sending)e.preventDefault();else confirmation=null});
 loadList();setInterval(poll,15000);
 

@@ -111,8 +111,8 @@ class Engine:
         return [f"客人：{r['question'][:150]}\n同事：{r['answer'][:350]}" for r in best]
 
     def attachments(self, text='', extract=None):
-        from .catalog import select_images
-        return select_images(self.store.meta('product_images', []),self.WLF,text,extract)
+        # Employee uploads replace automatic product suggestions.
+        return []
 
     def draft(self, timeline, now_local):
         if self.provider is None:
@@ -136,7 +136,8 @@ class Engine:
         out = self.provider([{'role':'system','content':self.RULES},{'role':'user','content':prompt}])
         if not isinstance(out, dict) or not isinstance(out.get('draft'), str):
             raise ValueError('擬稿格式不符')
-        out.update(extract=ex,price_lines=prices,flags=check(out['draft'],context),images=self.attachments(newtext,ex))
+        out.update(extract=ex,price_lines=prices,flags=check(out['draft'],context))
+        out.pop('images',None)
         return out
 
     def price_lookup(self, ex):

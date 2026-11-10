@@ -27,8 +27,7 @@ class LineNotifier:
         token = os.environ.get('LINE_CHANNEL_ACCESS_TOKEN', '')
         if not token:
             return {'ok': False, 'status': 0, 'unknown': False, 'reason': 'LINE 傳送設定尚未完成'}
-        messages = [{'type': 'text', 'text': text}]
-        messages += [{'type': 'image', 'originalContentUrl': u, 'previewImageUrl': u} for u in images]
+        messages = message_payload(text, images)
         try:
             res = requests.post('https://api.line.me/v2/bot/message/push',
                 headers={'Authorization': 'Bearer '+token, 'X-Line-Retry-Key': retry_key},
@@ -37,3 +36,17 @@ class LineNotifier:
             return {'ok': False, 'status': 0, 'unknown': True,
                     'reason': 'LINE 回應不明；請保留內容，10 秒後以同一筆確認重試，勿另開新訊息'}
         return delivery_result(res.status_code,res.headers.get('x-line-accepted-request-id'))
+
+
+def message_payload(text, attachments):
+    """Descriptors are resolved from DB by service; legacy strings only for retries."""
+    if len(attachments) > 4:
+        raise ValueError('最多 4 個附件')
+    messages = [{'type':'text','text':text}]
+    for item in attachments:
+        if isinstance(item,str):
+            messages.append({'type':'image','originalContentUrl':item,'previewImageUrl':item})
+        else:
+            messages.append({'type':item['type'],'originalContentUrl':item['url'],
+                             'previewImageUrl':item['preview_url']})
+    return messages
