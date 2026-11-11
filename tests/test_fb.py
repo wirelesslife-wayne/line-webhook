@@ -394,11 +394,11 @@ def test_approved_replies_become_examples_for_later_drafts(db, logged):
     assert row['question'] == '請問電動尾門多少錢？' and row['ai_draft'] == 'AI 原本的草稿'
     provider = Mock(side_effect=[{}, dict(draft='您好～')])
     Engine(db, provider).draft([{'time': 'now', 'role': 'user', 'text': '電動尾門多少錢', 'new': True}], now(), channel='fb_message')
-    prompt = provider.call_args.args[0][1]['content']
-    assert 'Wayne 親自核准送出的回覆' in prompt and 'https://example.test/tailgate' in prompt and '他改過 AI 草稿' in prompt
+    system = provider.call_args.args[0][0]['content']
+    assert 'Wayne 親自核准送出的回覆範例（最高優先' in system and 'https://example.test/tailgate' in system and '他改過 AI 草稿' in system
     provider = Mock(side_effect=[{}, dict(draft='您好～')])
     Engine(db, provider).draft([{'time': 'now', 'role': 'user', 'text': '週日有開嗎', 'new': True}], now(), channel='line')
-    assert 'https://example.test/tailgate' not in provider.call_args.args[0][1]['content']
+    assert 'https://example.test/tailgate' not in provider.call_args.args[0][0]['content']
 
 
 def picture(name='實機照.png', size=(8, 8)):
