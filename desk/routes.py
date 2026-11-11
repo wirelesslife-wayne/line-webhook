@@ -3,7 +3,7 @@ import os
 import secrets
 from io import BytesIO
 from flask import Blueprint,request,g,jsonify,redirect,render_template,make_response,send_file
-from .auth import Auth,COOKIE
+from .auth import Auth,COOKIE,LONG,SHORT
 from .db import now
 from . import media
 from .notifier import LineNotifier
@@ -71,10 +71,11 @@ def make_blueprint(store,notifier=None):
         if request.method=='POST':
             if not auth.check_preauth(request.cookies.get('desk_login'),request.form.get('csrf','')):
                 return jsonify(error='登入驗證失效，請重新開啟登入頁'),403
-            cookie = auth.login(request.form.get('username','')[:80],request.form.get('password','')[:256])
+            remember = request.form.get('remember')=='1'
+            cookie = auth.login(request.form.get('username','')[:80],request.form.get('password','')[:256],remember)
             if cookie:
                 response = redirect('/desk/')
-                response.set_cookie(COOKIE,cookie,max_age=43200,secure=True,httponly=True,samesite='Lax',path='/desk')
+                response.set_cookie(COOKIE,cookie,max_age=LONG if remember else SHORT,secure=True,httponly=True,samesite='Lax',path='/desk')
                 response.delete_cookie('desk_login',path='/desk')
                 return response
             error = '帳號或密碼不符；連續失敗 5 次會鎖定 15 分鐘'

@@ -93,7 +93,7 @@
 - 重啟時在擬稿鎖內回復中斷的擬稿狀態；背景失敗不影響 webhook，頁面顯示背景收訊逾時。
 - `time_str` 按 UTC 解讀，介面呈現台灣時間。完整對話串接客人原訊息與 `desk_outgoing` 成功紀錄；LINE 後台人工回覆只能標記，無法還原該後台未提供的文字。
 - 每日從官網 `branding` 的 `script#wlf-data` 更新價格，檢查 schema 後才覆寫 DB；失敗保留原資料並標黃。所有私有知識存 DB。
-- Session 為簽章 cookie＋DB session，有效 12 小時、Secure／HttpOnly／SameSite=Lax、路徑 `/desk`。5 次失敗鎖 15 分鐘；登入表單和登入後 API 都檢查 CSRF。桌機／手機採同一介面。
+- Session 為簽章 cookie＋DB session，有效 12 小時（登入時勾「這台裝置 30 天內不用再登入」則為 30 天）、Secure／HttpOnly／SameSite=Lax、路徑 `/desk`。5 次失敗鎖 15 分鐘；登入表單和登入後 API 都檢查 CSRF。桌機／手機採同一介面。
 - 只有人工 POST 確認才傳送。先保存 intent，再由 `desk.notifier.LineNotifier` 集中呼叫 LINE push；成功才寫 `desk_outgoing`。所有嘗試包含員工、時間、內容與 LINE HTTP 狀態；失敗保留草稿。
 - 每位客人用 DB 鎖串行傳送，10 秒限制；每個確認使用 UUID retry key。逾時／5xx 保留原 key，禁止換 key 另送。23 小時後拒絕自動重試，需人工到 LINE 後台查核。409 僅在含 `x-line-accepted-request-id` 時視為已接受。
 - 「已在 LINE 後台回覆（不送）」會留下人工處理紀錄，不捏造已送訊息。這也可結束經人工查核的未知傳送狀態。

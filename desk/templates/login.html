@@ -5,4 +5,5 @@
 <form method="post" action="/desk/login"><input type="hidden" name="csrf" value="{{ csrf }}">
 <label for="username">帳號</label><input id="username" name="username" type="text" autocomplete="username" required maxlength="80" autofocus>
 <label for="password">密碼</label><input id="password" name="password" type="password" autocomplete="current-password" required maxlength="256">
-<button class="primary" type="submit">登入</button></form><p class="muted"><small>連續登入失敗 5 次，鎖定 15 分鐘。登入有效時間為 12 小時。</small></p></section></main>{% endblock %}
+<label style="display:flex;align-items:center;gap:8px;font-weight:400;margin:14px 0 4px"><input type="checkbox" name="remember" value="1" style="width:20px;height:20px;margin:0">這台裝置 30 天內不用再登入</label>
+<button class="primary" type="submit">登入</button></form><p class="muted"><small>連續登入失敗 5 次，鎖定 15 分鐘。沒勾選時登入有效 12 小時；門市共用的電腦請不要勾。</small></p></section></main>{% endblock %}

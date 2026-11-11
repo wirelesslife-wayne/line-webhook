@@ -172,6 +172,21 @@ def test_session_and_login_lock(db):
     assert auth.session(cookie) is None
 
 
+def test_keep_signed_in_lasts_30_days_only_when_ticked(db,logged):
+    app,_,_,_=logged
+    auth=Auth(db,os.environ['DESK_SECRET_KEY'])
+    for ticked,seconds in ((True,2592000),(False,43200)):
+        anon=app.test_client();token=auth.preauth()
+        anon.set_cookie('desk_login',token,path='/desk')
+        data={'username':'desk-test-user','password':'test-password','csrf':token}
+        response=anon.post('/desk/login',data=dict(data,remember='1') if ticked else data)
+        header=next(h for h in response.headers.getlist('Set-Cookie') if h.startswith(COOKIE+'='))
+        assert 'Max-Age=%d;'%seconds in header and 'HttpOnly' in header and 'Secure' in header
+        sid=auth.session(header.split(';')[0].split('=',1)[1])['sid']
+        left=db.one('SELECT EXTRACT(EPOCH FROM expires_at-NOW()) AS s FROM desk_sessions WHERE sid=%s',(sid,))['s']
+        assert abs(left-seconds) < 120  # app clock vs database clock
+
+
 def test_anonymous_csrf_cookie_flags(db,logged):
     app,client,staff,notifier=logged
     anon=app.test_client()

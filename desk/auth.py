@@ -8,6 +8,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 from .db import now
 
 COOKIE = 'desk_session'
+SHORT, LONG = 43200, 2592000  # 12 hours; 30 days when the person ticks "keep me signed in on this device"
 DUMMY_HASH = generate_password_hash(secrets.token_urlsafe(24))
 
 
@@ -20,7 +21,7 @@ class Auth:
         self.store = store
         self.signer = URLSafeTimedSerializer(secret,salt='cs-desk-session')
 
-    def login(self, username, password):
+    def login(self, username, password, remember=False):
         username = username.strip()
         bucket = digest(username.casefold())
         with self.store.cursor() as cur:
@@ -40,12 +41,13 @@ class Auth:
             cur.execute('UPDATE desk_login_attempts SET failures=0,locked_until=NULL WHERE bucket=%s',(bucket,))
             token,csrf = secrets.token_urlsafe(32),secrets.token_urlsafe(32)
             cur.execute('INSERT INTO desk_sessions VALUES(%s,%s,%s,%s)',
-                (digest(token),user['id'],csrf,now()+timedelta(hours=12)))
+                (digest(token),user['id'],csrf,now()+timedelta(seconds=LONG if remember else SHORT)))
         return self.signer.dumps(token)
 
     def session(self, cookie):
         try:
-            token = self.signer.loads(cookie or '',max_age=43200)
+            # The row's expires_at is the real limit (12 hours or 30 days); this only bounds the signature.
+            token = self.signer.loads(cookie or '',max_age=LONG)
         except (BadSignature,SignatureExpired):
             return None
         if not isinstance(token,str):
