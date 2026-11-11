@@ -12,6 +12,10 @@
 .fbcard .editbox{border:1px dashed var(--line);border-radius:10px;padding:4px 14px 14px;margin-top:12px}
 .fbcard .actions button{flex:1 1 30%}label.check{display:flex;gap:8px;align-items:center;font-weight:normal}label.check input{width:20px;height:20px}
 .rule{border-top:1px solid var(--line);padding:10px 0;display:grid;gap:4px}.rule.off p{text-decoration:line-through;color:var(--muted)}.rule button{justify-self:start}
+.attach{margin:10px 0;display:grid;gap:8px}.attach .files{display:flex;gap:10px;flex-wrap:wrap}
+.attach figure{margin:0;display:grid;gap:4px;justify-items:center;max-width:110px;font-size:12px;overflow-wrap:anywhere;text-align:center}
+.attach img,.attach .vid{width:96px;height:96px;object-fit:cover;border-radius:8px;border:1px solid var(--line);background:var(--bg);display:grid;place-items:center;font-size:28px}
+.attach .pick{display:inline-block;border:1px dashed var(--line);border-radius:8px;padding:10px 14px;cursor:pointer;background:white;justify-self:start}
 #fb-rules summary{cursor:pointer;font-weight:700}#fb-feedback.bad{background:#fbe4e2;color:var(--bad)}
 @media(max-width:700px){.tabs a{flex:1;text-align:center;padding:8px;font-size:13px}}
 </style>
@@ -26,7 +30,7 @@
 <p class="muted">你按「修改」寫下的指示會記在這裡，之後每一則草稿（LINE、FB、IG）都會照做。不想再套用的可以停用。</p>
 {% for r in rules %}<div class="rule{{ '' if r.active else ' off' }}"><p>{{ r.instruction }}</p><small class="muted">{{ r.label }} · {{ r.time }}{% if r.said %} · 當時客人說：{{ r.said }}{% endif %}</small><button data-rule-id="{{ r.id }}" data-active="{{ 'true' if r.active else 'false' }}">{{ '停用' if r.active else '重新啟用' }}</button></div>{% else %}<p class="muted none">目前還沒有。</p>{% endfor %}
 </details>{% endif %}
-<dialog id="fb-confirm"><h2 id="fb-recipient"></h2><p id="fb-public-warning" class="error" hidden>這是公開留言，所有人都看得到。</p><div id="fb-preview"></div><label id="fb-public-label" class="check" hidden><input id="fb-public-check" type="checkbox">我確認要公開回覆這則留言</label><p class="muted">按下確認後，下一輪排程會照這段文字送出（最慢約 60 分鐘）。</p><div class="actions"><button id="fb-confirm-cancel">返回</button><button id="fb-confirm-ok" class="primary">確認發送</button></div></dialog>
+<dialog id="fb-confirm"><h2 id="fb-recipient"></h2><p id="fb-public-warning" class="error" hidden>這是公開留言，所有人都看得到。</p><div id="fb-preview"></div><p id="fb-attach-note" class="note" hidden></p><label id="fb-public-label" class="check" hidden><input id="fb-public-check" type="checkbox">我確認要公開回覆這則留言</label><p class="muted">按下確認後，下一輪排程會照這段文字送出（最慢約 60 分鐘）。</p><div class="actions"><button id="fb-confirm-cancel">返回</button><button id="fb-confirm-ok" class="primary">確認發送</button></div></dialog>
 </main><script nonce="{{ g.nonce }}">const csrf={{ staff.csrf|tojson }},canReview={{ can_review|tojson }};
 {% include 'fb.js' %}
 </script>{% endblock %}

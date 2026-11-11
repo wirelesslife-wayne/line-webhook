@@ -3,7 +3,7 @@ import argparse
 import json
 from pathlib import Path
 import sys
-from .common import store
+from .common import store, WORKSPACE
 from .. import fb
 from ..errors import ActionError
 
@@ -31,7 +31,11 @@ def main(argv=None, store_factory=None):
         db=(store_factory or store)()
         if args.command=='push': out=fb.push(db,data)
         elif args.command=='status': out=fb.status(db)
-        elif args.command=='pending': out=fb.pending(db)
+        elif args.command=='pending':
+            from .. import fb_media
+            out=fb.pending(db)
+            for item in out:  # the browser attaches these local files together with the text
+                item['files']=fb_media.export(db,item['attempt_id'],WORKSPACE/'AI客服訓練'/'fb_media')
         elif args.command=='open': out=fb.awaiting(db)
         else: out=fb.record_result(db,args.attempt_id,args.outcome,args.reason)
         print(json.dumps(out,ensure_ascii=False))

@@ -183,7 +183,7 @@ def pending(store):
             last = cur.fetchone()
             result.append(dict(attempt_id=str(a['retry_key']),channel=c['channel'],key=c['key'],name=c['name'],url=c['url'],
                 content=a['content'],last_customer_text=last['content'] if last else '',approved_at=a['approved_at'].isoformat(),
-                is_public=c['channel'].endswith('_comment')))
+                is_public=c['channel'].endswith('_comment'),files=[]))
     return result
 
 
@@ -221,6 +221,8 @@ def approve(store, staff, data):
         question = '\n'.join(e['content'] for e in events[answered+1:] if e['role']=='user' and e['content'])[:2000]
         cur.execute("""INSERT INTO desk_fb_attempts(retry_key,thread_id,staff_id,source_version,content,public_confirmed,status,question,ai_draft)
           VALUES(%s,%s,%s,%s,%s,%s,'approved',%s,%s)""",(key,tid,staff['id'],version,text,public,question,((c['draft'] or {}).get('draft') or '')[:4000]))
+        from .fb_media import bind
+        bind(cur,tid,key,data.get('media_ids'),c['channel'].endswith('_comment'))
         cur.execute("UPDATE desk_fb_threads SET status='approved',note='',draft_token=NULL,updated_at=NOW() WHERE id=%s",(tid,))
     return dict(ok=True,attempt_id=key,status='approved')
 

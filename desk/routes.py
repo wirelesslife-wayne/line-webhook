@@ -23,7 +23,7 @@ def make_blueprint(store,notifier=None):
         g.nonce = secrets.token_urlsafe(18)
         # Flask 3.0 has no per-request max_content_length setter.
         request.stream = get_input_stream(request.environ,max_content_length=(media.VIDEO_LIMIT+media.PREVIEW_LIMIT+32768)
-            if request.endpoint=='desk.media_upload' else 32768)
+            if request.endpoint=='desk.media_upload' else 25_000_000+32768 if request.endpoint=='desk.fb_media_upload' else 32768)
         # Only GET/HEAD to this exact endpoint may bypass session/CSRF.
         if request.endpoint == 'desk.media_read' and request.method in ('GET','HEAD'):
             return

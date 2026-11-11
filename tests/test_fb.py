@@ -216,7 +216,7 @@ def test_engine_applies_edit_rules_to_every_channel(db, logged):
         Engine(db, provider).draft(timeline, now(), channel=channel)
         system = provider.call_args.args[0][0]['content']
         assert 'Wayne 修改指示' in system and '不要問縣市' in system and '已停用的指示' not in system
-        assert ('公開留言' in system) == channel.endswith('_comment')
+        assert ('本次是社群公開留言' in system) == channel.endswith('_comment')
 
 
 def test_engine_passes_post_context_and_flags_long_comment(db):
@@ -398,3 +398,62 @@ def test_approved_replies_become_examples_for_later_drafts(db, logged):
     provider = Mock(side_effect=[{}, dict(draft='您好～')])
     Engine(db, provider).draft([{'time': 'now', 'role': 'user', 'text': '週日有開嗎', 'new': True}], now(), channel='line')
     assert 'https://example.test/tailgate' not in provider.call_args.args[0][1]['content']
+
+
+def picture(name='實機照.png', size=(8, 8)):
+    from io import BytesIO
+    from PIL import Image
+    from werkzeug.datastructures import FileStorage
+    data = BytesIO()
+    Image.new('RGB', size, 'navy').save(data, 'PNG')
+    data.seek(0)
+    return FileStorage(stream=data, filename=name, content_type='image/png')
+
+
+def test_attachments_travel_with_the_approved_private_reply(db, logged, tmp_path, capsys):
+    """Wayne 11/12: let me attach photos and videos to FB/IG replies."""
+    from desk import fb_media
+    _, _, staff, _ = logged
+    fb.push(db, [thread(), thread('fb_comment', key='900002', context='合成貼文')])
+    ready(db)
+    with pytest.raises(ActionError) as denied:
+        fb_media.upload(db, staff, tid(), picture())
+    assert denied.value.status == 403
+    boss = wayne(db, staff)
+    with pytest.raises(ActionError, match='公開留言'):
+        fb_media.upload(db, boss, tid('fb_comment', '900002'), picture())
+    one = fb_media.upload(db, boss, tid(), picture())
+    two = fb_media.upload(db, boss, tid(), picture('第二張.png'))
+    assert one['type'] == 'image' and [m['name'] for m in fb_media.listing(db, tid())] == ['實機照.png', '第二張.png']
+    fb_media.remove(db, boss, two['id'], tid())
+    with pytest.raises(ActionError):
+        fb.approve(db, boss, approval(db, media_ids=[two['id']]))          # removed file cannot be sent
+    out = fb.approve(db, boss, approval(db, media_ids=[one['id']]))
+    assert fb_media.listing(db, tid()) == [] and [m['id'] for m in fb_media.attached(db, out['attempt_id'])] == [one['id']]
+    with pytest.raises(ActionError):
+        fb_media.remove(db, boss, one['id'], tid())                          # already approved
+    paths = fb_media.export(db, out['attempt_id'], tmp_path)
+    assert len(paths) == 1 and paths[0].endswith('.png') and open(paths[0], 'rb').read(8) == b'\x89PNG\r\n\x1a\n'
+    version = fb.conversation(db, tid())['version']
+    fb.action(db, boss, dict(thread_id=tid(), version=version), 'cancel')
+    assert [m['id'] for m in fb_media.listing(db, tid())] == [one['id']]      # cancelling frees the file for the next approval
+
+
+def test_attachment_limits_and_bad_files(db, logged):
+    from io import BytesIO
+    from werkzeug.datastructures import FileStorage
+    from desk import fb_media
+    _, _, staff, _ = logged
+    boss = wayne(db, staff)
+    fb.push(db, [thread()])
+    ready(db)
+    for bad in (FileStorage(stream=BytesIO(b'not a picture'), filename='x.png', content_type='image/png'),
+                FileStorage(stream=BytesIO(b'MZ'), filename='x.exe', content_type='application/octet-stream'),
+                FileStorage(stream=BytesIO(b'fake'), filename='x.mp4', content_type='video/mp4')):
+        with pytest.raises(ActionError):
+            fb_media.upload(db, boss, tid(), bad)
+    for n in range(3):
+        fb_media.upload(db, boss, tid(), picture('%d.png' % n))
+    with pytest.raises(ActionError, match='最多'):
+        fb_media.upload(db, boss, tid(), picture('4.png'))
+    assert fb_media.read(db, 'x' * 32) is None

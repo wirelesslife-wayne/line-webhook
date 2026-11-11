@@ -7,6 +7,7 @@ async function api(path,body){const r=await fetch('/desk/api/fb/'+path,{method:b
 function say(text,bad){const e=f('feedback');e.textContent=text||'';e.hidden=!text;e.classList.toggle('bad',!!bad)}
 const editKey=d=>d.id+':'+d.version;
 function when(t){const d=new Date(t);return /^\d{4}-\d\d-\d\dT/.test(t||'')&&!isNaN(d)?d.toLocaleString('zh-TW',{timeZone:'Asia/Taipei',month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false}):(t||'')}
+function files(list,removable){return (list||[]).map(m=>`<figure>${m.type==='image'?`<img src="/desk/api/fb/media/${esc(m.id)}" alt="" loading="lazy">`:'<div class="vid">🎬</div>'}<span>${esc(m.name)}</span>${removable?`<button data-act="media-remove" data-media="${esc(m.id)}">移除</button>`:''}</figure>`).join('')}
 function card(d,i){
   const todo=TODO.includes(d.status),waiting=d.status==='waiting'||d.status==='drafting',r=d.result||{};
   const draft=edits[editKey(d)]??r.draft??'';
@@ -18,17 +19,29 @@ function card(d,i){
     if(r.staff_note)h+=`<p class="note">AI 的提醒：${esc(r.staff_note)}</p>`;
     h+=(r.flags||[]).map(x=>`<p class="error">${esc(x)}</p>`).join('');
     h+=`<label for="fb-draft-${i}">草稿（可以直接改字）</label><textarea id="fb-draft-${i}" data-draft maxlength="2000" ${waiting?'disabled':''}>${esc(draft)}</textarea>`;
+    if(!d.is_public&&canReview)h+=`<div class="attach"><div class="files">${files(d.media,true)}</div><label class="pick"><input type="file" data-file accept="image/jpeg,image/png,video/mp4" hidden>＋ 加圖片／影片</label><small class="muted">會跟文字一起送出。JPEG／PNG 每張 10MB、MP4 影片 25MB 以內，最多 3 個。</small></div>`;
     h+=`<div class="actions"><button class="primary" data-act="send" ${canReview&&!waiting?'':'disabled'}>發送</button><button data-act="edit" ${waiting?'disabled':''}>修改</button><button data-act="skip" ${canReview?'':'disabled'}>不發送</button></div>`;
     h+=`<div class="editbox" hidden><label for="fb-ins-${i}">要改哪裡？</label><textarea id="fb-ins-${i}" data-instruction maxlength="2000" placeholder="例如：不要問縣市、價格寫 18,000、語氣再輕鬆一點"></textarea>${canReview?'<label class="check"><input type="checkbox" data-remember>以後都照這樣寫（記住這條指示，會影響之後所有草稿）</label>':''}<div class="actions"><button class="primary" data-act="revise">照這樣重寫</button><button data-act="edit-cancel">取消</button></div></div>`;
   }else if(d.status==='approved'){
     const a=d.attempts.find(x=>x.status==='approved');
-    h+=`<label>已核准的內容</label><div class="preview">${esc(a?a.text:'')}</div><p class="muted">下一輪排程會照這段文字送出（最慢約 60 分鐘）。</p><div class="actions"><button data-act="cancel" ${canReview?'':'disabled'}>取消核准</button></div>`;
+    h+=`<label>已核准的內容</label><div class="preview">${esc(a?a.text:'')}</div>${(d.media||[]).length?`<div class="attach"><div class="files">${files(d.media,false)}</div></div>`:''}<p class="muted">下一輪排程會照這段文字送出（最慢約 60 分鐘）。</p><div class="actions"><button data-act="cancel" ${canReview?'':'disabled'}>取消核准</button></div>`;
   }else{
     const a=d.attempts.find(x=>x.status==='sent');
     if(a)h+=`<label>已送出的內容（${esc(a.time)}）</label><div class="preview">${esc(a.text)}</div>`;
   }
   return h+'</article>';
 }
+document.addEventListener('change',async e=>{
+  if(!e.target.matches('[data-file]'))return;const p=pick(e.target),file=e.target.files[0];if(!p||!file)return;
+  const limit=file.type==='video/mp4'?25e6:10e6;if(!['image/jpeg','image/png','video/mp4'].includes(file.type)){say('只接受 JPEG、PNG 圖片或 MP4 影片。',true);return}
+  if(file.size>limit){say(file.type==='video/mp4'?'影片超過 25MB，請改貼 YouTube 連結。':'圖片超過 10MB，請先壓縮。',true);return}
+  busy=true;say('上傳中，請稍候…');
+  try{const body=new FormData();body.append('thread_id',p.d.id);body.append('file',file);
+    const r=await fetch('/desk/api/fb/media',{method:'POST',headers:{'X-CSRF-Token':csrf},body});let d={};try{d=await r.json()}catch(x){}
+    if(!r.ok)throw Error(d.error||'上傳失敗，請再試一次');say(`已加入「${file.name}」，會跟回覆一起送出。`)}
+  catch(x){say(x.message,true)}
+  finally{busy=false}
+  await load(true)});
 function editing(){const a=document.activeElement;return busy||f('confirm').open||(a&&a.tagName==='TEXTAREA')||!!document.querySelector('.editbox:not([hidden])')}
 function draw(d){
   items=d.items;f('n-todo').textContent=d.todo?`（${d.todo}）`:'';f('n-approved').textContent=d.approved?`（${d.approved}）`:'';
@@ -56,7 +69,7 @@ document.addEventListener('click',async event=>{
     if(b.id==='fb-confirm-ok'&&confirmation){
       const snap=confirmation;if(snap.is_public&&!f('public-check').checked)return;
       busy=true;b.disabled=true;
-      try{await api('send',{thread_id:snap.thread_id,version:snap.version,text:snap.text,retry_key:snap.retry_key,confirmed:true,public_confirmed:snap.is_public});delete edits[snap.key];say(`已核准給「${snap.name}」的回覆，下一輪排程送出。`)}
+      try{await api('send',{thread_id:snap.thread_id,version:snap.version,text:snap.text,retry_key:snap.retry_key,confirmed:true,public_confirmed:snap.is_public,media_ids:snap.media_ids});delete edits[snap.key];say(`已核准給「${snap.name}」的回覆，下一輪排程送出。`)}
       catch(e){say(e.message,true)}
       finally{busy=false;b.disabled=false;f('confirm').close();confirmation=null}
       await load(true);return}
@@ -64,8 +77,10 @@ document.addEventListener('click',async event=>{
     const act=b.dataset.act;if(!act)return;const p=pick(b);if(!p)return;const {d,el}=p;
     if(act==='send'){
       const text=el.querySelector('[data-draft]').value;if(!text.trim()){say('草稿是空的，請先寫內容或按「修改」。',true);return}
-      confirmation=Object.freeze({thread_id:d.id,version:d.version,text,name:d.name,is_public:d.is_public,key:editKey(d),retry_key:crypto.randomUUID()});
+      confirmation=Object.freeze({thread_id:d.id,version:d.version,text,name:d.name,is_public:d.is_public,key:editKey(d),retry_key:crypto.randomUUID(),media_ids:(d.media||[]).map(m=>m.id)});
+      f('attach-note').hidden=!(d.media||[]).length;f('attach-note').textContent=(d.media||[]).length?`另附 ${d.media.length} 個檔案：${d.media.map(m=>m.name).join('、')}`:'';
       f('recipient').textContent=`發送給「${d.name}」（${d.label}）`;f('preview').textContent=text;f('public-warning').hidden=f('public-label').hidden=!d.is_public;f('public-check').checked=false;f('confirm-ok').disabled=d.is_public;f('confirm').showModal();return}
+    if(act==='media-remove'){busy=true;b.disabled=true;try{await api('media/'+b.dataset.media+'/remove',{thread_id:d.id});say('已移除附件。')}catch(e){say(e.message,true)}finally{busy=false}await load(true);return}
     if(act==='edit'){const box=el.querySelector('.editbox');box.hidden=!box.hidden;if(!box.hidden)box.querySelector('[data-instruction]').focus();return}
     if(act==='edit-cancel'){el.querySelector('.editbox').hidden=true;return}
     if(act==='revise'){

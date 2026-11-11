@@ -1,5 +1,5 @@
-from flask import request, jsonify, g, render_template
-from . import fb
+from flask import request, jsonify, g, render_template, Response
+from . import fb, fb_media
 from .errors import ActionError
 from .knowledge import can_review, require_reviewer, submit
 from .worker import local_time
@@ -18,6 +18,8 @@ def register(bp,store):
         return dict(id=c['id'],name=c['name'],channel=c['channel'],label=fb.LABELS[c['channel']],key=c['key'],url=c['url'],
             context=c['context'],status=c['status'],version=c['version'],note=c['note'],result=c['draft'] or {},
             messages=fb.messages(store,c['id'])[-12:],is_public=c['channel'].endswith('_comment'),
+            media=fb_media.listing(store,c['id']) if c['status'] in fb.TODO else
+                  next((fb_media.attached(store,a['retry_key']) for a in attempts if a['status'] in ('approved','sent')),[]),
             attempts=[dict(status=a['status'],time=local_time(a['approved_at']),staff=a['username'],text=a['content'],reason=a['reason']) for a in attempts])
 
     def listing():
@@ -57,6 +59,23 @@ def register(bp,store):
 
     @bp.post('/api/fb/cancel')
     def fb_cancel(): return jsonify(fb.action(store,g.staff,request.get_json(silent=True),'cancel'))
+
+    @bp.post('/api/fb/media')
+    def fb_media_upload():
+        if 'file' not in request.files: raise ActionError('請選擇檔案',400)
+        return jsonify(media=fb_media.upload(store,g.staff,request.form.get('thread_id'),request.files['file'])),201
+
+    @bp.post('/api/fb/media/<media_id>/remove')
+    def fb_media_remove(media_id):
+        data=request.get_json(silent=True)
+        fb_media.remove(store,g.staff,media_id,data.get('thread_id') if isinstance(data,dict) else None)
+        return jsonify(ok=True)
+
+    @bp.get('/api/fb/media/<media_id>')
+    def fb_media_read(media_id):
+        row=fb_media.read(store,media_id)
+        if not row: raise ActionError('找不到附件',404)
+        return Response(bytes(row['data']),mimetype=row['content_type'],headers={'Content-Disposition':'inline'})
 
     @bp.post('/api/fb/rules/<int:rule_id>')
     def fb_rule(rule_id):
