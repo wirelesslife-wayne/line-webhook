@@ -107,6 +107,8 @@ class Engine:
         if hasattr(provider, 'public'):
             # Shop addresses and phones are published on our site; without this the privacy filter masks them.
             provider.public = [part.strip() for line in str(self.DEALERS).splitlines() for part in line.split('｜')[1:] if part.strip()]
+            provider.models = frozenset(code for _, model in self.MODELS for word in re.split(r'[\s/()（）]+', model)
+                                        for code in [re.sub(r'[-.]', '', word).upper()] if re.fullmatch(r'[A-Z]{2,3}', code))
 
     def history(self, q, before_local, k=3):
         rows = self.store.all('SELECT question,answer FROM desk_qa WHERE asked_at < %s', (before_local,))

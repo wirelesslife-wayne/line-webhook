@@ -91,6 +91,7 @@ class OpenAIProvider:
         self.store = store
         self.post = post or requests.post
         self.public = ()  # Our own published shop addresses/phones; the engine fills this in.
+        self.models = frozenset()  # Car model codes, so "CC 2026" is not masked as a plate; the engine fills this in.
         self.patience, self.pause = 90, 2  # Wait up to 3 minutes for another draft to finish.
 
     def __call__(self, messages):
@@ -111,7 +112,7 @@ class OpenAIProvider:
         model = os.environ.get('DESK_MODEL', MODEL)
         rates = model_rates(model)
         # Rebuild from an allowlist; no metadata, IDs, names or media objects pass.
-        inputs = [{'role':m['role'], 'content':redact(m['content'],self.public)}
+        inputs = [{'role':m['role'], 'content':redact(m['content'],self.public,self.models)}
                   for m in messages if m.get('role') in ('system','user','assistant')]
         if not inputs or any(not isinstance(m.get('content'),str) for m in messages):
             raise ProviderPending('AI 只接受文字，請手動回覆')

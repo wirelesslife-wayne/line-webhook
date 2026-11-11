@@ -242,3 +242,13 @@ def test_published_shop_details_survive_redaction():
     assert shop[0] in out and shop[1] in out
     assert '0912-345-678' not in out and '三民路' not in out
     assert shop[1] not in redact(text)
+
+
+def test_model_code_with_year_is_not_a_plate():
+    """11/11: "TOYOTA cc 2026" reached the AI as "TOYOTA [車牌]"."""
+    models=frozenset({'CC','CRV','HRV','NX'})
+    for text in ['TOYOTA cc 2026年車','2026 CC安裝多少','CRV 2020','2019HRV','NX-2023']:
+        assert '[車牌]' not in redact(text,models=models), text
+    for text in ['ABC-1234','CC-1234','ABC 2020','2020-ABC','車牌 CC-2026']:
+        assert '[車牌]' in redact(text,models=models), text
+    assert '[車牌]' in redact('cc 2026')  # without the model list everything plate-shaped stays masked
