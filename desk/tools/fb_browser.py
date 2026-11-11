@@ -17,6 +17,7 @@ def main(argv=None, store_factory=None):
     sub.add_parser('push').add_argument('file')
     sub.add_parser('status')
     sub.add_parser('pending')
+    sub.add_parser('open')
     result=sub.add_parser('result')
     result.add_argument('attempt_id')
     result.add_argument('outcome',choices=('sent','failed'))
@@ -31,6 +32,7 @@ def main(argv=None, store_factory=None):
         if args.command=='push': out=fb.push(db,data)
         elif args.command=='status': out=fb.status(db)
         elif args.command=='pending': out=fb.pending(db)
+        elif args.command=='open': out=fb.awaiting(db)
         else: out=fb.record_result(db,args.attempt_id,args.outcome,args.reason)
         print(json.dumps(out,ensure_ascii=False))
         return 0

@@ -147,6 +147,14 @@ def status(store):
                 send_failed=store.one("SELECT COUNT(*) AS n FROM desk_fb_threads WHERE note LIKE '送出失敗：%%'")['n'])
 
 
+def awaiting(store):
+    """Conversations still open on the desk, oldest first, so the browser run can re-check that nobody has answered them."""
+    rows = store.all("""SELECT t.channel,t.key,t.name,t.url,
+      (SELECT content FROM desk_fb_events e WHERE e.thread_id=t.id AND e.role='user' ORDER BY e.id DESC LIMIT 1) AS last_customer_text
+      FROM desk_fb_threads t WHERE t.status=ANY(%s) ORDER BY t.last_at,t.id LIMIT 60""",(list(TODO),))
+    return [dict(r,last_customer_text=r['last_customer_text'] or '',is_public=r['channel'].endswith('_comment')) for r in rows]
+
+
 def pending(store):
     result = []
     with store.cursor() as cur:

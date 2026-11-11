@@ -340,3 +340,17 @@ def test_ad_lead_gets_the_product_reply_without_naming_the_product(db):
     engine = Engine(db, Mock())
     named = [c['topic'] for c in engine.canned_for('想裝 360 環景', {}, '電動尾門施工時間約 3 小時')]
     assert '原廠螢幕增加環景系統銷售回覆' in named and '電動尾門銷售回覆' not in named
+
+
+def test_open_lists_only_unanswered_conversations(db, capsys):
+    """Wayne 11/11: a colleague may answer in the Meta inbox while a draft waits; the browser run must re-check."""
+    fb.push(db, [thread(), thread('fb_comment', key='900002', context='合成貼文')])
+    ready(db)
+    assert fb_browser.main(['open'], lambda: db) == 0
+    listed = json.loads(capsys.readouterr().out)
+    assert {(r['channel'], r['key'], r['last_customer_text'], r['is_public']) for r in listed} == {
+        ('fb_message', KEY, '請問電動尾門多少錢？', False), ('fb_comment', '900002', '請問電動尾門多少錢？', True)}
+    answered = thread(messages=[dict(role='user', text='請問電動尾門多少錢？', at='上午10:00'),
+                                dict(role='page', text='您好，已私訊您囉', at='上午10:20')])
+    assert fb.push(db, [answered])['auto_closed'] == 1
+    assert [r['key'] for r in fb.awaiting(db)] == ['900002']
