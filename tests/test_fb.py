@@ -380,3 +380,21 @@ def test_remember_is_off_unless_asked(db, logged):
     version = fb.conversation(db, tid())['version']
     assert fb.revise(db, boss, dict(thread_id=tid(), version=version, instruction='這則寫短一點'))['remembered'] is False
     assert db.one('SELECT COUNT(*) AS n FROM desk_edit_rules')['n'] == 0
+
+
+def test_approved_replies_become_examples_for_later_drafts(db, logged):
+    """Wayne 11/12: it should learn from what I actually approve, without me doing anything extra."""
+    _, _, staff, _ = logged
+    boss = wayne(db, staff)
+    fb.push(db, [thread()])
+    ready(db, text='AI 原本的草稿')
+    fb.approve(db, boss, approval(db, text='您好～電動尾門完工價 $18,000。\n👉 適用車型：https://example.test/tailgate'))
+    row = db.one('SELECT question,ai_draft FROM desk_fb_attempts')
+    assert row['question'] == '請問電動尾門多少錢？' and row['ai_draft'] == 'AI 原本的草稿'
+    provider = Mock(side_effect=[{}, dict(draft='您好～')])
+    Engine(db, provider).draft([{'time': 'now', 'role': 'user', 'text': '電動尾門多少錢', 'new': True}], now(), channel='fb_message')
+    prompt = provider.call_args.args[0][1]['content']
+    assert 'Wayne 親自核准送出的回覆' in prompt and 'https://example.test/tailgate' in prompt and '他改過 AI 草稿' in prompt
+    provider = Mock(side_effect=[{}, dict(draft='您好～')])
+    Engine(db, provider).draft([{'time': 'now', 'role': 'user', 'text': '週日有開嗎', 'new': True}], now(), channel='line')
+    assert 'https://example.test/tailgate' not in provider.call_args.args[0][1]['content']

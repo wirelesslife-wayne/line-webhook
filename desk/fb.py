@@ -214,8 +214,13 @@ def approve(store, staff, data):
             raise ActionError('這筆核准已取消或失效，請重新確認',409)
         if c['status'] not in ('waiting','ready','error','blocked'):
             raise ActionError('對話已更新、已核准或已處理，請重新載入',409)
-        cur.execute("""INSERT INTO desk_fb_attempts(retry_key,thread_id,staff_id,source_version,content,public_confirmed,status)
-          VALUES(%s,%s,%s,%s,%s,%s,'approved')""",(key,tid,staff['id'],version,text,public))
+        # What the customer asked and what the AI proposed: approved replies become examples for later drafts.
+        cur.execute("SELECT role,content,note FROM desk_fb_events WHERE thread_id=%s ORDER BY id",(tid,))
+        events = cur.fetchall()
+        answered = max((i for i,e in enumerate(events) if answers(e['role'],e['note'])),default=-1)
+        question = '\n'.join(e['content'] for e in events[answered+1:] if e['role']=='user' and e['content'])[:2000]
+        cur.execute("""INSERT INTO desk_fb_attempts(retry_key,thread_id,staff_id,source_version,content,public_confirmed,status,question,ai_draft)
+          VALUES(%s,%s,%s,%s,%s,%s,'approved',%s,%s)""",(key,tid,staff['id'],version,text,public,question,((c['draft'] or {}).get('draft') or '')[:4000]))
         cur.execute("UPDATE desk_fb_threads SET status='approved',note='',draft_token=NULL,updated_at=NOW() WHERE id=%s",(tid,))
     return dict(ok=True,attempt_id=key,status='approved')
 

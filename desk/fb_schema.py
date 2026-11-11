@@ -24,6 +24,8 @@ CREATE TABLE IF NOT EXISTS desk_fb_attempts (
  status TEXT NOT NULL CHECK(status IN ('approved','sent','failed','expired','cancelled')),
  reason TEXT NOT NULL DEFAULT '', approved_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
+ALTER TABLE desk_fb_attempts ADD COLUMN IF NOT EXISTS question TEXT NOT NULL DEFAULT '';
+ALTER TABLE desk_fb_attempts ADD COLUMN IF NOT EXISTS ai_draft TEXT NOT NULL DEFAULT '';
 CREATE UNIQUE INDEX IF NOT EXISTS desk_fb_one_approval ON desk_fb_attempts(thread_id) WHERE status='approved';
 CREATE INDEX IF NOT EXISTS desk_fb_attempts_thread ON desk_fb_attempts(thread_id,approved_at DESC);
 CREATE TABLE IF NOT EXISTS desk_edit_rules (
