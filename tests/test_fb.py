@@ -178,7 +178,7 @@ def test_revise_remembers_instruction_and_redrafts_in_background(db, logged):
     fb.push(db, [thread()])
     ready(db)
     version = fb.conversation(db, tid())['version']
-    out = fb.revise(db, boss, dict(thread_id=tid(), version=version, instruction='不要問縣市', original_draft='舊草稿'))
+    out = fb.revise(db, boss, dict(thread_id=tid(), version=version, instruction='不要問縣市', original_draft='舊草稿', remember=True))
     assert out['status'] == 'waiting' and out['remembered'] is True and out['rule_id']
     assert fb.conversation(db, tid())['status'] == 'waiting'
     engine = ready(db, text='新草稿')
@@ -244,7 +244,7 @@ def test_routes_need_login_csrf_and_reviewer(db, logged):
     assert client.get('/desk/api/fb/list?tab=approved').get_json()['approved'] == 1
     version = fb.conversation(db, tid())['version']
     assert post(client, staff, 'cancel', dict(thread_id=tid(), version=version)).status_code == 200
-    out = post(client, staff, 'redraft', dict(thread_id=tid(), version=version, instruction='語氣輕鬆一點')).get_json()
+    out = post(client, staff, 'redraft', dict(thread_id=tid(), version=version, instruction='語氣輕鬆一點', remember=True)).get_json()
     assert out['remembered'] is True
     rule = db.one('SELECT id FROM desk_edit_rules')['id']
     assert post(client, staff, 'rules/%d' % rule, dict(active=False)).status_code == 200
@@ -354,3 +354,29 @@ def test_open_lists_only_unanswered_conversations(db, capsys):
                                 dict(role='page', text='您好，已私訊您囉', at='上午10:20')])
     assert fb.push(db, [answered])['auto_closed'] == 1
     assert [r['key'] for r in fb.awaiting(db)] == ['900002']
+
+
+def test_auto_replies_and_holding_replies_do_not_close(db):
+    """11/12 test: the Page's away message and promotion arrive right after every evening message."""
+    away = [dict(role='user', text='請問 CR-V 電動尾門多少？', at='下午9:10'),
+            dict(role='page', text='抱歉，現在我們的客服團隊不在線上…', at='下午9:10', note='自動回覆'),
+            dict(role='page', text='喜歡無限的影音產品嗎？加入 LINE…', at='下午9:10', note='自動回覆')]
+    assert fb.push(db, [thread(messages=away)]) == dict(threads=1, new_customer_messages=1, auto_closed=0)
+    assert fb.conversation(db, tid())['status'] == 'waiting'
+    assert [m['new'] for m in fb.messages(db, tid())] == [True, False, False]
+    holding = away + [dict(role='page', text='稍等，幫您確認一下', at='上午10:20', note='暫回')]
+    assert fb.push(db, [thread(messages=holding)])['auto_closed'] == 0
+    assert fb.conversation(db, tid())['status'] == 'waiting'
+    answered = holding + [dict(role='page', text='CR-V 完工價 18,000 元', at='上午10:40')]
+    assert fb.push(db, [thread(messages=answered)])['auto_closed'] == 1
+    assert fb.conversation(db, tid())['status'] == 'done'
+
+
+def test_remember_is_off_unless_asked(db, logged):
+    _, _, staff, _ = logged
+    boss = wayne(db, staff)
+    fb.push(db, [thread()])
+    ready(db)
+    version = fb.conversation(db, tid())['version']
+    assert fb.revise(db, boss, dict(thread_id=tid(), version=version, instruction='這則寫短一點'))['remembered'] is False
+    assert db.one('SELECT COUNT(*) AS n FROM desk_edit_rules')['n'] == 0

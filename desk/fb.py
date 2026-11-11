@@ -66,6 +66,17 @@ def squash(text):
     return ''.join(str(text).split())
 
 
+def answers(role, note):
+    """A Page message only answers the customer when a person wrote it with substance.
+    The browser run notes Meta auto-replies (away message, greeting, promotion, ad FAQ) as 「自動…」
+    and colleagues' holding replies (「稍等」「幫您查」) as 「暫回」; neither closes the conversation."""
+    return role == 'page' and '自動' not in (note or '') and '暫回' not in (note or '')
+
+
+def kind(role, note):
+    return role if role == 'user' or answers(role, note) else 'auto'
+
+
 def said(sequence, role):
     return ''.join(text for who, text in sequence if who == role)
 
@@ -87,9 +98,9 @@ def push(store, payload):
               (tid,row['channel'],row['key'],row['name'],row['url'],row['context']))
             cur.execute('SELECT * FROM desk_fb_threads WHERE id=%s FOR UPDATE',(tid,))
             c = cur.fetchone()
-            cur.execute('SELECT role,content FROM desk_fb_events WHERE thread_id=%s ORDER BY id',(tid,))
-            old = [(e['role'],squash(e['content']) or '') for e in cur.fetchall()]
-            seen = [(m['role'],squash(m['text']) or '') for m in row['messages']]
+            cur.execute('SELECT role,content,note FROM desk_fb_events WHERE thread_id=%s ORDER BY id',(tid,))
+            old = [(kind(e['role'],e['note']),squash(e['content']) or '') for e in cur.fetchall()]
+            seen = [(kind(m['role'],m.get('note','')),squash(m['text']) or '') for m in row['messages']]
             def added(role):
                 now_said = said(seen,role)
                 return bool(now_said) and not said(old,role).endswith(now_said[-30:])
@@ -100,13 +111,14 @@ def push(store, payload):
                 cur.execute("UPDATE desk_fb_threads SET pending_instruction='',pending_original='',pending_rule=NULL WHERE id=%s",(tid,))
                 cur.execute("""UPDATE desk_fb_attempts SET status='expired',reason='客人有新訊息，請重新擬稿',updated_at=NOW()
                   WHERE thread_id=%s AND status='approved'""",(tid,))
-            if changed and seen[-1][0]=='page':
+            last = next((who for who,_ in reversed(seen) if who!='auto'), None)
+            if changed and last=='page':
                 if state!='done':
                     counts['auto_closed'] += 1
                 state, note = 'done', '同事已回覆'
                 cur.execute("""UPDATE desk_fb_attempts SET status='cancelled',reason='同事已回覆',updated_at=NOW()
                   WHERE thread_id=%s AND status='approved'""",(tid,))
-            if seen and old[-len(seen):]!=seen:
+            if seen and old[-len(seen):]!=seen or any(o[0]!=n[0] for o,n in zip(old[-len(seen):],seen)):
                 # Keep the longer history when this read simply saw fewer old messages; otherwise take the new snapshot.
                 cur.execute('DELETE FROM desk_fb_events WHERE thread_id=%s',(tid,))
                 for i,msg in enumerate(row['messages']):
@@ -131,7 +143,7 @@ def messages(store, tid, for_ai=False):
     rows = store.all('SELECT * FROM desk_fb_events WHERE thread_id=%s ORDER BY id',(tid,))
     if rows and all(r['event_at'] for r in rows):
         rows.sort(key=lambda r:(r['event_at'],r['id']))
-    handled = max((i for i,r in enumerate(rows) if r['role']=='page'),default=-1)
+    handled = max((i for i,r in enumerate(rows) if answers(r['role'],r['note'])),default=-1)
     return [dict(time=r['at'],role='assistant' if r['role']=='page' else 'user',
                  text=r['content']+(' '+r['note'] if r['note'] else ''),new=i>handled and r['role']=='user',origin=r['origin'])
             for i,r in enumerate(rows)]
@@ -303,7 +315,7 @@ def revise(store,staff,data):
     from .knowledge import can_review
     if not isinstance(data,dict) or not isinstance(data.get('instruction'),str) or not 1<=len(data['instruction'].strip())<=2000:
         raise ActionError('請填寫要改哪裡，最多 2,000 字',400)
-    remember = data.get('remember', True)
+    remember = data.get('remember', False)
     if type(remember) is not bool:
         raise ActionError('記住選項格式不正確',400)
     instruction, rule_id = data['instruction'].strip(), None
