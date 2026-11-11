@@ -425,7 +425,7 @@ def test_attachments_travel_with_the_approved_private_reply(db, logged, tmp_path
         fb_media.upload(db, boss, tid('fb_comment', '900002'), picture())
     one = fb_media.upload(db, boss, tid(), picture())
     two = fb_media.upload(db, boss, tid(), picture('第二張.png'))
-    assert one['type'] == 'image' and [m['name'] for m in fb_media.listing(db, tid())] == ['實機照.png', '第二張.png']
+    assert one['type'] == 'image' and sorted(m['name'] for m in fb_media.listing(db, tid())) == sorted(['實機照.png', '第二張.png'])  # same transaction: same upload time
     fb_media.remove(db, boss, two['id'], tid())
     with pytest.raises(ActionError):
         fb.approve(db, boss, approval(db, media_ids=[two['id']]))          # removed file cannot be sent
@@ -458,3 +458,14 @@ def test_attachment_limits_and_bad_files(db, logged):
     with pytest.raises(ActionError, match='最多'):
         fb_media.upload(db, boss, tid(), picture('4.png'))
     assert fb_media.read(db, 'x' * 32) is None
+
+
+def test_customer_who_only_pressed_ad_buttons_is_not_waiting(db):
+    """Wayne 11/12 (王英寬): pressing the ad's preset questions is answered by the ad itself."""
+    pressed = [dict(role='user', text='多少錢？安裝要多久？', at='上午3:00', note='廣告預設問題'),
+               dict(role='page', text='WRM-418 完工價 NT$18,500，施工時間約 4～5 小時。', at='上午3:00', note='自動回覆')]
+    assert fb.push(db, [thread(messages=pressed)])['new_customer_messages'] == 0
+    c = fb.conversation(db, tid())
+    assert c['status'] == 'skip' and '廣告預設問題' in c['note']
+    assert fb.push(db, [thread(messages=pressed + [dict(role='user', text='我的車是 2022 RAV4', at='上午9:10')])])['new_customer_messages'] == 1
+    assert fb.conversation(db, tid())['status'] == 'waiting'

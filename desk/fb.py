@@ -74,7 +74,11 @@ def answers(role, note):
 
 
 def kind(role, note):
-    return role if role == 'user' or answers(role, note) else 'auto'
+    """'user' only for words the customer typed: a button pressed on an ad (「廣告預設問題」) is answered by
+    the ad's own automatic reply, so on its own it is not a question waiting for us (Wayne 11/12)."""
+    if role == 'user':
+        return 'auto' if '廣告預設問題' in (note or '') else 'user'
+    return 'page' if answers(role, note) else 'auto'
 
 
 def said(sequence, role):
@@ -106,6 +110,9 @@ def push(store, payload):
                 return bool(now_said) and not said(old,role).endswith(now_said[-30:])
             users, changed = added('user'), added('user') or added('page')
             state, draft, drafted, note = c['status'], c['draft'], c['drafted_version'], c['note']
+            if not old and not users:
+                # First sight of a conversation in which the customer only pressed ad buttons.
+                state, note = 'skip', '客人只點了廣告預設問題，自動回覆已回答'
             if users:
                 state, draft, drafted, note = 'waiting', None, None, ''
                 cur.execute("UPDATE desk_fb_threads SET pending_instruction='',pending_original='',pending_rule=NULL WHERE id=%s",(tid,))
