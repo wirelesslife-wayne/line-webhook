@@ -162,6 +162,12 @@ class Engine:
             rules += '\n'.join('- '+r['instruction']+('（當時客人說：'+r['conversation_summary'][:80]+'）' if r['conversation_summary'] else '')
                                for r in edit_rules)
         comment = channel in ('fb_comment','ig_comment')
+        if channel != 'line':
+            rules += ('
+
+本次是 FB／IG 的對話。我方訊息後面標著「自動回覆」「自動問候」的，是系統自動送出的罐頭訊息，不算真人回覆過；'
+                      '標著「廣告預設問題」的是客人點了廣告上的問題，等於客人在發問。客人只收到自動回覆的，一律視為還沒處理：'
+                      '要寫出實質回覆，能報價就報價並附連結，缺車款或年份就請客人提供；不要因為自動回覆講過就回空白草稿。')
         if comment:
             rules += ('\n\n本次是社群公開留言，所有人都看得到。寫得比私訊精簡，最多 8 行；可以照價格資料報完工價；介紹產品或報價時附 1 個最相關的介紹連結；'
                       '不要寫出客人的電話、車牌等個資；結尾可以邀請私訊或加官方 LINE。')

@@ -217,6 +217,7 @@ def test_engine_applies_edit_rules_to_every_channel(db, logged):
         system = provider.call_args.args[0][0]['content']
         assert 'Wayne 修改指示' in system and '不要問縣市' in system and '已停用的指示' not in system
         assert ('本次是社群公開留言' in system) == channel.endswith('_comment')
+        assert ('不算真人回覆過' in system) == (channel != 'line')
 
 
 def test_engine_passes_post_context_and_flags_long_comment(db):
