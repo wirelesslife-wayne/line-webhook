@@ -19,7 +19,7 @@
 #fb-rules summary{cursor:pointer;font-weight:700}#fb-feedback.bad{background:#fbe4e2;color:var(--bad)}
 @media(max-width:700px){.tabs a{flex:1;text-align:center;padding:8px;font-size:13px}}
 </style>
-<nav class="tabs" aria-label="客服管道"><a href="/desk/">LINE</a><a href="/desk/fb" aria-current="page">FB／IG 審稿</a>{% if can_review %}<a href="/desk/knowledge">知識</a>{% endif %}</nav>
+<nav class="tabs" aria-label="客服管道">{% if line_on %}<a href="/desk/">LINE</a>{% endif %}<a href="/desk/fb" aria-current="page">FB／IG 審稿</a>{% if can_review %}<a href="/desk/knowledge">知識</a>{% endif %}</nav>
 <div class="tabs" aria-label="狀態"><button data-fb-tab="todo" aria-pressed="true">待你決定<span id="fb-n-todo"></span></button><button data-fb-tab="approved" aria-pressed="false">已核准待送出<span id="fb-n-approved"></span></button><button data-fb-tab="done" aria-pressed="false">已處理</button></div>
 <div class="tabs" aria-label="管道"><button data-fb-channel="" aria-pressed="true">全部</button>{% for key,label in labels.items() %}<button data-fb-channel="{{ key }}" aria-pressed="false">{{ label }}</button>{% endfor %}</div>
 {% if not can_review %}<p class="note">只有 Wayne 可以核准發送。你可以先看草稿、按「修改」請 AI 重寫。</p>{% endif %}

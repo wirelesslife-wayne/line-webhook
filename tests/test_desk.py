@@ -6,6 +6,7 @@ import hashlib
 import importlib.util
 import json
 import os
+os.environ.setdefault('DESK_LINE_ENABLED','1')  # these tests cover the LINE side
 from pathlib import Path
 import sys
 from unittest.mock import Mock
@@ -388,3 +389,14 @@ def test_install_requires_strong_key_and_no_network(monkeypatch):
     monkeypatch.setattr('psycopg2.connect',Mock(side_effect=AssertionError('no startup database I/O')))
     install(app)
     assert 'desk_store' in app.extensions
+
+
+def test_line_side_can_be_switched_off(db,logged,monkeypatch):
+    app,client,staff,notifier=logged
+    monkeypatch.setenv('DESK_LINE_ENABLED','0')
+    home=client.get('/desk/')
+    assert home.status_code==302 and home.headers['Location'].endswith('/desk/fb')
+    assert client.post('/desk/api/send',json=send_data(),headers={'X-CSRF-Token':staff['csrf']}).status_code==503
+    page=client.get('/desk/fb').get_data(as_text=True)
+    assert 'FB／IG 審稿' in page and 'href="/desk/">LINE' not in page
+    notifier.push.assert_not_called()

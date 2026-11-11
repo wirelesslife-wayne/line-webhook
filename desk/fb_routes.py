@@ -2,7 +2,7 @@ from flask import request, jsonify, g, render_template, Response
 from . import fb, fb_media
 from .errors import ActionError
 from .knowledge import can_review, require_reviewer, submit
-from .worker import local_time
+from .worker import local_time, line_on
 
 
 def register(bp,store):
@@ -37,7 +37,7 @@ def register(bp,store):
 
     @bp.get('/fb')
     def fb_page():
-        return render_template('fb.html',staff=g.staff,can_review=can_review(g.staff),labels=fb.LABELS,view=listing(),
+        return render_template('fb.html',line_on=line_on(),staff=g.staff,can_review=can_review(g.staff),labels=fb.LABELS,view=listing(),
             rules=[dict(id=r['id'],instruction=r['instruction'],active=r['active'],label=fb.LABELS.get(r['channel'],r['channel']),
                         time=local_time(r['created_at'])[5:16],said=r['conversation_summary'][:60])
                    for r in store.all('SELECT * FROM desk_edit_rules ORDER BY id DESC LIMIT 200')] if can_review(g.staff) else [])

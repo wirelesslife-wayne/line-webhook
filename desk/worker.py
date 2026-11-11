@@ -2,6 +2,7 @@
 from datetime import datetime, timedelta, timezone
 from html.parser import HTMLParser
 import json
+import os
 import threading
 import time
 import requests
@@ -10,6 +11,11 @@ from .db import now
 from .engine import Engine, ProviderPending, is_builtin, image_url
 
 TAIPEI = timezone(timedelta(hours=8))
+
+
+def line_on():
+    """The LINE side (reading conversations, drafting, the LINE page) runs only when switched on."""
+    return os.environ.get('DESK_LINE_ENABLED') == '1'
 
 
 def utc_time(value):
@@ -167,7 +173,8 @@ def start_worker(store):
     def reader():
         while True:
             try:
-                store.ingest()
+                if line_on():
+                    store.ingest()
                 refresh_prices(store)
                 from .media import cleanup
                 cleanup(store)
@@ -183,7 +190,8 @@ def start_worker(store):
                 with store.lock('desk-drafting') as acquired:
                     if acquired:
                         store.execute("UPDATE desk_conversations SET status='waiting' WHERE status='drafting'")
-                draft_once(store)
+                if line_on():
+                    draft_once(store)
                 store.set_meta('draft_heartbeat',now().isoformat())
             except Exception:
                 pass

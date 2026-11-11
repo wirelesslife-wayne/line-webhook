@@ -8,7 +8,7 @@ from .db import now
 from . import media
 from .notifier import LineNotifier
 from .service import send,mark_done,redraft,ActionError
-from .worker import local_time,utc_time,timeline
+from .worker import local_time,utc_time,timeline,line_on
 from .knowledge import can_review,require_reviewer,submit,review
 from werkzeug.wsgi import get_input_stream
 
@@ -94,6 +94,8 @@ def make_blueprint(store,notifier=None):
     @bp.route('')
     @bp.route('/')
     def index():
+        if not line_on():
+            return redirect('/desk/fb')
         return render_template('page.html',staff=g.staff,can_review=can_review(g.staff))
 
     @bp.get('/knowledge')
@@ -227,6 +229,8 @@ def make_blueprint(store,notifier=None):
 
     @bp.post('/api/send')
     def do_send():
+        if not line_on():
+            raise ActionError('LINE 工作台目前暫停使用',503)
         data = request.get_json(silent=True)
         if not isinstance(data,dict) or data.get('confirmed') is not True:
             raise ActionError('請先確認收件人及內容',400)
@@ -234,6 +238,8 @@ def make_blueprint(store,notifier=None):
 
     @bp.post('/api/action')
     def action():
+        if not line_on():
+            raise ActionError('LINE 工作台目前暫停使用',503)
         data = request.get_json(silent=True) or {}
         uid = data.get('user_id','')
         if not isinstance(uid,str) or not store.conversation(uid):
