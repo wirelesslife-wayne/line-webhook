@@ -126,7 +126,8 @@ class Engine:
                             {'role':'user','content':convo}])
         newtext = ' '.join(x['text'] for x in timeline if x['role']=='user' and x.get('new'))
         prices = self.price_lookup(ex)
-        canned = self.canned_for(newtext, ex)
+        # Ad leads often never name the product themselves ("cc 2026"); the ad's own replies and the post do.
+        canned = self.canned_for(newtext, ex, post_context+' '+' '.join(x['text'] for x in timeline[-8:]))
         faq = topk(newtext, self.FAQ, lambda x:x['q'], 3)
         hist = self.history(newtext, now_local)
         context = json.dumps({'prices':prices,'canned':canned,'faq':faq,'hours':self.HOURS,'dealers':self.DEALERS,'history':hist}, ensure_ascii=False)
@@ -186,12 +187,15 @@ class Engine:
             lines.append(f'{bb} {mm}（{years[0]}～{years[-1]}）｜{series} 系列 {code}｜完工價 {ps}')
         return lines[:40]
 
-    def canned_for(self, text, ex):
+    def canned_for(self, text, ex, background=''):
         s = text + ' ' + ' '.join(ex.get('products') or []) + ' ' + (ex.get('model') or '')
         topics = []
-        for pat, topic in PRODUCT_TOPICS:
-            if re.search(pat, s, re.I) and topic not in topics:
-                topics.append(topic)
+        for source in (s, background):  # the wider conversation only when the new message names no product
+            for pat, topic in PRODUCT_TOPICS:
+                if re.search(pat, source, re.I) and topic not in topics:
+                    topics.append(topic)
+            if topics:
+                break
         chosen = [c for c in self.CANNED if c['topic'] in topics[:3]]
         for c in topk(s, self.CANNED, lambda x: x['topic'] + x['text'][:300], 3):
             if c not in chosen and len(chosen) < 4:

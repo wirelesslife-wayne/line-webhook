@@ -327,3 +327,16 @@ def test_refused_ai_request_is_retried_later(db):
     ready(db)
     c = fb.conversation(db, tid())
     assert c['status'] == 'ready' and 'retry' not in c['draft']
+
+
+def test_ad_lead_gets_the_product_reply_without_naming_the_product(db):
+    """11/11: tailgate-ad leads who only typed their car ("cc 2026") got drafts with no price."""
+    provider = Mock(side_effect=[dict(brand='Toyota', model=None, products=[]), dict(draft='您好～')])
+    timeline = [{'time': 'now', 'role': 'user', 'text': '安裝要多久？價格多少？', 'new': False},
+                {'time': 'now', 'role': 'assistant', 'text': '電動尾門施工時間約 3 小時。', 'new': False},
+                {'time': 'now', 'role': 'user', 'text': 'cc 2026', 'new': True}]
+    Engine(db, provider).draft(timeline, now(), channel='fb_message')
+    assert '電動尾門銷售回覆' in provider.call_args.args[0][1]['content']
+    engine = Engine(db, Mock())
+    named = [c['topic'] for c in engine.canned_for('想裝 360 環景', {}, '電動尾門施工時間約 3 小時')]
+    assert '原廠螢幕增加環景系統銷售回覆' in named and '電動尾門銷售回覆' not in named
