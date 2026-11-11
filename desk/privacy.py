@@ -6,10 +6,13 @@ PLATE = re.compile(r'(?i)(?<![A-Z0-9])(?:([A-Z]{2,3})[- ]?(\d{3,4})|(\d{3,4})[- 
 
 
 def plate(models):
-    """Mask plate-shaped text, except a car model code next to a model year ("CC 2026", "2020 CRV")."""
+    """Mask plate-shaped text, except a car model code next to a model year ("CC 2026", "2020 CRV")
+    or a model name with its engine size ("NX200", "RX350", "GLC300")."""
     def replace(m):
         letters, digits = (m.group(1), m.group(2)) if m.group(1) else (m.group(4), m.group(3))
-        if letters.upper() in models and 1990 <= int(digits) <= 2035:
+        year = 1990 <= int(digits) <= 2035
+        engine = bool(m.group(1)) and len(digits) == 3 and digits.endswith('0')
+        if letters.upper() in models and (year or engine):
             return m.group(0)
         return '[車牌]'
     return replace
