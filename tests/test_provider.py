@@ -172,8 +172,20 @@ def test_preflight_never_calls_api(monkeypatch,configuration):
     if configuration=='tiny_cap':monkeypatch.setenv('DESK_MONTHLY_USD','.00001')
     if configuration=='oversize':text='字'*30000
     if configuration=='busy':db.acquired=False
-    with pytest.raises(ProviderPending):OpenAIProvider(db,post)([{'role':'user','content':text}])
+    provider=OpenAIProvider(db,post);provider.patience,provider.pause=2,0
+    with pytest.raises(ProviderPending):provider([{'role':'user','content':text}])
     post.assert_not_called();assert db.rows==[]
+
+
+def test_waits_for_its_turn_when_another_draft_is_running(monkeypatch):
+    """11/11: LINE and FB drafters ran together after the top-up; whoever lost the lock gave up for good."""
+    monkeypatch.setenv('OPENAI_API_KEY','test')
+    db=Ledger();db.acquired=False
+    def free_the_lock(seconds):db.acquired=True
+    monkeypatch.setattr('desk.provider.time.sleep',free_the_lock)
+    post=Mock(return_value=Mock(status_code=200,json=lambda:reply()))
+    assert OpenAIProvider(db,post)([{'role':'user','content':'JSON 測試'}])['draft']
+    post.assert_called_once()
 
 
 def test_real_db_usage_settlement_and_two_stage_engine(db,monkeypatch):

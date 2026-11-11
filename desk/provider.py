@@ -7,6 +7,7 @@ from datetime import timedelta, timezone
 from decimal import Decimal, InvalidOperation
 import json
 import os
+import time
 import uuid
 import requests
 from .db import now
@@ -29,6 +30,10 @@ class BudgetExceeded(ProviderPending):
 
 class Unavailable(ProviderPending):
     """The API refused the request before doing any work (e.g. the account is out of credit); retried later."""
+
+
+class Busy(Unavailable):
+    """Another draft holds the budget lock; nothing was sent."""
 
 
 def month_key(at=None):
@@ -86,8 +91,20 @@ class OpenAIProvider:
         self.store = store
         self.post = post or requests.post
         self.public = ()  # Our own published shop addresses/phones; the engine fills this in.
+        self.patience, self.pause = 90, 2  # Wait up to 3 minutes for another draft to finish.
 
     def __call__(self, messages):
+        # Only background workers call this. The LINE and FB drafters share one budget lock,
+        # so with a queue on both sides one of them is always busy: wait for a turn instead of giving up.
+        for turn in range(self.patience):
+            try:
+                return self.once(messages)
+            except Busy:
+                if turn == self.patience-1:
+                    raise
+                time.sleep(self.pause)
+
+    def once(self, messages):
         key = os.environ.get('OPENAI_API_KEY', '')
         if not key:
             raise ProviderPending('AI 擬稿尚未設定金鑰，請手動回覆')
@@ -106,7 +123,7 @@ class OpenAIProvider:
         reserved = ((size+4096)*Decimal('2.50')+MAX_OUTPUT*rates[2])/1000000
         with self.store.lock('desk-ai-budget') as acquired:
             if not acquired:
-                raise ProviderPending('AI 正在處理其他擬稿，請稍後重試或手動回覆')
+                raise Busy('AI 正在處理其他擬稿，稍後會自動重新擬稿')
             month = month_key()
             status = budget_status(self.store)
             if status['blocked']:
