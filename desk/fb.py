@@ -62,7 +62,20 @@ def validate(payload):
     return normalized
 
 
+def squash(text):
+    return ''.join(str(text).split())
+
+
+def said(sequence, role):
+    return ''.join(text for who, text in sequence if who == role)
+
+
 def push(store, payload):
+    """Each row is the conversation as the inbox shows it now (old to new); the thread keeps the latest snapshot.
+
+    The browser run re-reads conversations every hour and writes times and line breaks differently each time,
+    so "new" is decided by what one side has said in total, never by per-message time or wording of the post summary.
+    """
     rows = validate(payload)  # Validate the whole batch before the transaction.
     counts = dict(threads=0, new_customer_messages=0, auto_closed=0)
     with store.cursor() as cur:
@@ -74,41 +87,38 @@ def push(store, payload):
               (tid,row['channel'],row['key'],row['name'],row['url'],row['context']))
             cur.execute('SELECT * FROM desk_fb_threads WHERE id=%s FOR UPDATE',(tid,))
             c = cur.fetchone()
-            fresh, users = [], 0
-            for msg in row['messages']:
-                fingerprint = digest([msg['role'],msg['text'],msg['at']])
-                cur.execute("""INSERT INTO desk_fb_events(thread_id,fingerprint,role,content,at,note,event_at)
-                  VALUES(%s,%s,%s,%s,%s,%s,%s) ON CONFLICT(thread_id,fingerprint) DO NOTHING RETURNING id""",
-                  (tid,fingerprint,msg['role'],msg['text'],msg['at'],msg.get('note',''),event_time(msg['at'])))
-                inserted = cur.fetchone()
-                if inserted:
-                    fresh.append(dict(msg,id=inserted['id'],event_at=event_time(msg['at'])))
-                    users += msg['role']=='user'
-            context_changed = row['context'] != c['context']
-            version = c['version'] + users + int(context_changed and not users)
+            cur.execute('SELECT role,content FROM desk_fb_events WHERE thread_id=%s ORDER BY id',(tid,))
+            old = [(e['role'],squash(e['content']) or '') for e in cur.fetchall()]
+            seen = [(m['role'],squash(m['text']) or '') for m in row['messages']]
+            def added(role):
+                now_said = said(seen,role)
+                return bool(now_said) and not said(old,role).endswith(now_said[-30:])
+            users, changed = added('user'), added('user') or added('page')
             state, draft, drafted, note = c['status'], c['draft'], c['drafted_version'], c['note']
-            if users or context_changed:
+            if users:
                 state, draft, drafted, note = 'waiting', None, None, ''
                 cur.execute("UPDATE desk_fb_threads SET pending_instruction='',pending_original='',pending_rule=NULL WHERE id=%s",(tid,))
-                cur.execute("""UPDATE desk_fb_attempts SET status='expired',reason='客人訊息或貼文內容已更新，請重新擬稿',updated_at=NOW()
+                cur.execute("""UPDATE desk_fb_attempts SET status='expired',reason='客人有新訊息，請重新擬稿',updated_at=NOW()
                   WHERE thread_id=%s AND status='approved'""",(tid,))
-            if fresh:
-                # ISO timestamps handle late older imports. Raw display times use arrival order.
-                cur.execute('SELECT * FROM desk_fb_events WHERE thread_id=%s ORDER BY id',(tid,))
-                events = cur.fetchall()
-                latest = max(events,key=lambda e:(e['event_at'],e['id'])) if all(e['event_at'] for e in events) else events[-1]
-                if latest['role']=='page' and latest['origin']=='inbox':
-                    if state!='done':
-                        counts['auto_closed'] += 1
-                    state, note = 'done', '同事已回覆'
-                    cur.execute("""UPDATE desk_fb_attempts SET status='cancelled',reason='同事已回覆',updated_at=NOW()
-                      WHERE thread_id=%s AND status='approved'""",(tid,))
+            if changed and seen[-1][0]=='page':
+                if state!='done':
+                    counts['auto_closed'] += 1
+                state, note = 'done', '同事已回覆'
+                cur.execute("""UPDATE desk_fb_attempts SET status='cancelled',reason='同事已回覆',updated_at=NOW()
+                  WHERE thread_id=%s AND status='approved'""",(tid,))
+            if seen and old[-len(seen):]!=seen:
+                # Keep the longer history when this read simply saw fewer old messages; otherwise take the new snapshot.
+                cur.execute('DELETE FROM desk_fb_events WHERE thread_id=%s',(tid,))
+                for i,msg in enumerate(row['messages']):
+                    cur.execute("""INSERT INTO desk_fb_events(thread_id,fingerprint,role,content,at,note,event_at)
+                      VALUES(%s,%s,%s,%s,%s,%s,%s)""",
+                      (tid,digest([i,msg['role'],msg['text'],msg['at']]),msg['role'],msg['text'],msg['at'],msg.get('note',''),event_time(msg['at'])))
             cur.execute("""UPDATE desk_fb_threads SET name=%s,url=%s,context=%s,version=%s,status=%s,draft=%s,
               drafted_version=%s,note=%s,last_at=CASE WHEN %s THEN NOW() ELSE last_at END,
               draft_token=CASE WHEN %s THEN NULL ELSE draft_token END,updated_at=NOW() WHERE id=%s""",
-              (row['name'],row['url'],row['context'],version,state,Json(draft) if draft is not None else None,
-               drafted,note,bool(fresh),bool(fresh or context_changed),tid))
-            counts['new_customer_messages'] += users
+              (row['name'],row['url'],c['context'] or row['context'],c['version']+int(users),state,
+               Json(draft) if draft is not None else None,drafted,note,changed,changed,tid))
+            counts['new_customer_messages'] += int(users)
         counts['threads'] = len({r['id'] for r in rows})
     return counts
 
@@ -131,7 +141,8 @@ def status(store):
     rows = store.all('SELECT status,COUNT(*) AS n FROM desk_fb_threads GROUP BY status')
     counts = {r['status']:r['n'] for r in rows}
     return dict(waiting_draft=sum(counts.get(s,0) for s in ('waiting','drafting')),
-                awaiting_review=sum(counts.get(s,0) for s in ('ready','blocked','error')),
+                awaiting_review=counts.get('ready',0),
+                draft_failed=sum(counts.get(s,0) for s in ('blocked','error')),
                 approved_unsent=counts.get('approved',0),
                 send_failed=store.one("SELECT COUNT(*) AS n FROM desk_fb_threads WHERE note LIKE '送出失敗：%%'")['n'])
 
@@ -255,13 +266,15 @@ def record_result(store, attempt_id, outcome, reason=''):
 
 def draft_thread(store, c, engine_factory=None, instruction='', original='', rule_id=None):
     from .engine import Engine, ProviderPending
-    from .provider import BudgetExceeded, month_key
+    from .provider import BudgetExceeded, Unavailable, month_key
     try:
         result = (engine_factory or Engine)(store).draft(messages(store,c['id'],True),now().astimezone(TAIPEI),
             channel=c['channel'],context=c['context'],instruction=instruction,original_draft=original)
         state = 'ready'
     except BudgetExceeded as e:
         result,state = dict(draft=original,staff_note=str(e),budget_month=month_key()),'blocked'
+    except Unavailable as e:
+        result,state = dict(draft=original,staff_note=str(e),retry=True),'blocked'
     except ProviderPending as e:
         result,state = dict(draft=original,staff_note=str(e)),'blocked'
     except Exception:
@@ -313,7 +326,8 @@ def draft_once(store,engine_factory=None):
             return
         store.execute("""UPDATE desk_fb_threads SET status='waiting',draft_token=NULL WHERE
           (status='drafting' AND draft_started_at<NOW()-INTERVAL '10 minutes') OR
-          (status='blocked' AND draft->>'budget_month' IS NOT NULL AND draft->>'budget_month'<>%s)""",(month_key(),))
+          (status='blocked' AND draft->>'budget_month' IS NOT NULL AND draft->>'budget_month'<>%s) OR
+          (status='blocked' AND draft->>'retry'='true' AND updated_at<NOW()-INTERVAL '30 minutes')""",(month_key(),))
         for c in store.all("SELECT * FROM desk_fb_threads WHERE status='waiting' ORDER BY last_at LIMIT 20"):
             c['draft_token'] = str(uuid.uuid4())
             if store.execute("UPDATE desk_fb_threads SET status='drafting',draft_token=%s,draft_started_at=NOW() WHERE id=%s AND version=%s AND status='waiting'",(c['draft_token'],c['id'],c['version'])):

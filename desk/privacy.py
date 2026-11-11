@@ -2,8 +2,15 @@
 import re
 
 
-def redact(text):
-    text = str(text or '')
+def redact(text, keep=()):
+    """keep: our own published strings (shop addresses and phones) that must reach the model unmasked."""
+    text = re.sub('[\ue000-\uf8ff]', '', str(text or ''))
+    held = {}
+    for item in sorted(set(keep), key=len, reverse=True):
+        if item and item in text and len(held) < 6000:
+            token = chr(0xE000+len(held))
+            held[token] = item
+            text = text.replace(item, token)
     patterns = [
         (r'(?i)(?<![A-Z0-9])U[0-9a-f]{32}(?![A-Z0-9])', '[LINE識別碼]'),
         (r'(?i)(?<![A-Z0-9])[A-Z][12]\d{8}(?![A-Z0-9])', '[身分證號]'),
@@ -18,4 +25,6 @@ def redact(text):
     ]
     for pattern, replacement in patterns:
         text = re.sub(pattern, replacement, text)
+    for token, item in held.items():
+        text = text.replace(token, item)
     return text

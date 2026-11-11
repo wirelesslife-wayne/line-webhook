@@ -7,7 +7,7 @@ import pytest
 import requests
 from desk.engine import Engine, ProviderPending
 from desk.privacy import redact
-from desk.provider import OpenAIProvider, budget_status, month_key, usage_cost, EXHAUSTED
+from desk.provider import OpenAIProvider, Unavailable, budget_status, month_key, usage_cost, EXHAUSTED
 from desk.worker import timeline
 from test_desk import db, logged, send_data
 
@@ -210,3 +210,23 @@ def test_blocked_drafts_resume_on_next_month(db,monkeypatch):
         def draft(self,*args):return {'draft':'恢復擬稿'}
     draft_once(db,Synthetic)
     assert db.conversation('desk-test-a')['status']=='ready'
+
+
+def test_refused_request_holds_no_budget(monkeypatch):
+    """11/11: 104 out-of-credit refusals each kept a reservation and ate the monthly cap."""
+    monkeypatch.setenv('OPENAI_API_KEY','test')
+    db=Ledger()
+    post=Mock(return_value=Mock(status_code=429,json=lambda:{'error':{'message':'private'}}))
+    with pytest.raises(Unavailable) as error:
+        OpenAIProvider(db,post)([{'role':'user','content':'JSON 測試'}])
+    assert 'private' not in str(error.value)
+    assert len(db.rows)==1 and db.rows[0]['usd']==0 and db.rows[0]['status']=='settled'
+
+
+def test_published_shop_details_survive_redaction():
+    shop=['台中市太平區新平路一段267號','0923-374-585']
+    text='經銷商｜'+shop[0]+'｜'+shop[1]+'；客人電話 0912-345-678，住台中市北區三民路三段100號'
+    out=redact(text,shop)
+    assert shop[0] in out and shop[1] in out
+    assert '0912-345-678' not in out and '三民路' not in out
+    assert shop[1] not in redact(text)

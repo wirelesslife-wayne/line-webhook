@@ -27,6 +27,10 @@ class BudgetExceeded(ProviderPending):
     """Eligible for automatic retry when the Taipei billing month changes."""
 
 
+class Unavailable(ProviderPending):
+    """The API refused the request before doing any work (e.g. the account is out of credit); retried later."""
+
+
 def month_key(at=None):
     return (at or now()).astimezone(TAIPEI).strftime('%Y-%m')
 
@@ -81,6 +85,7 @@ class OpenAIProvider:
     def __init__(self, store, post=None):
         self.store = store
         self.post = post or requests.post
+        self.public = ()  # Our own published shop addresses/phones; the engine fills this in.
 
     def __call__(self, messages):
         key = os.environ.get('OPENAI_API_KEY', '')
@@ -89,7 +94,7 @@ class OpenAIProvider:
         model = os.environ.get('DESK_MODEL', MODEL)
         rates = model_rates(model)
         # Rebuild from an allowlist; no metadata, IDs, names or media objects pass.
-        inputs = [{'role':m['role'], 'content':redact(m['content'])}
+        inputs = [{'role':m['role'], 'content':redact(m['content'],self.public)}
                   for m in messages if m.get('role') in ('system','user','assistant')]
         if not inputs or any(not isinstance(m.get('content'),str) for m in messages):
             raise ProviderPending('AI 只接受文字，請手動回覆')
@@ -114,10 +119,16 @@ class OpenAIProvider:
             payload = {'model':model,'input':inputs,'store':False,'service_tier':'default',
                        'max_output_tokens':MAX_OUTPUT,'reasoning':{'effort':'low'},
                        'text':{'format':{'type':'json_object'}}}
+            refused = False
             try:
                 response = self.post('https://api.openai.com/v1/responses',
                     headers={'Authorization':'Bearer '+key,'Content-Type':'application/json'},
                     json=payload, timeout=(10,60), allow_redirects=False)
+                if 400 <= response.status_code < 500:
+                    # Refused before any work was done, so nothing is billable: do not hold budget for it.
+                    self.store.execute('''UPDATE desk_ai_usage SET usd=%s,input_tokens=%s,
+                      cached_tokens=%s,output_tokens=%s,status='settled' WHERE id=%s''', (0,0,0,0,attempt))
+                    refused = True
                 if response.status_code != 200:
                     raise ValueError('api failure')
                 body = response.json()
@@ -128,6 +139,8 @@ class OpenAIProvider:
                   (cost,incoming,cached,outgoing,attempt))
             except Exception:
                 # Keep reserved funds if billable usage is unknown; expose no body.
+                if refused:
+                    raise Unavailable('AI 服務拒絕了這次請求（常見原因：OpenAI 帳戶餘額用完），恢復後會自動重新擬稿') from None
                 raise ProviderPending('AI 擬稿失敗，用量待核對，請手動回覆') from None
             try:
                 if body.get('status') != 'completed':

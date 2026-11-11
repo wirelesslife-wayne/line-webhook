@@ -51,7 +51,7 @@ def test_push_dedupes_and_counts(db):
     assert fb.push(db, [thread()]) == dict(threads=1, new_customer_messages=0, auto_closed=0)
     c = fb.conversation(db, tid())
     assert (c['status'], c['version']) == ('waiting', 1)
-    assert fb.status(db) == dict(waiting_draft=1, awaiting_review=0, approved_unsent=0, send_failed=0)
+    assert fb.status(db) == dict(waiting_draft=1, awaiting_review=0, draft_failed=0, approved_unsent=0, send_failed=0)
     ready(db)
     assert fb.status(db)['awaiting_review'] == 1
 
@@ -274,3 +274,56 @@ def test_desk_never_calls_meta():
     for path in list(root.rglob('*.py')) + list(root.rglob('*.js')) + list(root.rglob('*.html')):
         text = path.read_text(encoding='utf-8')
         assert 'graph.facebook.com' not in text and 'FB_PAGE_ACCESS_TOKEN' not in text, path.name
+
+
+FAQ = [dict(role='page', text='您好！請告訴我們該如何為你提供協助。', at='上午7:35', note='自動問候'),
+       dict(role='user', text='安裝要多久？價格多少？', at='上午7:35', note='廣告預設問題'),
+       dict(role='page', text='施工時間約 3 小時，完工後會進行完整功能測試。', at='上午7:35', note='自動回覆'),
+       dict(role='user', text='TOYOTA cc 2026年車', at='上午7:40')]
+
+
+def test_rereading_the_same_conversation_changes_nothing(db):
+    """11/11: every hourly re-read wrote the time and line breaks differently, so old messages came back as new."""
+    fb.push(db, [thread('fb_comment', FAQ, context='合成貼文：電動尾門')])
+    ready(db, 'fb_comment')
+    before = fb.conversation(db, tid('fb_comment'))
+    again = [dict(m, at='今天 ' + m['at']) for m in FAQ[:3]] + [
+        dict(role='user', text='TOYOTA cc', at='今天 上午7:40'), dict(role='user', text='2026年車', at='今天 上午7:40')]
+    for batch in (again, again[2:], FAQ):
+        out = fb.push(db, [thread('fb_comment', batch, context='電動尾門貼文（這次摘要寫法不同）')])
+        assert out == dict(threads=1, new_customer_messages=0, auto_closed=0)
+    after = fb.conversation(db, tid('fb_comment'))
+    assert (after['status'], after['version'], after['draft']) == ('ready', before['version'], before['draft'])
+    assert after['context'] == '合成貼文：電動尾門'
+    assert [m['text'].split()[0] for m in fb.messages(db, tid('fb_comment'))].count('安裝要多久？價格多少？') == 1
+    assert fb.messages(db, tid('fb_comment'))[-1]['new'] is True
+
+
+def test_real_new_message_after_reread_is_new_once(db):
+    fb.push(db, [thread(messages=FAQ)])
+    ready(db)
+    more = [dict(m, at='今天 ' + m['at']) for m in FAQ] + [dict(role='user', text='我在高雄', at='下午5:11')]
+    assert fb.push(db, [thread(messages=more)])['new_customer_messages'] == 1
+    c = fb.conversation(db, tid())
+    assert (c['status'], c['version'], c['draft']) == ('waiting', 2, None)
+    assert fb.push(db, [thread(messages=more[1:])])['new_customer_messages'] == 0
+    texts = [m['text'] for m in fb.messages(db, tid())]
+    assert len(texts) == 5 and texts[-1] == '我在高雄'
+
+
+def test_refused_ai_request_is_retried_later(db):
+    """11/11: the OpenAI account ran out of credit; drafts must come back by themselves once it is topped up."""
+    from desk.provider import Unavailable
+    fb.push(db, [thread()])
+    down = Mock()
+    down.draft.side_effect = Unavailable('AI 服務拒絕了這次請求')
+    fb.draft_once(db, lambda store: down)
+    c = fb.conversation(db, tid())
+    assert c['status'] == 'blocked' and c['draft']['retry'] is True
+    assert fb.status(db)['draft_failed'] == 1 and fb.status(db)['awaiting_review'] == 0
+    ready(db)
+    assert fb.conversation(db, tid())['status'] == 'blocked'  # not before 30 minutes
+    db.execute("UPDATE desk_fb_threads SET updated_at=NOW()-INTERVAL '31 minutes'")
+    ready(db)
+    c = fb.conversation(db, tid())
+    assert c['status'] == 'ready' and 'retry' not in c['draft']

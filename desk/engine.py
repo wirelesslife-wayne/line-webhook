@@ -104,6 +104,9 @@ class Engine:
             raise ValueError('知識庫尚未上傳完整')
         self.RULES, self.WLF, self.CANNED, self.FAQ, self.HOURS, self.DEALERS = [kb[k] for k in required]
         self.MODELS = sorted({(c['b'], c['model']) for c in self.WLF['cars']})
+        if hasattr(provider, 'public'):
+            # Shop addresses and phones are published on our site; without this the privacy filter masks them.
+            provider.public = [part.strip() for line in str(self.DEALERS).splitlines() for part in line.split('｜')[1:] if part.strip()]
 
     def history(self, q, before_local, k=3):
         rows = self.store.all('SELECT question,answer FROM desk_qa WHERE asked_at < %s', (before_local,))

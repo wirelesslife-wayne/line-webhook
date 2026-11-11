@@ -124,13 +124,13 @@ def refresh_prices(store, fetch=requests.get):
 
 
 def draft_once(store, engine_factory=Engine):
-    from .provider import BudgetExceeded, month_key
+    from .provider import BudgetExceeded, Unavailable, month_key
     with store.lock('desk-drafting') as acquired:
         if not acquired:
             return
         store.execute("""UPDATE desk_conversations SET status='waiting',updated_at=NOW()
-          WHERE status='blocked' AND draft->>'budget_month' IS NOT NULL
-          AND draft->>'budget_month' <> %s""", (month_key(),))
+          WHERE status='blocked' AND ((draft->>'budget_month' IS NOT NULL AND draft->>'budget_month' <> %s)
+          OR (draft->>'retry'='true' AND updated_at<NOW()-INTERVAL '30 minutes'))""", (month_key(),))
         for c in store.all("SELECT * FROM desk_conversations WHERE status='waiting' ORDER BY first_at"):
             if not due(c):
                 continue
@@ -149,6 +149,8 @@ def draft_once(store, engine_factory=Engine):
                 state = 'ready'
             except BudgetExceeded as e:
                 result, state = {'draft':'','staff_note':str(e),'budget_month':month_key()},'blocked'
+            except Unavailable as e:
+                result, state = {'draft':'','staff_note':str(e),'retry':True},'blocked'
             except ProviderPending as e:
                 result, state = {'draft':'','staff_note':str(e)},'blocked'
             except Exception:

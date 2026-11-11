@@ -31,7 +31,7 @@ def register(bp,store):
           ORDER BY last_at,id LIMIT 21 OFFSET %s""",(states,channel,channel,page*20))
         counts=fb.status(store)
         return dict(items=[detail(c) for c in rows[:20]],has_more=len(rows)>20,page=page,tab=tab,channel=channel,
-            todo=counts['waiting_draft']+counts['awaiting_review'],approved=counts['approved_unsent'])
+            todo=counts['waiting_draft']+counts['awaiting_review']+counts['draft_failed'],approved=counts['approved_unsent'])
 
     @bp.get('/fb')
     def fb_page():
