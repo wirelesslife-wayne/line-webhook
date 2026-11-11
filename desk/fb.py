@@ -140,7 +140,12 @@ def conversation(store, tid):
 
 
 def messages(store, tid, for_ai=False):
-    rows = store.all('SELECT * FROM desk_fb_events WHERE thread_id=%s ORDER BY id',(tid,))
+    return shape(store.all('SELECT * FROM desk_fb_events WHERE thread_id=%s ORDER BY id',(tid,)))
+
+
+def shape(rows):
+    """One conversation's stored events (ordered by id) as the timeline shown to people and to the AI."""
+    rows = list(rows)
     if rows and all(r['event_at'] for r in rows):
         rows.sort(key=lambda r:(r['event_at'],r['id']))
     handled = max((i for i,r in enumerate(rows) if answers(r['role'],r['note'])),default=-1)

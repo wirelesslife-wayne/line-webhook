@@ -12,15 +12,35 @@ def register(bp,store):
             raise ActionError('找不到對話',404)
         return c
 
+    def details(rows):
+        # One connection for the whole page: the list is polled every few seconds by a single web worker.
+        if not rows:
+            return []
+        ids=[c['id'] for c in rows]
+        with store.cursor() as cur:
+            cur.execute("""SELECT a.*,u.username FROM desk_fb_attempts a JOIN desk_users u ON u.id=a.staff_id
+              WHERE thread_id=ANY(%s) ORDER BY approved_at DESC""",(ids,))
+            all_attempts=cur.fetchall()
+            cur.execute('SELECT * FROM desk_fb_events WHERE thread_id=ANY(%s) ORDER BY id',(ids,))
+            events=cur.fetchall()
+            cur.execute(f"""SELECT id,filename,content_type,thread_id,attempt_key,({fb_media.FREE}) AS free FROM desk_fb_media m
+              WHERE thread_id=ANY(%s) AND removed_at IS NULL ORDER BY uploaded_at,id""",(ids,))
+            files=cur.fetchall()
+        out=[]
+        for c in rows:
+            attempts=[a for a in all_attempts if a['thread_id']==c['id']][:10]
+            mine=[m for m in files if m['thread_id']==c['id']]
+            sent=next((a['retry_key'] for a in attempts if a['status'] in ('approved','sent')),None)
+            media=[m for m in mine if m['free']] if c['status'] in fb.TODO else [m for m in mine if sent and m['attempt_key']==sent]
+            out.append(dict(id=c['id'],name=c['name'],channel=c['channel'],label=fb.LABELS[c['channel']],key=c['key'],url=c['url'],
+                context=c['context'],status=c['status'],version=c['version'],note=c['note'],result=c['draft'] or {},
+                messages=fb.shape(e for e in events if e['thread_id']==c['id'])[-12:],is_public=c['channel'].endswith('_comment'),
+                media=[fb_media.describe(m) for m in media],
+                attempts=[dict(status=a['status'],time=local_time(a['approved_at']),staff=a['username'],text=a['content'],reason=a['reason']) for a in attempts]))
+        return out
+
     def detail(c):
-        attempts=store.all("""SELECT a.*,u.username FROM desk_fb_attempts a JOIN desk_users u ON u.id=a.staff_id
-          WHERE thread_id=%s ORDER BY approved_at DESC LIMIT 10""",(c['id'],))
-        return dict(id=c['id'],name=c['name'],channel=c['channel'],label=fb.LABELS[c['channel']],key=c['key'],url=c['url'],
-            context=c['context'],status=c['status'],version=c['version'],note=c['note'],result=c['draft'] or {},
-            messages=fb.messages(store,c['id'])[-12:],is_public=c['channel'].endswith('_comment'),
-            media=fb_media.listing(store,c['id']) if c['status'] in fb.TODO else
-                  next((fb_media.attached(store,a['retry_key']) for a in attempts if a['status'] in ('approved','sent')),[]),
-            attempts=[dict(status=a['status'],time=local_time(a['approved_at']),staff=a['username'],text=a['content'],reason=a['reason']) for a in attempts])
+        return details([c])[0]
 
     def listing():
         channel,tab=request.args.get('channel',''),request.args.get('tab','todo')
@@ -32,7 +52,7 @@ def register(bp,store):
         rows=store.all("""SELECT * FROM desk_fb_threads WHERE status=ANY(%s) AND (%s='' OR channel=%s)
           ORDER BY last_at,id LIMIT 21 OFFSET %s""",(states,channel,channel,page*20))
         counts=fb.status(store)
-        return dict(items=[detail(c) for c in rows[:20]],has_more=len(rows)>20,page=page,tab=tab,channel=channel,
+        return dict(items=details(rows[:20]),has_more=len(rows)>20,page=page,tab=tab,channel=channel,
             todo=counts['waiting_draft']+counts['awaiting_review']+counts['draft_failed'],approved=counts['approved_unsent'])
 
     @bp.get('/fb')
