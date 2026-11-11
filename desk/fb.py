@@ -207,6 +207,10 @@ def approve(store, staff, data):
     tid,text,version = data.get('thread_id'),data.get('text'),data.get('version')
     if not isinstance(tid,str) or not isinstance(text,str) or not text.strip() or len(text)>2000 or type(version) is not int:
         raise ActionError('回覆內容或快照不正確，文字上限 2,000 字',400)
+    from .links import check as check_links
+    broken = [l['url'] for l in check_links(store, text) if l['state'] == 'broken']
+    if broken:
+        raise ActionError('這個連結打不開，請改掉再核准：' + '、'.join(broken), 400)
     try:
         key = str(uuid.UUID(data.get('retry_key','')))
     except (ValueError,TypeError,AttributeError):

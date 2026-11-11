@@ -69,6 +69,8 @@ from .media import SCHEMA as MEDIA_SCHEMA
 SCHEMA += MEDIA_SCHEMA
 from .fb_schema import SCHEMA as FB_SCHEMA
 SCHEMA += FB_SCHEMA
+from .links import SCHEMA as LINK_SCHEMA
+SCHEMA += LINK_SCHEMA
 
 
 class Store:

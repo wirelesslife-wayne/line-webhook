@@ -78,6 +78,10 @@ document.addEventListener('click',async event=>{
     if(act==='send'){
       const text=el.querySelector('[data-draft]').value;if(!text.trim()){say('草稿是空的，請先寫內容或按「修改」。',true);return}
       confirmation=Object.freeze({thread_id:d.id,version:d.version,text,name:d.name,is_public:d.is_public,key:editKey(d),retry_key:crypto.randomUUID(),media_ids:(d.media||[]).map(m=>m.id)});
+      f('links').hidden=true;f('links').innerHTML='';
+      api('links',{text}).then(out=>{if(!confirmation||confirmation.text!==text||!out.links.length)return;const bad=out.links.some(l=>l.state==='broken');
+        f('links').innerHTML='<b>連結會開到：</b>'+out.links.map(l=>`<div>${l.state==='broken'?'❌ 打不開':l.state==='ok'?'✅':'⚠️ 沒查到'} ${esc(l.url)}<br><small>→ ${esc(l.title||l.target||'（無法確認）')}</small></div>`).join('');
+        f('links').hidden=false;if(bad){f('confirm-ok').disabled=true;f('links').insertAdjacentHTML('beforeend','<p class="error">有連結打不開，請先返回改掉。</p>')}}).catch(()=>{});
       f('attach-note').hidden=!(d.media||[]).length;f('attach-note').textContent=(d.media||[]).length?`另附 ${d.media.length} 個檔案：${d.media.map(m=>m.name).join('、')}`:'';
       f('recipient').textContent=`發送給「${d.name}」（${d.label}）`;f('preview').textContent=text;f('public-warning').hidden=f('public-label').hidden=!d.is_public;f('public-check').checked=false;f('confirm-ok').disabled=d.is_public;f('confirm').showModal();return}
     if(act==='media-remove'){busy=true;b.disabled=true;try{await api('media/'+b.dataset.media+'/remove',{thread_id:d.id});say('已移除附件。')}catch(e){say(e.message,true)}finally{busy=false}await load(true);return}

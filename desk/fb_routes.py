@@ -97,6 +97,14 @@ def register(bp,store):
         if not row: raise ActionError('找不到附件',404)
         return Response(bytes(row['data']),mimetype=row['content_type'],headers={'Content-Disposition':'inline'})
 
+    @bp.post('/api/fb/links')
+    def fb_links():
+        from .links import check
+        data=request.get_json(silent=True)
+        text=data.get('text') if isinstance(data,dict) else None
+        if not isinstance(text,str) or len(text)>4000: raise ActionError('內容格式不正確',400)
+        return jsonify(links=check(store,text))
+
     @bp.post('/api/fb/rules/<int:rule_id>')
     def fb_rule(rule_id):
         require_reviewer(g.staff)

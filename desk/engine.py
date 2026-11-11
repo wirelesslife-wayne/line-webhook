@@ -180,6 +180,10 @@ class Engine:
         if not isinstance(out, dict) or not isinstance(out.get('draft'), str):
             raise ValueError('擬稿格式不符')
         out.update(extract=ex,price_lines=prices,flags=check(out['draft'],context))
+        known = rules + context + post_context
+        for url in re.findall(r'https?://[^\s<>"「」（）()，。、]+', out['draft']):
+            if url.rstrip('.,;:!?') not in known:
+                out['flags'].append('草稿用了資料裡沒有的連結，請確認：' + url)
         if comment and (len([s for s in out['draft'].splitlines() if s.strip()]) > 10 or len(out['draft']) > 700):
             out['flags'].append('公開留言草稿偏長，建議精簡後再發送')
         out.pop('images',None)

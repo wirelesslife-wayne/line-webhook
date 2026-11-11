@@ -469,3 +469,40 @@ def test_customer_who_only_pressed_ad_buttons_is_not_waiting(db):
     assert c['status'] == 'skip' and '廣告預設問題' in c['note']
     assert fb.push(db, [thread(messages=pressed + [dict(role='user', text='我的車是 2022 RAV4', at='上午9:10')])])['new_customer_messages'] == 1
     assert fb.conversation(db, tid())['status'] == 'waiting'
+
+
+class FakePage:
+    def __init__(self, status, text='', data=None):
+        self.status_code, self.text, self._data = status, text, data or {}
+    def json(self):
+        return self._data
+
+
+def test_short_links_are_opened_and_named_before_sending(db, logged):
+    """Wayne 11/12: a wrong short link would be embarrassing; show where each one really goes."""
+    from desk import links
+    pages = {
+        'https://reurl.cc/good01': FakePage(200, '<input type="hidden" id="target" name="target" value="https://youtube.com/shorts/Nanz5A4XkX0?si=x">'),
+        'https://reurl.cc/dead01': FakePage(404),
+        'https://carandroid.com.tw/a/': FakePage(200, '<title>電動尾門推薦｜無限科技</title>'),
+    }
+    def get(url):
+        if url.startswith('https://www.youtube.com/oembed'):
+            return FakePage(200, data={'title': 'TOYOTA Corolla cross【電動尾門】'})
+        return pages[url]
+    out = links.check(db, '安裝實例：https://reurl.cc/good01\n介紹：https://carandroid.com.tw/a/', get)
+    assert [(l['state'], l['title']) for l in out] == [('ok', 'YouTube：TOYOTA Corolla cross【電動尾門】'), ('ok', '電動尾門推薦｜無限科技')]
+    assert links.check(db, '壞的：https://reurl.cc/dead01', get)[0]['state'] == 'broken'
+    _, _, staff, _ = logged
+    boss = wayne(db, staff)
+    fb.push(db, [thread()])
+    ready(db)
+    with pytest.raises(ActionError, match='連結打不開'):
+        fb.approve(db, boss, approval(db, text='您好～請看 https://reurl.cc/dead01'))
+    assert fb.approve(db, boss, approval(db, text='您好～請看 https://reurl.cc/good01'))['status'] == 'approved'
+
+
+def test_draft_with_an_unknown_link_is_flagged(db):
+    provider = Mock(side_effect=[{}, dict(draft='您好～請看 https://made.up/link')])
+    out = Engine(db, provider).draft([{'time': 'now', 'role': 'user', 'text': '電動尾門多少', 'new': True}], now(), channel='fb_message')
+    assert any('資料裡沒有的連結' in f for f in out['flags'])
