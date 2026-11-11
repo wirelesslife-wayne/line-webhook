@@ -3,6 +3,7 @@
 {% block body %}<main>
 <style nonce="{{ g.nonce }}">#learn-dialog textarea{min-height:96px}</style>
 {% if can_review %}<p><a href="/desk/knowledge">知識待審／已核准</a></p>{% endif %}
+<nav class="tabs" aria-label="客服管道"><button aria-pressed="true">LINE</button><button id="fb-link">FB／IG 審稿</button></nav>
 <div class="tabs" aria-label="對話分類"><button data-tab="todo" aria-pressed="true">待回覆</button><button data-tab="done" aria-pressed="false">已處理</button><button data-tab="skip" aria-pressed="false">按選單／貼圖</button></div>
 <div id="ai-budget" class="note" role="status" hidden></div><div id="price" class="note" hidden></div><div id="worker" class="note" hidden></div><div id="feedback" class="error" role="alert"></div>
 <div class="layout" id="layout"><section aria-label="對話清單"><div class="conversation-list" id="list">讀取中…</div><div class="actions"><button id="prev">上一頁</button><button id="next">下一頁</button></div></section>
@@ -19,6 +20,7 @@
 </main>
 <script nonce="{{ g.nonce }}">
 const csrf={{ staff.csrf|tojson }};
+document.getElementById('fb-link').onclick=()=>location.href='/desk/fb';
 {% include 'media.js' %}
 {% include 'workbench.js' %}
 </script>{% endblock %}

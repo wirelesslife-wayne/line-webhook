@@ -16,3 +16,5 @@ def install(app):
     if os.environ.get('DESK_WORKER_ENABLED') == '1':
         from .worker import start_worker
         start_worker(store)
+        from .fb import start_worker as start_fb_worker
+        start_fb_worker(store)

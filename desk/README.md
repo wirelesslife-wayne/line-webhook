@@ -1,4 +1,36 @@
-# LINE 客服工作台（媒體上傳功能待審核）
+# 客服工作台
+
+## FB／IG 私訊與留言：瀏覽器收發＋逐則審稿（2026-11-11）
+
+工作台本身**不連 Meta、不呼叫 Graph API、不送任何 FB／IG 訊息**。收訊與送出都由排程在已登入的 Meta 收件匣（瀏覽器）操作，工作台只負責擬稿、讓 Wayne 逐則決定、記錄結果。
+
+流程：
+
+1. 排程從 Meta 收件匣讀到需要回覆的對話，用本機工具寫入：`python -m desk.tools.fb_browser push <json 檔>`。
+2. 背景擬稿（與 LINE 同一個 `Engine`、口吻規則、知識庫、月預算、個資遮蔽）。
+3. Wayne 在 `/desk/fb` 逐則選：
+   - **發送**：確認框顯示對象與最終文字（留言需另勾「公開」確認），建立一筆核准快照。
+   - **修改**：寫下要改哪裡，背景依指示重擬；勾選「以後都照這樣寫」時存進 `desk_edit_rules`，之後 LINE／FB／IG 每次擬稿都附上（最新 40 條、可停用）。
+   - **不發送**：標成不回覆；客人再傳新訊息會重新進來。
+4. 排程下一輪用 `pending` 取得已核准清單，在瀏覽器照快照文字送出，再用 `result <attempt_id> sent|failed [原因]` 回報。
+
+防呆：
+
+- 核准綁定對話版本。核准後客人又傳新訊息，`pending` 不會列出，核准自動失效並重新擬稿。
+- 同事已在 Meta 後台回覆（push 進來的最後一則是粉專訊息）→ 自動移出待審，未送的核准一併取消。
+- 同一則對話同時只有一筆有效核准；`result` 可重複回報，不會產生第二筆送出紀錄。
+- 只有可審核帳號（目前為 Wayne）能核准、取消、標不回覆、寫入修改指示；其他帳號可看草稿、請 AI 重寫。
+
+工具子命令（輸入輸出皆 UTF-8 JSON，不輸出連線資訊）：
+
+| 子命令 | 作用 |
+| --- | --- |
+| `push <檔>` | 寫入對話。每筆含 `channel`（`fb_message`／`ig_message`／`fb_comment`／`ig_comment`）、`key`、`name`、`url`、`context`、`messages[{role:user|page,text,at,note}]`，同內容重複寫入不會重複新增。 |
+| `status` | `waiting_draft`、`awaiting_review`、`approved_unsent`、`send_failed` 四個數字。 |
+| `pending` | 已核准、等送出的清單（含 `attempt_id`、`content`、`last_customer_text`、`is_public`）。 |
+| `result <attempt_id> sent|failed [原因]` | 回報送出結果。 |
+
+資料表：`desk_fb_threads`、`desk_fb_events`、`desk_fb_attempts`、`desk_edit_rules`（`desk/fb_schema.py`，由 `Store.initialize()` 建立）。測試全部使用合成資料與交易回滾。
 
 `desk` 是選擇性 Flask blueprint，掛在 `/desk`。只有設定 `DESK_SECRET_KEY` 才載入。載入失敗由主程式隔離，既有 webhook 與查詢路由保持原行為。此 repo 公開，請勿加入知識庫、歷史問答、客人資料、實際帳密、截圖或執行紀錄。
 

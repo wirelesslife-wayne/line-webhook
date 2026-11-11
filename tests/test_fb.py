@@ -1,0 +1,276 @@
+"""Browser-fed FB/IG review flow. Synthetic data, TEMP tables, rollback; nothing is delivered."""
+import json
+from pathlib import Path
+from unittest.mock import Mock
+import uuid
+import pytest
+from desk import fb
+from desk.db import now
+from desk.engine import Engine
+from desk.errors import ActionError
+from desk.tools import fb_browser
+from test_desk import db, logged
+
+KEY = '900001'
+
+
+def thread(channel='fb_message', messages=None, key=KEY, context=''):
+    return dict(channel=channel, key=key, name='合成測試客人', url='https://business.facebook.com/latest/inbox/all?selected_item_id=' + key,
+                context=context, messages=messages or [dict(role='user', text='請問電動尾門多少錢？', at='2026-11-11T10:00:00+08:00')])
+
+
+def tid(channel='fb_message', key=KEY):
+    return fb.thread_id(channel, key)
+
+
+def wayne(db, staff):
+    db.execute('UPDATE desk_users SET username=%s WHERE id=%s', ('Wayne', staff['id']))
+    return dict(staff, username='Wayne')
+
+
+def ready(db, channel='fb_message', text='您好～完工價 $18,000。\n歡迎來門市看實機。'):
+    engine = Mock()
+    engine.draft.return_value = {'draft': text, 'flags': []}
+    fb.draft_once(db, lambda store: engine)
+    return engine
+
+
+def approval(db, channel='fb_message', text='您好～完工價 $18,000。', **changes):
+    data = dict(thread_id=tid(channel), text=text, version=fb.conversation(db, tid(channel))['version'],
+                retry_key=str(uuid.uuid4()), confirmed=True, public_confirmed=channel.endswith('_comment'))
+    data.update(changes)
+    return data
+
+
+def post(client, staff, path, data):
+    return client.post('/desk/api/fb/' + path, json=data, headers={'X-CSRF-Token': staff['csrf']})
+
+
+def test_push_dedupes_and_counts(db):
+    assert fb.push(db, [thread()]) == dict(threads=1, new_customer_messages=1, auto_closed=0)
+    assert fb.push(db, [thread()]) == dict(threads=1, new_customer_messages=0, auto_closed=0)
+    c = fb.conversation(db, tid())
+    assert (c['status'], c['version']) == ('waiting', 1)
+    assert fb.status(db) == dict(waiting_draft=1, awaiting_review=0, approved_unsent=0, send_failed=0)
+    ready(db)
+    assert fb.status(db)['awaiting_review'] == 1
+
+
+@pytest.mark.parametrize('bad', [
+    [dict(thread(), channel='line')],
+    [dict(thread(), name='')],
+    [dict(thread(), url='javascript:alert(1)')],
+    [dict(thread(), messages=[dict(role='bot', text='x', at='now')])],
+    [dict(thread(), messages=[dict(role='user', text='x')])],
+    {'not': 'a list'},
+])
+def test_push_rejects_malformed_input(db, bad):
+    with pytest.raises(ActionError):
+        fb.push(db, bad)
+    assert db.one('SELECT COUNT(*) AS n FROM desk_fb_threads')['n'] == 0
+
+
+def test_approve_pending_result_is_idempotent(db, logged):
+    _, _, staff, _ = logged
+    boss = wayne(db, staff)
+    fb.push(db, [thread()])
+    ready(db)
+    data = approval(db)
+    out = fb.approve(db, boss, data)
+    assert out['status'] == 'approved' and fb.approve(db, boss, data)['duplicate'] is True
+    queue = fb.pending(db)
+    assert len(queue) == 1 and queue[0]['content'] == data['text'] and queue[0]['is_public'] is False
+    assert queue[0]['last_customer_text'] == '請問電動尾門多少錢？' and queue[0]['name'] == '合成測試客人'
+    assert fb.status(db)['approved_unsent'] == 1
+    assert fb.record_result(db, out['attempt_id'], 'sent')['status'] == 'sent'
+    assert fb.record_result(db, out['attempt_id'], 'sent')['duplicate'] is True
+    assert fb.conversation(db, tid())['status'] == 'done' and fb.pending(db) == []
+    assert db.one("SELECT COUNT(*) AS n FROM desk_fb_events WHERE origin='browser'")['n'] == 1
+    with pytest.raises(ActionError):
+        fb.record_result(db, out['attempt_id'], 'failed', '太晚回報')
+
+
+def test_failed_send_returns_to_review(db, logged):
+    _, _, staff, _ = logged
+    boss = wayne(db, staff)
+    fb.push(db, [thread()])
+    ready(db)
+    out = fb.approve(db, boss, approval(db))
+    fb.record_result(db, out['attempt_id'], 'failed', '對象或內容對不上')
+    c = fb.conversation(db, tid())
+    assert c['status'] == 'ready' and '對象或內容對不上' in c['note']
+    assert fb.status(db)['send_failed'] == 1 and fb.pending(db) == []
+
+
+def test_new_customer_message_expires_approval(db, logged):
+    _, _, staff, _ = logged
+    boss = wayne(db, staff)
+    fb.push(db, [thread()])
+    ready(db)
+    fb.approve(db, boss, approval(db))
+    newer = thread(messages=[dict(role='user', text='請問電動尾門多少錢？', at='2026-11-11T10:00:00+08:00'),
+                             dict(role='user', text='我的車是 2020 RAV4', at='2026-11-11T10:30:00+08:00')])
+    assert fb.push(db, [newer])['new_customer_messages'] == 1
+    assert fb.pending(db) == []
+    assert db.one('SELECT status FROM desk_fb_attempts')['status'] == 'expired'
+    assert fb.conversation(db, tid())['status'] == 'waiting'
+
+
+def test_colleague_reply_closes_and_cancels(db, logged):
+    _, _, staff, _ = logged
+    boss = wayne(db, staff)
+    fb.push(db, [thread()])
+    ready(db)
+    fb.approve(db, boss, approval(db))
+    replied = thread(messages=[dict(role='user', text='請問電動尾門多少錢？', at='2026-11-11T10:00:00+08:00'),
+                               dict(role='page', text='您好，已私訊您囉', at='2026-11-11T10:20:00+08:00')])
+    assert fb.push(db, [replied])['auto_closed'] == 1
+    c = fb.conversation(db, tid())
+    assert (c['status'], c['note']) == ('done', '同事已回覆')
+    assert db.one('SELECT status FROM desk_fb_attempts')['status'] == 'cancelled' and fb.pending(db) == []
+
+
+def test_public_comment_needs_explicit_confirmation(db, logged):
+    _, _, staff, _ = logged
+    boss = wayne(db, staff)
+    fb.push(db, [thread('fb_comment', context='合成貼文：電動尾門升級')])
+    ready(db, 'fb_comment')
+    with pytest.raises(ActionError, match='公開留言'):
+        fb.approve(db, boss, approval(db, 'fb_comment', public_confirmed=False))
+    fb.approve(db, boss, approval(db, 'fb_comment'))
+    assert fb.pending(db)[0]['is_public'] is True
+
+
+def test_only_reviewer_decides(db, logged):
+    _, _, staff, _ = logged
+    fb.push(db, [thread()])
+    ready(db)
+    version = fb.conversation(db, tid())['version']
+    for call in (lambda: fb.approve(db, staff, approval(db)),
+                 lambda: fb.action(db, staff, dict(thread_id=tid(), version=version), 'skip')):
+        with pytest.raises(ActionError) as error:
+            call()
+        assert error.value.status == 403
+    assert fb.conversation(db, tid())['status'] == 'ready'
+
+
+def test_skip_cancel_and_stale_version(db, logged):
+    _, _, staff, _ = logged
+    boss = wayne(db, staff)
+    fb.push(db, [thread()])
+    ready(db)
+    with pytest.raises(ActionError):
+        fb.approve(db, boss, approval(db, version=99))
+    fb.approve(db, boss, approval(db))
+    version = fb.conversation(db, tid())['version']
+    fb.action(db, boss, dict(thread_id=tid(), version=version), 'cancel')
+    assert fb.conversation(db, tid())['status'] == 'ready' and fb.pending(db) == []
+    fb.action(db, boss, dict(thread_id=tid(), version=version), 'skip')
+    assert fb.conversation(db, tid())['status'] == 'skip'
+    again = thread(messages=[dict(role='user', text='還在嗎？', at='2026-11-11T12:00:00+08:00')])
+    fb.push(db, [again])
+    assert fb.conversation(db, tid())['status'] == 'waiting'
+
+
+def test_revise_remembers_instruction_and_redrafts_in_background(db, logged):
+    _, _, staff, _ = logged
+    boss = wayne(db, staff)
+    fb.push(db, [thread()])
+    ready(db)
+    version = fb.conversation(db, tid())['version']
+    out = fb.revise(db, boss, dict(thread_id=tid(), version=version, instruction='不要問縣市', original_draft='舊草稿'))
+    assert out['status'] == 'waiting' and out['remembered'] is True and out['rule_id']
+    assert fb.conversation(db, tid())['status'] == 'waiting'
+    engine = ready(db, text='新草稿')
+    kwargs = engine.draft.call_args.kwargs
+    assert kwargs['instruction'] == '不要問縣市' and kwargs['original_draft'] == '舊草稿'
+    c = fb.conversation(db, tid())
+    assert c['status'] == 'ready' and c['draft']['draft'] == '新草稿' and c['pending_instruction'] == ''
+    rule = db.one('SELECT * FROM desk_edit_rules')
+    assert rule['instruction'] == '不要問縣市' and rule['revised_draft'] == '新草稿' and rule['active'] is True
+    assert rule['conversation_summary'] == '請問電動尾門多少錢？'
+
+
+def test_revise_without_remember_or_by_staff_stores_no_rule(db, logged):
+    _, _, staff, _ = logged
+    fb.push(db, [thread()])
+    ready(db)
+    version = fb.conversation(db, tid())['version']
+    assert fb.revise(db, staff, dict(thread_id=tid(), version=version, instruction='短一點'))['remembered'] is False
+    ready(db)
+    boss = wayne(db, staff)
+    assert fb.revise(db, boss, dict(thread_id=tid(), version=version, instruction='這則價格寫 18,000', remember=False))['remembered'] is False
+    assert db.one('SELECT COUNT(*) AS n FROM desk_edit_rules')['n'] == 0
+    with pytest.raises(ActionError):
+        fb.revise(db, boss, dict(thread_id=tid(), version=version, instruction=''))
+
+
+def test_engine_applies_edit_rules_to_every_channel(db, logged):
+    _, _, staff, _ = logged
+    db.execute("""INSERT INTO desk_edit_rules(instruction,channel,conversation_summary,original_draft,created_by)
+      VALUES('不要問縣市','fb_message','合成問題','',%s),('已停用的指示','fb_message','','',%s)""", (staff['id'], staff['id']))
+    db.execute("UPDATE desk_edit_rules SET active=FALSE WHERE instruction='已停用的指示'")
+    timeline = [{'time': 'now', 'role': 'user', 'text': '主機', 'new': True}]
+    for channel in ('line', 'fb_message', 'ig_comment'):
+        provider = Mock(side_effect=[{}, dict(draft='您好～\n歡迎來門市看實機。')])
+        Engine(db, provider).draft(timeline, now(), channel=channel)
+        system = provider.call_args.args[0][0]['content']
+        assert 'Wayne 修改指示' in system and '不要問縣市' in system and '已停用的指示' not in system
+        assert ('公開留言' in system) == channel.endswith('_comment')
+
+
+def test_engine_passes_post_context_and_flags_long_comment(db):
+    provider = Mock(side_effect=[{}, dict(draft='\n'.join('第%d行' % i for i in range(12)))])
+    out = Engine(db, provider).draft([{'time': 'now', 'role': 'user', 'text': '多少錢', 'new': True}], now(),
+                                     channel='fb_comment', context='合成貼文摘要', instruction='短一點', original_draft='原本的草稿')
+    prompt = provider.call_args.args[0][1]['content']
+    assert '合成貼文摘要' in prompt and '短一點' in prompt and '原本的草稿' in prompt
+    assert any('偏長' in flag for flag in out['flags'])
+
+
+def test_routes_need_login_csrf_and_reviewer(db, logged):
+    app, client, staff, _ = logged
+    fb.push(db, [thread(), thread('fb_comment', key='900002', context='合成貼文')])
+    ready(db)
+    assert app.test_client().get('/desk/api/fb/list').status_code in (302, 401)
+    listing = client.get('/desk/api/fb/list').get_json()
+    assert listing['todo'] == 2 and {i['label'] for i in listing['items']} == {'FB 私訊', 'FB 留言'}
+    assert client.get('/desk/api/fb/list?channel=fb_comment').get_json()['items'][0]['is_public'] is True
+    assert client.get('/desk/api/fb/list?tab=nope').status_code == 400
+    assert client.post('/desk/api/fb/send', json=approval(db)).status_code == 403
+    assert post(client, staff, 'send', approval(db)).status_code == 403
+    wayne(db, staff)
+    assert post(client, staff, 'send', approval(db)).get_json()['status'] == 'approved'
+    assert client.get('/desk/api/fb/list?tab=approved').get_json()['approved'] == 1
+    version = fb.conversation(db, tid())['version']
+    assert post(client, staff, 'cancel', dict(thread_id=tid(), version=version)).status_code == 200
+    out = post(client, staff, 'redraft', dict(thread_id=tid(), version=version, instruction='語氣輕鬆一點')).get_json()
+    assert out['remembered'] is True
+    rule = db.one('SELECT id FROM desk_edit_rules')['id']
+    assert post(client, staff, 'rules/%d' % rule, dict(active=False)).status_code == 200
+    assert db.one('SELECT active FROM desk_edit_rules')['active'] is False
+    assert post(client, staff, 'rules/999999', dict(active=True)).status_code == 404
+    page = client.get('/desk/fb')
+    assert page.status_code == 200 and '語氣輕鬆一點' in page.get_data(as_text=True)
+
+
+def test_tool_reads_and_writes_utf8_json(db, tmp_path, capsys):
+    source = tmp_path / 'batch.json'
+    source.write_text(json.dumps([thread()], ensure_ascii=False), encoding='utf-8')
+    assert fb_browser.main(['push', str(source)], lambda: db) == 0
+    assert json.loads(capsys.readouterr().out)['new_customer_messages'] == 1
+    assert fb_browser.main(['status'], lambda: db) == 0
+    assert json.loads(capsys.readouterr().out)['waiting_draft'] == 1
+    assert fb_browser.main(['pending'], lambda: db) == 0
+    assert json.loads(capsys.readouterr().out) == []
+    source.write_text('{broken', encoding='utf-8')
+    assert fb_browser.main(['push', str(source)], lambda: db) == 1
+    assert '格式不正確' in json.loads(capsys.readouterr().out)['error']
+    assert fb_browser.main(['result', 'not-a-uuid', 'sent'], lambda: db) == 1
+
+
+def test_desk_never_calls_meta():
+    root = Path(fb.__file__).parent
+    for path in list(root.rglob('*.py')) + list(root.rglob('*.js')) + list(root.rglob('*.html')):
+        text = path.read_text(encoding='utf-8')
+        assert 'graph.facebook.com' not in text and 'FB_PAGE_ACCESS_TOKEN' not in text, path.name

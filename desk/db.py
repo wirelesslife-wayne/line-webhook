@@ -67,6 +67,8 @@ CREATE TABLE IF NOT EXISTS desk_knowledge_events (
 '''
 from .media import SCHEMA as MEDIA_SCHEMA
 SCHEMA += MEDIA_SCHEMA
+from .fb_schema import SCHEMA as FB_SCHEMA
+SCHEMA += FB_SCHEMA
 
 
 class Store:

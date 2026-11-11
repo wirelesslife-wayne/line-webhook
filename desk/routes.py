@@ -245,4 +245,6 @@ def make_blueprint(store,notifier=None):
             raise ActionError('操作不正確',400)
         return jsonify(ok=True)
 
+    from .fb_routes import register
+    register(bp,store)
     return bp
