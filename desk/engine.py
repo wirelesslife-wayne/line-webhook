@@ -125,7 +125,13 @@ class Engine:
                 # Showing what he changed teaches the layout and wording he rejects, not just the final text.
                 text += f"\n（AI 原本寫的是下面這版，被 Wayne 改掉了；他改掉的寫法、排版不要再用）：\n{r['ai_draft'][:700]}"
             return text
-        return [show(r) for r in topk(q, rows, lambda x: x['question']+' '+x['content'][:300], k)]
+        mine = [show(r) for r in topk(q, rows, lambda x: x['question']+' '+x['content'][:300], k)]
+        # Replies typed directly in FB/IG/LINE that the desk judged better than its examples (Wayne 11/12).
+        from .learning import kept
+        label = {'fb': 'FB', 'ig': 'IG', 'line': 'LINE'}
+        learned = [f"客人：{r['question'][:200]}\n直接在 {label.get(r['source'], r['source'])} 回的回覆（審過，比原本範本好）：\n{r['answer'][:900]}"
+                   for r in topk(q, kept(self.store), lambda x: x['question']+' '+x['answer'][:300], 2)]
+        return mine + learned
 
     def attachments(self, text='', extract=None):
         # Employee uploads replace automatic product suggestions.
