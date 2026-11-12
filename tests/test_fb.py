@@ -531,3 +531,17 @@ def test_push_keeps_a_screenshot_of_the_real_conversation(db, logged, tmp_path, 
     assert client.get('/desk/api/fb/shot', query_string={'thread_id': tid(key='900009')}).status_code == 404
     listed = client.get('/desk/api/fb/list').get_json()['items']
     assert [bool(i['shot']) for i in sorted(listed, key=lambda i: i['key'])] == [True, False]
+
+
+def test_ad_context_arriving_later_redrafts_the_wrong_product_draft(db):
+    # Wayne 11/12 (何浚榕): the ad banner was missed, so the AI guessed the product; once the ad is known, draft again.
+    fb.push(db, [thread()])
+    ready(db)
+    assert fb.conversation(db, tid())['status'] == 'ready'
+    ad = '客人從廣告「原車沒有電尾門？也能輕鬆升級」進來'
+    fb.push(db, [thread(context=ad)])
+    c = fb.conversation(db, tid())
+    assert (c['status'], c['context'], c['draft']) == ('waiting', ad, None)
+    ready(db)
+    fb.push(db, [thread(context=ad)])
+    assert fb.conversation(db, tid())['status'] == 'ready'

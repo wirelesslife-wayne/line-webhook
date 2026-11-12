@@ -119,6 +119,9 @@ def push(store, payload):
                 cur.execute("UPDATE desk_fb_threads SET pending_instruction='',pending_original='',pending_rule=NULL WHERE id=%s",(tid,))
                 cur.execute("""UPDATE desk_fb_attempts SET status='expired',reason='客人有新訊息，請重新擬稿',updated_at=NOW()
                   WHERE thread_id=%s AND status='approved'""",(tid,))
+            if not c['context'] and row['context'] and state in ('ready','error','blocked'):
+                # The ad/post this lead came from was missing when drafting: the draft may be about the wrong product.
+                state, draft, drafted, note = 'waiting', None, None, ''
             last = next((who for who,_ in reversed(seen) if who!='auto'), None)
             if changed and last=='page':
                 if state!='done':
