@@ -26,6 +26,8 @@ function card(d,i){
   if(todo){
     if(r.staff_note)h+=`<p class="note">AI 的提醒：${esc(r.staff_note)}</p>`;
     h+=(r.flags||[]).map(x=>`<p class="error">${esc(x)}</p>`).join('');
+    const vers=[{label:r.label,draft:r.draft},...(r.alternatives||[])].filter(v=>typeof v.draft==='string'&&v.draft);
+    if(vers.length>1&&!waiting)h+=`<p class="muted">AI 寫了 ${vers.length} 個版本，按「用這版」會放進下面的框，可以再改字：</p><div class="versions">${vers.map((v,n)=>{const on=draft===v.draft;return `<section class="ver${on?' on':''}"><h3>版本${'ABC'[n]} <small>${esc(v.label||'')}${n===0?'（推薦）':''}</small></h3><pre>${esc(v.draft)}</pre><button data-act="version" data-v="${n}" aria-pressed="${on}" class="${on?'primary':''}">${on?'✓ 正在用這版':'用這版'}</button></section>`}).join('')}</div>`;
     h+=`<label for="fb-draft-${i}">草稿（可以直接改字）</label><textarea id="fb-draft-${i}" data-draft maxlength="2000" ${waiting?'disabled':''}>${esc(draft)}</textarea>`;
     if(!d.is_public&&canReview){
       const have=new Set((d.media||[]).map(m=>m.name)),sug=(r.cards||[]).filter(c=>!have.has(c.name));
@@ -96,6 +98,7 @@ document.addEventListener('click',async event=>{
     if(b.dataset.ruleId){const active=b.dataset.active!=='true';b.disabled=true;await api('rules/'+b.dataset.ruleId,{active});b.dataset.active=String(active);b.textContent=active?'停用':'重新啟用';b.closest('.rule').classList.toggle('off',!active);b.disabled=false;return}
     const act=b.dataset.act;if(!act)return;const p=pick(b);if(!p)return;const {d,el}=p;
     if(act==='toggle'){openId=openId===d.id?null:d.id;if(lastData)draw(lastData);if(openId)document.querySelector(`.item[data-id="${CSS.escape(openId)}"]`)?.scrollIntoView({block:'nearest'});return}
+    if(act==='version'){const r=d.result||{},vers=[{draft:r.draft},...(r.alternatives||[])],v=vers[Number(b.dataset.v)];if(!v)return;const box=el.querySelector('[data-draft]');const cur=edits[editKey(d)];if(cur!==undefined&&!vers.some(x=>x.draft===cur)&&!confirm('框裡改過的字會被換掉，確定換版本嗎？'))return;box.value=v.draft;edits[editKey(d)]=v.draft;el.querySelectorAll('[data-act=version]').forEach(x=>{const on=x===b;x.setAttribute('aria-pressed',String(on));x.classList.toggle('primary',on);x.textContent=on?'✓ 正在用這版':'用這版';x.closest('.ver').classList.toggle('on',on)});return}
     if(act==='send'){
       const text=el.querySelector('[data-draft]').value;if(!text.trim()){say('草稿是空的，請先寫內容或按「修改」。',true);return}
       confirmation=Object.freeze({thread_id:d.id,version:d.version,text,name:d.name,is_public:d.is_public,key:editKey(d),retry_key:crypto.randomUUID(),media_ids:(d.media||[]).map(m=>m.id)});

@@ -75,6 +75,8 @@ from .fb_schema import SCHEMA as FB_SCHEMA
 SCHEMA += FB_SCHEMA
 from .links import SCHEMA as LINK_SCHEMA
 SCHEMA += LINK_SCHEMA
+from .cases import SCHEMA as CASE_SCHEMA
+SCHEMA += CASE_SCHEMA
 
 
 class Store:

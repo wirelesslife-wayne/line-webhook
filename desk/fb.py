@@ -240,11 +240,18 @@ def approve(store, staff, data):
         answered = max((i for i,e in enumerate(events) if answers(e['role'],e['note'])),default=-1)
         question = '\n'.join(e['content'] for e in events[answered+1:] if e['role']=='user' and e['content'])[:2000]
         cur.execute("""INSERT INTO desk_fb_attempts(retry_key,thread_id,staff_id,source_version,content,public_confirmed,status,question,ai_draft)
-          VALUES(%s,%s,%s,%s,%s,%s,'approved',%s,%s)""",(key,tid,staff['id'],version,text,public,question,((c['draft'] or {}).get('draft') or '')[:4000]))
+          VALUES(%s,%s,%s,%s,%s,%s,'approved',%s,%s)""",(key,tid,staff['id'],version,text,public,question,chosen(c['draft'], text)[:4000]))
         from .fb_media import bind
         bind(cur,tid,key,data.get('media_ids'),c['channel'].endswith('_comment'))
         cur.execute("UPDATE desk_fb_threads SET status='approved',note='',draft_token=NULL,updated_at=NOW() WHERE id=%s",(tid,))
     return dict(ok=True,attempt_id=key,status='approved')
+
+
+def chosen(draft, text):
+    """The AI version Wayne started from (he can pick one of 2-3): the closest one to what he approved."""
+    import difflib
+    versions = [x.get('draft') or '' for x in [draft or {}] + list((draft or {}).get('alternatives') or []) if isinstance(x, dict)]
+    return max(versions, key=lambda v: difflib.SequenceMatcher(None, v, text).ratio()) if versions else ''
 
 
 def locked(cur, tid, version, check_state=True):
@@ -397,6 +404,11 @@ def start_worker(store):
         from .learning import judge_once, BATCH
         while True:
             busy = False
+            try:
+                from .cases import refresh_if_due
+                refresh_if_due(store)  # the website's install-case index, about once a day
+            except Exception:
+                pass
             try:
                 busy = judge_once(store) >= BATCH  # a backlog: keep going every minute until it is cleared
             except Exception:

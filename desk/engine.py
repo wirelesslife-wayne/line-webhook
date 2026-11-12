@@ -6,6 +6,8 @@ import json
 import re
 from urllib.parse import urlsplit
 
+LINK = re.compile(r'https?://[^\s<>"「」『』（）()，。、！？]+')
+
 class ProviderPending(RuntimeError):
     pass
 
@@ -126,12 +128,18 @@ class Engine:
                 text += f"\n（AI 原本寫的是下面這版，被 Wayne 改掉了；他改掉的寫法、排版不要再用）：\n{r['ai_draft'][:700]}"
             return text
         mine = [show(r) for r in topk(q, rows, lambda x: x['question']+' '+x['content'][:300], k)]
+        # Say where each link goes: a case video names one car model and must not be reused for another (Wayne 11/12).
+        titles = {r['url']: r['title'] for r in self.store.all("SELECT url,title FROM desk_links WHERE title<>''")}
+        def where(text):
+            known = [f'{u}＝{titles[u]}' for u in dict.fromkeys(x.rstrip('.,;:!?') for x in LINK.findall(text)) if u in titles]
+            return text + ('\n（範例裡的連結內容：' + '；'.join(known) + '）' if known else '')
+        mine = [where(t) for t in mine]
         # Replies typed directly in FB/IG/LINE that the desk judged better than its examples (Wayne 11/12).
         from .learning import kept
         label = {'fb': 'FB', 'ig': 'IG', 'line': 'LINE'}
         learned = [f"客人：{r['question'][:200]}\n直接在 {label.get(r['source'], r['source'])} 回的回覆（審過，比原本範本好）：\n{r['answer'][:900]}"
                    for r in topk(q, kept(self.store), lambda x: x['question']+' '+x['answer'][:300], 2)]
-        return mine + learned
+        return mine + [where(t) for t in learned]
 
     def attachments(self, text='', extract=None):
         # Employee uploads replace automatic product suggestions.
@@ -152,7 +160,10 @@ class Engine:
         faq = topk(newtext, self.FAQ, lambda x:x['q'], 3)
         hist = self.history(newtext, now_local)
         approved = self.approved(newtext)
-        context = json.dumps({'prices':prices,'canned':canned,'faq':faq,'hours':self.HOURS,'dealers':self.DEALERS,'history':hist}, ensure_ascii=False)
+        from .cases import for_car
+        cases = for_car(self.store, ex)
+        context = json.dumps({'prices':prices,'canned':canned,'faq':faq,'hours':self.HOURS,'dealers':self.DEALERS,'history':hist,
+                              'install_cases':cases}, ensure_ascii=False)
         from .knowledge import reference
         learned = reference(self.store,newtext)
         learned_context = ('Wayne 核准的正確答法，優先於歷史問答。只適用於相符車款／產品；'
@@ -186,7 +197,22 @@ class Engine:
                       '寫法、口吻、格式類的指示每一則都要遵守；明顯只針對當時那位客人的內容（特定車款、金額、日期）只在情境相同時套用。\n')
             rules += '\n'.join('- '+r['instruction']+('（當時客人說：'+r['conversation_summary'][:80]+'）' if r['conversation_summary'] else '')
                                for r in edit_rules)
+        rules += ('\n\n安裝實例連結（Wayne 11/12：RAV4 客人收到 Corolla Cross 的電動尾門影片）：只能用參考資料 install_cases 裡'
+                  '跟客人同一款車的那一頁，而且那一頁的「實裝產品」要有客人問的產品（問電動尾門就要有「電動尾門」）。'
+                  '範例、制式回覆裡的安裝實例或影片連結，標題寫的是別款車的，就不能給這位客人。'
+                  '找不到符合的就不要附安裝實例，staff_note 寫「官網沒有這款車的〇〇安裝實例」。產品介紹、適用車型這類不分車款的連結照常附。')
         comment = channel in ('fb_comment','ig_comment')
+        if channel != 'line':
+            rules += ('\n\n請寫 2～3 個版本讓 Wayne 挑（Wayne 11/12）：draft 放你最推薦的，label 用 4～8 個字說它的特色；'
+                      '另外 1～2 個版本放在 alternatives 陣列，每個是 {"label": 4～8 個字說差在哪, "draft": 完整可直接送出的文字}。'
+                      '每個版本都是可以直接送出的完整回覆，Wayne 版型、條列、連結位置、結尾那段（工時＋該問才問縣市＋固定邀請句）等規則一條都不能少；'
+                      '版本之間只差在內容詳略與強調的重點，不改結構（ChatGPT、Gemini、Claude 11/12 審稿共識）。報價、介紹產品時固定這三種：'
+                      '①「完整功能」（推薦，放 draft）：完工價＋全部功能＋選配＋保固；'
+                      '②「精簡重點」：條列只留完工價、選配、保固；'
+                      '③「生活情境」：同①，結尾前多一句這項產品日常用起來的好處（例如電動尾門「升級後日常拿東西、上下行李會方便很多」），不要編資料沒有的功能。'
+                      '還不知道客人在哪時，任何版本都不要提「新北」「板橋有展示車」，邀請只寫固定句「歡迎先到門市體驗參觀，滿意再安裝就可以囉！」'
+                      '（Wayne 11/12：客人吃這套、沒壓力；人在屏東叫他來新北，他會直接說謝謝再聯絡）。'
+                      '其他情境（售後、預約、問地址）給 2 個版本就好，例如一個直接回答、一個多一句貼心說明；不要為了湊版本拿掉必要資訊或編資料沒有的事。')
         if channel != 'line':
             rules += ('\n\n本次是 FB／IG 的對話。我方訊息後面標著「自動回覆」「自動問候」的，是系統自動送出的罐頭訊息，不算真人回覆過；'
                       '標著「廣告預設問題」的是客人點了廣告上的按鈕，那題自動回覆已經答過，不要再重答一次；'
@@ -201,16 +227,56 @@ class Engine:
         out = self.provider([{'role':'system','content':rules},{'role':'user','content':prompt}])
         if not isinstance(out, dict) or not isinstance(out.get('draft'), str):
             raise ValueError('擬稿格式不符')
-        out.update(extract=ex,price_lines=prices,flags=check(out['draft'],context))
+        alts = []
+        if channel != 'line' and isinstance(out.get('alternatives'), list):
+            for a in out['alternatives']:
+                if isinstance(a, dict) and isinstance(a.get('draft'), str) and a['draft'].strip() \
+                        and a['draft'].strip() != out['draft'].strip() and all(a['draft'].strip() != b['draft'].strip() for b in alts):
+                    alts.append(dict(label=str(a.get('label') or '')[:20], draft=a['draft'][:2000]))
+        out['alternatives'] = alts[:2]
+        out['label'] = str(out.get('label') or '')[:20] if out['alternatives'] else ''
+        out.update(extract=ex,price_lines=prices,flags=[])
         known = rules + context + post_context
-        for url in re.findall(r'https?://[^\s<>"「」（）()，。、]+', out['draft']):
-            if url.rstrip('.,;:!?') not in known:
-                out['flags'].append('草稿用了資料裡沒有的連結，請確認：' + url)
-        if comment and (len([s for s in out['draft'].splitlines() if s.strip()]) > 10 or len(out['draft']) > 700):
-            out['flags'].append('公開留言草稿偏長，建議精簡後再發送')
+        versions = [out] + out['alternatives']
+        for n, v in enumerate(versions):
+            tag = f'版本{"ABC"[n]}：' if len(versions) > 1 else ''
+            v['draft'], removed = self.strip_other_cars(v['draft'], ex)
+            out['flags'] += [tag + x for x in removed]
+            out['flags'] += [tag + x for x in check(v['draft'], context)]
+            for url in re.findall(r'https?://[^\s<>"「」（）()，。、]+', v['draft']):
+                if url.rstrip('.,;:!?') not in known:
+                    out['flags'].append(tag + '草稿用了資料裡沒有的連結，請確認：' + url)
+            if comment and (len([s for s in v['draft'].splitlines() if s.strip()]) > 10 or len(v['draft']) > 700):
+                out['flags'].append(tag + '公開留言草稿偏長，建議精簡後再發送')
         out.pop('images',None)
         out['cards'] = suggestions(out.get('cards'), numbered)
         return out
+
+    def strip_other_cars(self, text, ex):
+        """Drop lines linking to another car model's install case (Wayne 11/12: a RAV4 customer got a Corolla Cross video)."""
+        from .cases import norm, same_car, models as case_models
+        model = (ex or {}).get('model') or ''
+        names = [m for m in {m for _, m in self.MODELS} | set(case_models(self.store)) if len(norm(m)) >= 3]
+        titles = {r['url']: r['title'] for r in self.store.all("SELECT url,title FROM desk_links WHERE title<>''")}
+        pages = {r['url']: r['model'] for r in self.store.all('SELECT url,model FROM desk_cases')}
+        lines, notes = [], []
+        for line in (text or '').split('\n'):
+            wrong = None
+            for url in LINK.findall(line):
+                u = url.rstrip('.,;:!?')
+                named = [pages[u]] if u in pages else [m for m in names if norm(m) in norm(titles.get(u, ''))]
+                if named and not any(same_car(model, m) for m in named):
+                    wrong = (u, named[0])
+            if not wrong:
+                lines.append(line)
+            elif model:
+                notes.append(f'已拿掉別款車（{wrong[1]}）的安裝實例連結，客人是 {model}：{wrong[0]}')
+                if lines and re.fullmatch(r'\s*\S{1,10}[：:]\s*', lines[-1]):
+                    lines.pop()  # the label left on its own line (「安裝實例：」)
+            else:
+                lines.append(line)
+                notes.append(f'這個連結是 {wrong[1]} 的安裝實例，客人還沒說車款，請確認：{wrong[0]}')
+        return re.sub(r'\n{3,}', '\n\n', '\n'.join(lines)).strip(), notes
 
     def price_lookup(self, ex):
         b, m, y = (ex.get('brand') or ''), (ex.get('model') or ''), ex.get('year')
