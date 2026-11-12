@@ -26,6 +26,8 @@ def register(bp,store):
             cur.execute(f"""SELECT id,filename,content_type,thread_id,attempt_key,({fb_media.FREE}) AS free FROM desk_fb_media m
               WHERE thread_id=ANY(%s) AND removed_at IS NULL ORDER BY uploaded_at,id""",(ids,))
             files=cur.fetchall()
+            cur.execute("SELECT thread_id,taken_at FROM desk_fb_shots WHERE thread_id=ANY(%s) AND taken_at >= NOW()-INTERVAL '30 days'",(ids,))
+            shots={s['thread_id']:local_time(s['taken_at'])[5:16] for s in cur.fetchall()}
         out=[]
         for c in rows:
             attempts=[a for a in all_attempts if a['thread_id']==c['id']][:10]
@@ -35,7 +37,7 @@ def register(bp,store):
             out.append(dict(id=c['id'],name=c['name'],channel=c['channel'],label=fb.LABELS[c['channel']],key=c['key'],url=c['url'],
                 context=c['context'],status=c['status'],version=c['version'],note=c['note'],result=c['draft'] or {},
                 messages=fb.shape(e for e in events if e['thread_id']==c['id'])[-12:],is_public=c['channel'].endswith('_comment'),
-                media=[fb_media.describe(m) for m in media],
+                media=[fb_media.describe(m) for m in media],shot=shots.get(c['id']),
                 attempts=[dict(status=a['status'],time=local_time(a['approved_at']),staff=a['username'],text=a['content'],reason=a['reason']) for a in attempts]))
         return out
 
@@ -111,6 +113,13 @@ def register(bp,store):
         data=request.get_json(silent=True)
         if not isinstance(data,dict): raise ActionError('請選擇圖片',400)
         return jsonify(media=library.attach(store,g.staff,data.get('thread_id'),data.get('library_id'))),201
+
+    @bp.get('/api/fb/shot')
+    def fb_shot():
+        from . import fb_shots
+        row=fb_shots.read(store,request.args.get('thread_id'))
+        if not row: raise ActionError('找不到截圖',404)
+        return Response(bytes(row['data']),mimetype=row['content_type'],headers={'Content-Disposition':'inline','Cache-Control':'private, no-store'})
 
     @bp.post('/api/fb/links')
     def fb_links():

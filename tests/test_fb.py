@@ -510,3 +510,24 @@ def test_draft_with_an_unknown_link_is_flagged(db):
     provider = Mock(side_effect=[{}, dict(draft='您好～請看 https://made.up/link')])
     out = Engine(db, provider).draft([{'time': 'now', 'role': 'user', 'text': '電動尾門多少', 'new': True}], now(), channel='fb_message')
     assert any('資料裡沒有的連結' in f for f in out['flags'])
+
+
+def test_push_keeps_a_screenshot_of_the_real_conversation(db, logged, tmp_path, capsys):
+    """Wayne 11/12: show the Meta screen next to the transcription so he can trust it."""
+    _, client, staff, _ = logged
+    shot = tmp_path / 'shot.png'
+    picture('shot.png').save(str(shot))
+    source = tmp_path / 'batch.json'
+    source.write_text(json.dumps([dict(thread(), shot=str(shot)), dict(thread(key='900009'), shot=str(tmp_path / 'missing.png'))],
+                                 ensure_ascii=False), encoding='utf-8')
+    assert fb_browser.main(['push', str(source)], lambda: db) == 0
+    assert json.loads(capsys.readouterr().out)['screenshots'] == 1
+    bad = tmp_path / 'bad.png'
+    bad.write_bytes(b'not an image')
+    from desk import fb_shots
+    assert fb_shots.save(db, tid(), bad.read_bytes()) is False
+    r = client.get('/desk/api/fb/shot', query_string={'thread_id': tid()})
+    assert r.status_code == 200 and r.mimetype == 'image/png'
+    assert client.get('/desk/api/fb/shot', query_string={'thread_id': tid(key='900009')}).status_code == 404
+    listed = client.get('/desk/api/fb/list').get_json()['items']
+    assert [bool(i['shot']) for i in sorted(listed, key=lambda i: i['key'])] == [True, False]

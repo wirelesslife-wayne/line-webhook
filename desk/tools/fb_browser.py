@@ -29,7 +29,16 @@ def main(argv=None, store_factory=None):
             data=json.loads(Path(args.file).read_text(encoding='utf-8'))
             fb.validate(data)
         db=(store_factory or store)()
-        if args.command=='push': out=fb.push(db,data)
+        if args.command=='push':
+            out=fb.push(db,data)
+            from .. import fb_shots
+            saved=0
+            for row in fb.validate(data):  # optional "shot": local screenshot of the conversation column
+                path=row.get('shot')
+                if isinstance(path,str) and path:
+                    try: saved+=fb_shots.save(db,row['id'],Path(path).read_bytes())
+                    except OSError: pass
+            out['screenshots']=saved
         elif args.command=='status': out=fb.status(db)
         elif args.command=='pending':
             from .. import fb_media

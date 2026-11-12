@@ -43,6 +43,10 @@ CREATE TABLE IF NOT EXISTS desk_media_library (
  data BYTEA NOT NULL, size BIGINT NOT NULL CHECK (size > 0), sha256 TEXT NOT NULL,
  active BOOLEAN NOT NULL DEFAULT TRUE, added_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
 ALTER TABLE desk_media_library ADD COLUMN IF NOT EXISTS expires_on DATE;
+CREATE TABLE IF NOT EXISTS desk_fb_shots (
+ thread_id TEXT PRIMARY KEY REFERENCES desk_fb_threads(id), data BYTEA NOT NULL,
+ content_type TEXT NOT NULL CHECK (content_type IN ('image/jpeg','image/png')),
+ size BIGINT NOT NULL CHECK (size > 0), taken_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
 CREATE TABLE IF NOT EXISTS desk_edit_rules (
  id BIGSERIAL PRIMARY KEY, instruction TEXT NOT NULL, channel TEXT NOT NULL,
  conversation_summary TEXT NOT NULL, original_draft TEXT NOT NULL,
