@@ -394,12 +394,13 @@ def start_worker(store):
             time.sleep(5)
     def learner():
         # Replies typed directly in FB/IG/LINE: one small batch every 10 minutes, only the better ones are kept.
-        from .learning import judge_once
+        from .learning import judge_once, BATCH
         while True:
+            busy = False
             try:
-                judge_once(store)
+                busy = judge_once(store) >= BATCH  # a backlog: keep going every minute until it is cleared
             except Exception:
                 pass
-            time.sleep(600)
+            time.sleep(60 if busy else 600)
     threading.Thread(target=drafter,daemon=True,name='desk-fb-drafter').start()
     threading.Thread(target=learner,daemon=True,name='desk-learner').start()
