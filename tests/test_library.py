@@ -68,3 +68,17 @@ def test_library_routes(db, logged):
     r = post(client, staff, 'media/library', dict(thread_id=tid(), library_id=lib_id))
     assert r.status_code == 201 and r.get_json()['media']['name'] == '電動尾門Q&A.png'
     assert post(client, staff, 'media/library', dict(thread_id=tid(), library_id='bad')).status_code == 400
+
+
+def test_monthly_cards_switch_off_after_their_date(db, logged):
+    _, client, staff, _ = logged
+    live, old = card(db, '11月營業月曆.png'), card(db, '10月營業月曆.png')
+    db.execute("UPDATE desk_media_library SET expires_on=CURRENT_DATE+1 WHERE id=%s", (live,))
+    db.execute("UPDATE desk_media_library SET expires_on=CURRENT_DATE-40 WHERE id=%s", (old,))
+    assert [c['id'] for c in library.listing(db)] == [live]
+    assert [r['id'] for _, r in library.catalog(db)] == [live]
+    assert library.read(db, old) is None
+    fb.push(db, [thread()])
+    ready(db)
+    with pytest.raises(ActionError):
+        library.attach(db, wayne(db, staff), tid(), old)

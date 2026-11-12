@@ -1,7 +1,7 @@
 """Import Wayne's customer-facing common pictures into the desk library.
 
 Usage: python -m desk.tools.upload_library <folder>
-The folder holds the image files plus 圖卡清單.json: [{"filename","topic","summary","use_when"}].
+The folder holds the image files plus 圖卡清單.json: [{"filename","topic","summary","use_when","expires_on"?}].
 Only files listed in the manifest are imported; a file whose manifest entry is removed is switched off, never deleted.
 """
 import hashlib
@@ -36,11 +36,11 @@ def run(folder):
             continue
         image_info(data, mime)
         digest = hashlib.sha256(data).hexdigest()
-        s.execute("""INSERT INTO desk_media_library(id,filename,topic,summary,use_when,content_type,data,size,sha256,active)
-          VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,TRUE)
+        s.execute("""INSERT INTO desk_media_library(id,filename,topic,summary,use_when,content_type,data,size,sha256,active,expires_on)
+          VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,TRUE,%s)
           ON CONFLICT(filename) DO UPDATE SET topic=EXCLUDED.topic,summary=EXCLUDED.summary,use_when=EXCLUDED.use_when,
-            content_type=EXCLUDED.content_type,data=EXCLUDED.data,size=EXCLUDED.size,sha256=EXCLUDED.sha256,active=TRUE""",
-                  (secrets.token_hex(16), card['filename'], card['topic'], card['summary'], card['use_when'], mime, data, len(data), digest))
+            content_type=EXCLUDED.content_type,data=EXCLUDED.data,size=EXCLUDED.size,sha256=EXCLUDED.sha256,active=TRUE,expires_on=EXCLUDED.expires_on""",
+                  (secrets.token_hex(16), card['filename'], card['topic'], card['summary'], card['use_when'], mime, data, len(data), digest, card.get('expires_on')))
         names.append(card['filename'])
     s.execute('UPDATE desk_media_library SET active=FALSE WHERE NOT (filename=ANY(%s))', (names,))
     print('imported', len(names), '| active', s.one('SELECT COUNT(*) n FROM desk_media_library WHERE active')['n'])

@@ -9,16 +9,18 @@ from .knowledge import require_reviewer
 from .media import TOKEN
 
 MAX_SUGGEST = 2
+# Monthly cards (the business calendar) switch themselves off after their month.
+LIVE = "active AND (expires_on IS NULL OR expires_on >= (NOW() AT TIME ZONE 'Asia/Taipei')::date)"
 
 
 def listing(store):
     return [dict(id=r['id'], name=r['filename'], topic=r['topic'], use_when=r['use_when'])
-            for r in store.all('SELECT id,filename,topic,use_when FROM desk_media_library WHERE active ORDER BY topic,filename')]
+            for r in store.all(f'SELECT id,filename,topic,use_when FROM desk_media_library WHERE {LIVE} ORDER BY topic,filename')]
 
 
 def catalog(store):
     """Numbered list for the drafting prompt; numbers are easier for the model than file ids."""
-    rows = store.all('SELECT id,filename,topic,summary,use_when FROM desk_media_library WHERE active ORDER BY topic,filename')
+    rows = store.all(f'SELECT id,filename,topic,summary,use_when FROM desk_media_library WHERE {LIVE} ORDER BY topic,filename')
     return [(n, r) for n, r in enumerate(rows, 1)]
 
 
@@ -39,14 +41,14 @@ def suggestions(numbers, numbered):
 def read(store, lib_id):
     if not isinstance(lib_id, str) or not TOKEN.fullmatch(lib_id):
         return None
-    return store.one('SELECT data,content_type FROM desk_media_library WHERE id=%s AND active', (lib_id,))
+    return store.one(f'SELECT data,content_type FROM desk_media_library WHERE id=%s AND {LIVE}', (lib_id,))
 
 
 def attach(store, staff, tid, lib_id):
     require_reviewer(staff)
     if not isinstance(lib_id, str) or not TOKEN.fullmatch(lib_id):
         raise ActionError('圖片編號不正確', 400)
-    row = store.one('SELECT filename,content_type,data FROM desk_media_library WHERE id=%s AND active', (lib_id,))
+    row = store.one(f'SELECT filename,content_type,data FROM desk_media_library WHERE id=%s AND {LIVE}', (lib_id,))
     if not row:
         raise ActionError('找不到這張常用圖片', 404)
     if store.one("""SELECT 1 FROM desk_fb_media WHERE thread_id=%s AND filename=%s AND removed_at IS NULL AND attempt_key IS NULL""",

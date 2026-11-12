@@ -162,8 +162,8 @@ class Engine:
         numbered = catalog(self.store) if channel in ('fb_message', 'ig_message') else []
         if numbered:
             prompt += ('\n可以附的常用圖片（Wayne 的圖卡）。這則草稿在介紹產品、報價、回答安裝前疑問或排除問題時，'
-                       '下面清單裡只要有符合「何時附」的圖卡就要挑（最多 2 張，最相關的放前面）；只是問地址、改時間、道謝、'
-                       '還不知道要裝什麼產品時才回空陣列。草稿文字不要提到圖片。挑好的編號放在 JSON 的 cards 陣列：\n'
+                       '或客人問什麼時候可以安排、哪天有營業時，下面清單裡只要有符合「何時附」的圖卡就要挑（最多 2 張，最相關的放前面）；'
+                       '沒有任何一張符合時（例如道謝、只問地址、還不知道要裝什麼產品）才回空陣列。草稿文字不要提到圖片。挑好的編號放在 JSON 的 cards 陣列：\n'
                        + '\n'.join(f"{n}｜{r['filename']}｜{r['summary']}｜何時附：{r['use_when']}" for n, r in numbered))
         rules = self.RULES
         if approved:
