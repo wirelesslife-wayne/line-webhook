@@ -227,6 +227,8 @@ def test_engine_passes_post_context_and_flags_long_comment(db):
     prompt = provider.call_args.args[0][1]['content']
     assert '合成貼文摘要' in prompt and '短一點' in prompt and '原本的草稿' in prompt
     assert any('偏長' in flag for flag in out['flags'])
+    # The ad text (not only the conversation) decides the product for the price lookup: titles say nothing.
+    assert '合成貼文摘要' in provider.call_args_list[0].args[0][1]['content']
 
 
 def test_routes_need_login_csrf_and_reviewer(db, logged):

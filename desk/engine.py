@@ -137,7 +137,8 @@ class Engine:
         post_context = context
         convo = '\n'.join(f"{x['time']} {'我方' if x['role']=='assistant' else '客人'}：{x['text']}" for x in timeline)
         ex = self.provider([{'role':'system','content':'從對話抽取 brand/model/year/products/series/location，回傳 JSON。products 是產品名稱陣列；series 是有明確提及的產品系列，未提及則為 null。車型清單：'+json.dumps(self.MODELS, ensure_ascii=False)},
-                            {'role':'user','content':convo}])
+                            # Ad titles change all the time and may say nothing (「新的互動廣告」); the ad text names the product.
+                            {'role':'user','content':convo+('\n客人點進來的廣告／貼文（產品以這裡為準，客人沒講產品時就用這個）：'+post_context if post_context else '')}])
         newtext = ' '.join(x['text'] for x in timeline if x['role']=='user' and x.get('new'))
         prices = self.price_lookup(ex)
         # Ad leads often never name the product themselves ("cc 2026"); the ad's own replies and the post do.
