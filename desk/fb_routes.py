@@ -119,7 +119,7 @@ def register(bp,store):
         from . import fb_shots
         row=fb_shots.read(store,request.args.get('thread_id'))
         if not row: raise ActionError('找不到截圖',404)
-        return Response(bytes(row['data']),mimetype=row['content_type'],headers={'Content-Disposition':'inline','Cache-Control':'private, no-store'})
+        return Response(bytes(row['data']),mimetype=row['content_type'],headers={'Content-Disposition':'inline','Cache-Control':'private, max-age=86400'})  # the page adds the shot time to the URL
 
     @bp.post('/api/fb/links')
     def fb_links():

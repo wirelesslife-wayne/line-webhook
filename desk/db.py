@@ -2,8 +2,12 @@
 from contextlib import contextmanager
 from datetime import datetime, timezone
 import json
+import threading
+import time
 import psycopg2
+import psycopg2.extensions
 from psycopg2.extras import RealDictCursor, Json
+from psycopg2.pool import ThreadedConnectionPool, PoolError
 
 UTC = timezone.utc
 
@@ -74,17 +78,64 @@ SCHEMA += LINK_SCHEMA
 
 
 class Store:
+    # Wayne 11/12: the desk felt slow. Every query opened a new TLS connection to Postgres
+    # (5-6 per page refresh); connections are now reused.
+    POOL_KEEP = 4  # idle connections kept open (psycopg2 closes returned ones beyond this); matches gunicorn threads
+    POOL_MAX = 8
+    IDLE_CHECK = 30  # seconds; Render closes idle connections, so an old one is tested before reuse
+
     def __init__(self, url):
         self.url = url
+        self._pool = None
+        self._pool_lock = threading.Lock()
+        self._used = {}
+
+    def _open(self):
+        return psycopg2.connect(self.url, connect_timeout=10, application_name='cs-desk')
+
+    def _checkout(self):
+        with self._pool_lock:
+            if self._pool is None:  # lazy: installing the app must not touch the database
+                self._pool = ThreadedConnectionPool(self.POOL_KEEP, self.POOL_MAX, self.url, connect_timeout=10, application_name='cs-desk')
+        for _ in range(self.POOL_MAX + 1):
+            try:
+                conn = self._pool.getconn()
+            except PoolError:  # every pooled connection busy: fall back to a private one
+                return self._open(), False
+            if not conn.closed and time.monotonic() - self._used.get(id(conn), 0) <= self.IDLE_CHECK:
+                return conn, True
+            try:
+                if conn.closed:
+                    raise psycopg2.InterfaceError('closed')
+                with conn.cursor() as cur:
+                    cur.execute('SELECT 1')
+                conn.rollback()
+                return conn, True
+            except psycopg2.Error:
+                self._used.pop(id(conn), None)
+                self._pool.putconn(conn, close=True)
+        return self._open(), False
 
     @contextmanager
-    def connect(self):
-        conn = psycopg2.connect(self.url, connect_timeout=10, application_name='cs-desk')
+    def connect(self, fresh=False):
+        if fresh:
+            conn, pooled = self._open(), False
+        else:
+            conn, pooled = self._checkout()
+        broken = False
         try:
             with conn:
                 yield conn
+        except (psycopg2.OperationalError, psycopg2.InterfaceError):
+            broken = True
+            raise
         finally:
-            conn.close()
+            if not pooled:
+                conn.close()
+            else:
+                broken = broken or conn.closed or conn.get_transaction_status() != psycopg2.extensions.TRANSACTION_STATUS_IDLE
+                self._used[id(conn)] = time.monotonic()
+                self._pool.putconn(conn, close=broken)
 
     @contextmanager
     def cursor(self):
@@ -140,8 +191,8 @@ class Store:
 
     @contextmanager
     def lock(self, name):
-        # Session lock survives transaction commits, is released on connection close.
-        with self.connect() as conn:
+        # Session lock survives transaction commits, is released on connection close: never on a pooled connection.
+        with self.connect(fresh=True) as conn:
             with conn.cursor() as cur:
                 cur.execute('SELECT pg_try_advisory_lock(hashtext(%s))', (name,))
                 acquired = cur.fetchone()[0]
