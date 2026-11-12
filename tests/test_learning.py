@@ -63,3 +63,10 @@ def test_the_desks_own_sends_and_unanswered_items_are_not_kept(db, logged):
     provider, factory = judge([])  # the judge skipped it: try again next time instead of marking it
     assert learning.judge_once(db, factory) == 1
     assert db.one('SELECT COUNT(*) AS n FROM desk_learned')['n'] == 0 and len(learning.candidates(db)) == 1
+
+
+def test_masked_line_history_never_becomes_an_example(db):
+    line_qa(db, '你們最晚到幾點', '週一至週五 [姓名]:00～20:00，週六 [姓名]:00～18:00，週日公休喔！')
+    assert learning.candidates(db) == []  # the mask would reach a customer if a draft copied it
+    db.execute("INSERT INTO desk_learned(digest,source,question,answer,verdict) VALUES('x','line','幾點','[姓名]:00 開門','better')")
+    assert learning.kept(db) == []

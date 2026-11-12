@@ -12,6 +12,9 @@ BATCH = 8
 LINE_DAYS = 7          # LINE colleagues' replies arrive daily (WL-DeskQaSync); older ones were already history
 MIN_ANSWER = 20        # 「好的」「稍等」 teach nothing
 SCAN = 400
+# LINE history was masked on import; the masking also hits normal words (「10:00」→「[姓名]:00」, 「Model」→「[姓名]del」)
+# and drops links. A draft copying such an example would show the mask to a customer, so these never become examples.
+MASKS = ('[姓名]', '[電話]', '[車牌]', '[連結]', '[Email]', '[地址]', '[LINE識別碼]')
 
 
 def digest(text):
@@ -25,7 +28,8 @@ def candidates(store, limit=BATCH):
 
     def add(source, question, answer):
         d = digest(answer)
-        if d in judged or d in seen or len(squash(answer)) < MIN_ANSWER or not squash(question):
+        if d in judged or d in seen or len(squash(answer)) < MIN_ANSWER or not squash(question) \
+                or any(m in answer for m in MASKS):
             return
         seen.add(d)
         out.append(dict(digest=d, source=source, question=question[-600:], answer=answer[:1500]))
@@ -52,7 +56,8 @@ def candidates(store, limit=BATCH):
 
 
 def kept(store, limit=400):
-    return store.all("SELECT source,question,answer FROM desk_learned WHERE verdict='better' ORDER BY judged_at DESC LIMIT %s", (limit,))
+    rows = store.all("SELECT source,question,answer FROM desk_learned WHERE verdict='better' ORDER BY judged_at DESC LIMIT %s", (limit,))
+    return [r for r in rows if not any(m in r['answer'] for m in MASKS)]
 
 
 CRITERIA = (
