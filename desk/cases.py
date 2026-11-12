@@ -32,7 +32,7 @@ def parse(page):
     text = text_of(page.get('content', {}).get('rendered', ''))
     if '實裝產品' not in text and '歷史案例' not in text:
         return None
-    model = re.sub(r'\s*安裝(案例目錄|實例)\s*$', '', title).strip()
+    model = re.sub(r'\s*安裝(案例目錄|案例與升級項目|案例|實例)\s*$', '', title).strip()
     crumb = re.search(r'(\S+)\s*→\s*' + re.escape(model.split(' ')[0]), text)
     lines = []
     for m in re.finditer(r'(實裝產品|歷史案例)：(.*?)(?=查看完整|實裝照片整理中|實裝產品|歷史案例|$)', text):
