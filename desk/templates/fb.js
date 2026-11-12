@@ -2,6 +2,9 @@ const f=id=>document.getElementById('fb-'+id);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const STATUS={waiting:'AI 擬稿中，約 1 分鐘',drafting:'AI 擬稿中，約 1 分鐘',ready:'草稿好了',blocked:'AI 暫停，請直接在框裡寫',error:'擬稿失敗，請按「修改」重試或直接寫',approved:'已核准，等下一輪排程送出',done:'已處理',skip:'不回覆'};
 const TODO=['waiting','drafting','ready','blocked','error'];
+const CHIP={waiting:['AI 擬稿中','wait'],drafting:['AI 擬稿中','wait'],ready:['待你決定',''],blocked:['待你決定',''],error:['擬稿失敗',''],approved:['已核准','ok'],done:['已處理','off'],skip:['不回覆','off']};
+const BRAND={};document.getElementById('fb-brands').content.querySelectorAll('span').forEach(s=>BRAND[s.dataset.ch]=s.innerHTML);
+let openId=null,lastData=null;
 let tab='todo',channel='',page=0,items=[],edits={},confirmation=null,busy=false,shown='',listVersion=0,polling=false;
 async function api(path,body){const r=await fetch('/desk/api/fb/'+path,{method:body?'POST':'GET',headers:body?{'Content-Type':'application/json','X-CSRF-Token':csrf}:{},body:body?JSON.stringify(body):undefined});let d={};try{d=await r.json()}catch(e){}if(r.status===401){location.href='/desk/login';throw Error('請重新登入')}if(!r.ok)throw Error(d.error||'暫時無法處理，請重新載入');return d}
 function say(text,bad){const e=f('feedback');e.textContent=text||'';e.hidden=!text;e.classList.toggle('bad',!!bad)}
@@ -11,7 +14,11 @@ function files(list,removable){return (list||[]).map(m=>`<figure>${m.type==='ima
 function card(d,i){
   const todo=TODO.includes(d.status),waiting=d.status==='waiting'||d.status==='drafting',r=d.result||{};
   const draft=edits[editKey(d)]??r.draft??'';
-  let h=`<article class="card fbcard" data-id="${esc(d.id)}"><h2>${esc(d.name)}<span class="chip">${esc(d.label)}</span></h2><p class="muted">${esc(STATUS[d.status]||d.status)}${d.note?' · '+esc(d.note):''}</p>`;
+  const lastUser=[...d.messages].reverse().find(m=>m.role!=='assistant')||d.messages[d.messages.length-1]||{};
+  const [chip,tone]=CHIP[d.status]||[d.status,'off'],open=openId===d.id;
+  let h=`<article class="item${open?' open':''}" data-id="${esc(d.id)}"><button class="row" data-act="toggle" aria-expanded="${open}"><span class="avatar">${USER_ICON}${(BRAND[d.channel]||'').split('<svg class="ic"')[0]}</span><span class="sep"></span><span class="who-said"><b>${esc(d.name)}</b><span>${esc((lastUser.text||'').replace(/\s+/g,' '))}</span></span><span class="when">${esc(when(lastUser.time||''))}</span><span class="state-chip ${tone}">${esc(chip)}</span>${CHEV}</button>`;
+  if(!open)return h+'</article>';
+  h+=`<div class="detail"><p class="muted">${esc(d.label)} · ${esc(STATUS[d.status]||d.status)}${d.note?' · '+esc(d.note):''}</p>`;
   if(d.context)h+=`<p class="context"><b>所屬貼文：</b>${esc(d.context.slice(0,200))}</p>`;
   h+=`<div class="messages">${d.messages.map(m=>`<div class="message ${m.role==='assistant'?'ours':''}"><small>${m.role==='assistant'?'我們':'客人'} · ${esc(when(m.time))}</small>${esc(m.text)}</div>`).join('')||'<p class="muted">沒有訊息內容</p>'}</div>`;
   if(/^https:\/\//.test(d.url||''))h+=`<p><a href="${esc(d.url)}" target="_blank" rel="noopener noreferrer">在 Meta 收件匣打開這則</a></p>`;
@@ -34,7 +41,7 @@ function card(d,i){
     const a=d.attempts.find(x=>x.status==='sent');
     if(a)h+=`<label>已送出的內容（${esc(a.time)}）</label><div class="preview">${esc(a.text)}</div>`;
   }
-  return h+'</article>';
+  return h+'</div></article>';
 }
 document.addEventListener('change',async e=>{
   if(!e.target.matches('[data-file]'))return;const p=pick(e.target),file=e.target.files[0];if(!p||!file)return;
@@ -56,7 +63,7 @@ async function libraryGrid(box){
   box.innerHTML=Object.entries(groups).map(([t,list])=>`<h3>${esc(t)}</h3><div class="files">${list.map(c=>`<figure title="${esc(c.use_when)}"><img src="/desk/api/fb/library/${esc(c.id)}" alt="" loading="lazy"><span>${esc(c.name)}</span><small class="muted">${esc(c.use_when)}</small><button data-act="lib-attach" data-lib="${esc(c.id)}">附上</button></figure>`).join('')}</div>`).join('');
 }
 function draw(d){
-  items=d.items;f('n-todo').textContent=d.todo?`（${d.todo}）`:'';f('n-approved').textContent=d.approved?`（${d.approved}）`:'';
+  lastData=d;items=d.items;f('n-todo').textContent=d.todo||'';f('n-approved').textContent=d.approved||'';
   f('prev').disabled=page===0;f('next').disabled=!d.has_more;
   const empty={todo:'目前沒有等你決定的訊息。',approved:'目前沒有等待送出的回覆。',done:'還沒有處理過的紀錄。'}[tab];
   f('list').innerHTML=items.length?items.map(card).join(''):`<p class="muted">${empty}</p>`;
@@ -87,6 +94,7 @@ document.addEventListener('click',async event=>{
       await load(true);return}
     if(b.dataset.ruleId){const active=b.dataset.active!=='true';b.disabled=true;await api('rules/'+b.dataset.ruleId,{active});b.dataset.active=String(active);b.textContent=active?'停用':'重新啟用';b.closest('.rule').classList.toggle('off',!active);b.disabled=false;return}
     const act=b.dataset.act;if(!act)return;const p=pick(b);if(!p)return;const {d,el}=p;
+    if(act==='toggle'){openId=openId===d.id?null:d.id;if(lastData)draw(lastData);if(openId)document.querySelector(`.item[data-id="${CSS.escape(openId)}"]`)?.scrollIntoView({block:'nearest'});return}
     if(act==='send'){
       const text=el.querySelector('[data-draft]').value;if(!text.trim()){say('草稿是空的，請先寫內容或按「修改」。',true);return}
       confirmation=Object.freeze({thread_id:d.id,version:d.version,text,name:d.name,is_public:d.is_public,key:editKey(d),retry_key:crypto.randomUUID(),media_ids:(d.media||[]).map(m=>m.id)});

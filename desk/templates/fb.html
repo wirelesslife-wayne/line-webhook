@@ -1,16 +1,52 @@
 {% extends 'base.html' %}
+{% set I = {
+ 'edit':'<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
+ 'book':'<path d="M2 4h6a4 4 0 0 1 4 4v12a3 3 0 0 0-3-3H2z"/><path d="M22 4h-6a4 4 0 0 0-4 4v12a3 3 0 0 1 3-3h7z"/>',
+ 'clock':'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+ 'check':'<circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/>',
+ 'archive':'<rect x="3" y="4" width="18" height="5" rx="1"/><path d="M5 9v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9"/><path d="M10 13h4"/>',
+ 'layers':'<path d="m12 3 9 5-9 5-9-5z"/><path d="m3 13 9 5 9-5"/>',
+ 'user':'<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
+ 'logout':'<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/>',
+ 'comment':'<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M8 9h8M8 13h5"/>',
+ 'line':'<path d="M21 11.5C21 7.4 17 4 12 4S3 7.4 3 11.5c0 3.7 3.2 6.7 7.6 7.3.3.1.7.2.8.5l.1 1.3c0 .4.3.6.7.4 3.2-1.8 8.8-5.3 8.8-9.5z"/>'} %}
+{% macro icon(name) %}<svg class="ic" viewBox="0 0 24 24" aria-hidden="true">{{ I[name]|safe }}</svg>{% endmacro %}
+{% macro brand(ch) %}{% if ch.startswith('fb') %}<svg class="bi" viewBox="0 0 24 24" aria-hidden="true">{% if ch=='fb_message' %}<circle cx="12" cy="12" r="11" fill="#0a7cff"/><path d="m6 14.5 4.2-4.4 3 3 4.8-5.1-4.1 6.6-3-3z" fill="#fff"/>{% else %}<circle cx="12" cy="12" r="11" fill="#1877f2"/><path d="M13.2 20v-6.3h2.1l.3-2.5h-2.4V9.7c0-.7.2-1.2 1.2-1.2h1.3V6.3c-.2 0-1-.1-1.9-.1-1.9 0-3.2 1.2-3.2 3.3v1.8H8.5v2.5h2.1V20z" fill="#fff"/>{% endif %}</svg>{% else %}<svg class="bi" viewBox="0 0 24 24" aria-hidden="true"><rect x="1.5" y="1.5" width="21" height="21" rx="6" fill="#d62976"/><rect x="6.5" y="6.5" width="11" height="11" rx="5.5" fill="none" stroke="#fff" stroke-width="2"/><circle cx="17.3" cy="6.7" r="1.3" fill="#fff"/></svg>{% endif %}{% if ch.endswith('comment') %}{{ icon('comment') }}{% endif %}{% endmacro %}
+{% block brand %}<div class="brandmark" aria-hidden="true"><span class="zh">無限科技</span><span class="en">WIRELESSLIFE</span></div>{% endblock %}
 {% block subtitle %}FB／IG 私訊與留言 · 核准後才送出{% endblock %}
-{% block user %}<form method="post" action="/desk/logout"><span>{{ staff.username }}</span><input name="csrf" type="hidden" value="{{ staff.csrf }}"><button>登出</button></form>{% endblock %}
+{% block user %}<form method="post" action="/desk/logout"><span class="who">{{ icon('user') }}{{ staff.username }}</span><input name="csrf" type="hidden" value="{{ staff.csrf }}"><button>{{ icon('logout') }}登出</button></form>{% endblock %}
 {% block body %}<main>
 <style nonce="{{ g.nonce }}">
-.tabs a{display:block;text-decoration:none;border:1px solid var(--line);border-radius:8px;padding:8px 14px;background:white;color:var(--ink);min-height:44px}
-.tabs a[aria-current=page]{background:var(--brand);color:white}
-.cards{display:grid;gap:16px}.fbcard h2{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:4px}
-.fbcard .messages{max-height:300px;margin:10px 0}.fbcard textarea{min-height:170px}.fbcard .editbox textarea{min-height:90px}
-.fbcard .context{background:var(--bg);padding:8px 12px;border-radius:8px;overflow-wrap:anywhere}
-.fbcard .preview,#fb-preview{white-space:pre-wrap;overflow-wrap:anywhere;background:var(--bg);padding:14px;border-radius:8px}
-.fbcard .editbox{border:1px dashed var(--line);border-radius:10px;padding:4px 14px 14px;margin-top:12px}
-.fbcard .actions button{flex:1 1 30%}label.check{display:flex;gap:8px;align-items:center;font-weight:normal}label.check input{width:20px;height:20px}
+:root{--orange:#f08a24;--orange-ink:#b4530b;--orange-soft:#fff3e6}
+header{position:relative;overflow:hidden;background:linear-gradient(120deg,#0a2c46,#0f3d5c 55%,#14456b);justify-content:flex-start}
+header::after{content:"";position:absolute;right:16%;top:-70px;width:240px;height:130px;border-bottom:4px solid var(--orange);border-radius:0 0 50% 50%;transform:rotate(-18deg);pointer-events:none}
+header .title{border-left:1px solid #ffffff40;padding-left:18px}header form{margin-left:auto;position:relative;z-index:1}
+.brandmark{display:grid;line-height:1;font-style:italic;letter-spacing:.5px}.brandmark .zh{font-weight:900;font-size:22px;letter-spacing:2px}
+.brandmark .en{font-size:11px;font-weight:700;padding-top:5px;margin-top:4px;border-top:3px solid var(--orange);box-shadow:inset 0 3px 0 #2d7fd0}
+.ic{width:20px;height:20px;flex:none;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.bi{width:22px;height:22px;flex:none}
+.who{display:flex;gap:6px;align-items:center}header form button{display:flex;gap:6px;align-items:center}
+.nav{display:flex;gap:10px;flex-wrap:wrap;padding:12px 0;border-bottom:1px solid var(--line)}.nav:last-of-type{margin-bottom:16px}
+.nav a,.nav button{display:flex;gap:8px;align-items:center;justify-content:center;text-decoration:none;color:var(--ink);background:white;border:1px solid var(--line);border-radius:10px;min-height:44px;padding:8px 18px;font-weight:600;box-shadow:0 1px 2px #0f3d5c14}
+.nav.main a{font-size:17px;padding:10px 26px;border-bottom:4px solid transparent}.nav.main a[aria-current=page]{background:var(--brand);color:white;border-color:var(--brand);border-bottom-color:var(--orange)}
+.nav.state button{min-width:150px;font-size:16px}.nav.state button[aria-pressed=true]{background:var(--orange-soft);border-color:var(--orange);color:var(--orange-ink)}
+.badge{background:var(--orange);color:white;border-radius:20px;padding:0 9px;font-size:14px;line-height:22px;font-weight:700}.badge:empty{display:none}
+.nav.channel button{font-size:15px;padding:6px 16px;min-width:110px}.nav.channel button[aria-pressed=true]{background:var(--brand);color:white;border-color:var(--brand)}
+.cards{display:grid;gap:10px}
+.item{background:white;border:1px solid var(--line);border-radius:12px;overflow:hidden;box-shadow:0 1px 3px #0f3d5c12}
+.item.open{border-color:var(--orange);box-shadow:inset 5px 0 0 var(--orange),0 2px 8px #f08a2426}
+.row{all:unset;box-sizing:border-box;cursor:pointer;display:grid;grid-template-columns:56px 1px minmax(0,1fr) auto auto 20px;gap:16px;align-items:center;width:100%;padding:14px 20px}
+.item.open .row{background:var(--orange-soft)}.row:focus-visible{outline:3px solid #daa400;outline-offset:-3px}
+.avatar{position:relative;width:52px;height:52px;border-radius:50%;background:#c9cfd4;display:grid;place-items:center;color:white}.avatar .ic{width:30px;height:30px}
+.avatar .bi{position:absolute;right:-4px;bottom:-4px;width:22px;height:22px;background:white;border-radius:50%;padding:1px}.avatar .ic.small{display:none}
+.sep{width:1px;height:40px;background:var(--line)}.who-said{min-width:0}.who-said b{display:block;font-size:17px}.who-said span{display:block;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.when{color:var(--muted);font-size:14px;white-space:nowrap}.state-chip{border:1px solid var(--orange);background:var(--orange-soft);color:var(--orange-ink);border-radius:20px;padding:3px 14px;font-weight:700;font-size:14px;white-space:nowrap}
+.state-chip.wait{border-color:#9db4c6;background:var(--soft);color:var(--brand)}.state-chip.ok{border-color:#7bb88f;background:#e8f5ec;color:#246b3c}.state-chip.off{border-color:var(--line);background:var(--bg);color:var(--muted)}
+.chev{color:var(--muted);transition:transform .15s}.item.open .chev{transform:rotate(90deg)}
+.detail{padding:4px 20px 20px;border-top:1px solid #f3d2b0}.detail .messages{max-height:300px;margin:10px 0}.detail textarea{min-height:170px}.detail .editbox textarea{min-height:90px}
+.detail .context{background:var(--bg);padding:8px 12px;border-radius:8px;overflow-wrap:anywhere}
+.detail .preview,#fb-preview{white-space:pre-wrap;overflow-wrap:anywhere;background:var(--bg);padding:14px;border-radius:8px}
+.detail .editbox{border:1px dashed var(--line);border-radius:10px;padding:4px 14px 14px;margin-top:12px}
+.detail .actions button{flex:1 1 30%}.attach .actions{margin-top:0}.attach .actions button{flex:0 0 auto}label.check{display:flex;gap:8px;align-items:center;font-weight:normal}label.check input{width:20px;height:20px}
 .rule{border-top:1px solid var(--line);padding:10px 0;display:grid;gap:4px}.rule.off p{text-decoration:line-through;color:var(--muted)}.rule button{justify-self:start}
 .attach{margin:10px 0;display:grid;gap:8px}.attach .files{display:flex;gap:10px;flex-wrap:wrap}
 .attach figure{margin:0;display:grid;gap:4px;justify-items:center;max-width:110px;font-size:12px;overflow-wrap:anywhere;text-align:center}
@@ -18,13 +54,16 @@
 .attach .suggest{background:#eef6ff;border-radius:8px;padding:8px 10px;display:grid;gap:6px}
 .attach .libgrid{max-height:420px;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:8px 10px}.attach .libgrid h3{font-size:14px;margin:8px 0 4px}
 .attach .libgrid small{font-size:11px;line-height:1.3}
-.attach .pick{display:inline-block;border:1px dashed var(--line);border-radius:8px;padding:10px 14px;cursor:pointer;background:white;justify-self:start}
-#fb-rules summary{cursor:pointer;font-weight:700}#fb-feedback.bad{background:#fbe4e2;color:var(--bad)}
-@media(max-width:700px){.tabs a{flex:1;text-align:center;padding:8px;font-size:13px}}
+.attach .pick{display:inline-flex;align-items:center;border:1px dashed var(--line);border-radius:8px;padding:10px 14px;cursor:pointer;background:white;justify-self:start;margin:0;font-weight:600}
+#fb-rules{margin-top:16px}#fb-rules summary{cursor:pointer;font-weight:700}#fb-feedback.bad{background:#fbe4e2;color:var(--bad)}
+@media(max-width:700px){.brandmark{display:none}header .title{border:0;padding:0}header::after{display:none}
+.nav{gap:6px;padding:8px 0}.nav a,.nav button{flex:1;min-width:0;padding:8px 6px;font-size:14px}.nav.main a{font-size:15px;padding:8px}.nav.state button,.nav.channel button{min-width:0;font-size:13px}.nav.channel .ic{display:none}
+.row{grid-template-columns:44px minmax(0,1fr) 20px;gap:10px;padding:12px 14px}.row .sep{display:none}.avatar{width:42px;height:42px}.avatar .ic{width:24px;height:24px}
+.row .when{grid-column:2;grid-row:2;justify-self:start}.row .state-chip{grid-column:2;grid-row:2;justify-self:end}.row .chev{grid-column:3;grid-row:1}.row .avatar{grid-row:1/3}.detail{padding:4px 14px 16px}}
 </style>
-<nav class="tabs" aria-label="客服管道">{% if line_on %}<a href="/desk/">LINE</a>{% endif %}<a href="/desk/fb" aria-current="page">FB／IG 審稿</a>{% if can_review %}<a href="/desk/knowledge">知識</a>{% endif %}</nav>
-<div class="tabs" aria-label="狀態"><button data-fb-tab="todo" aria-pressed="true">待你決定<span id="fb-n-todo"></span></button><button data-fb-tab="approved" aria-pressed="false">已核准待送出<span id="fb-n-approved"></span></button><button data-fb-tab="done" aria-pressed="false">已處理</button></div>
-<div class="tabs" aria-label="管道"><button data-fb-channel="" aria-pressed="true">全部</button>{% for key,label in labels.items() %}<button data-fb-channel="{{ key }}" aria-pressed="false">{{ label }}</button>{% endfor %}</div>
+<nav class="nav main" aria-label="客服管道">{% if line_on %}<a href="/desk/">{{ icon('line') }}LINE</a>{% endif %}<a href="/desk/fb" aria-current="page">{{ icon('edit') }}FB／IG 審稿</a>{% if can_review %}<a href="/desk/knowledge">{{ icon('book') }}知識</a>{% endif %}</nav>
+<div class="nav state" aria-label="狀態"><button data-fb-tab="todo" aria-pressed="true">{{ icon('clock') }}待你決定<span class="badge" id="fb-n-todo"></span></button><button data-fb-tab="approved" aria-pressed="false">{{ icon('check') }}已核准待送出<span class="badge" id="fb-n-approved"></span></button><button data-fb-tab="done" aria-pressed="false">{{ icon('archive') }}已處理</button></div>
+<div class="nav channel" aria-label="管道"><button data-fb-channel="" aria-pressed="true">{{ icon('layers') }}全部</button>{% for key,label in labels.items() %}<button data-fb-channel="{{ key }}" aria-pressed="false">{{ brand(key) }}{{ label }}</button>{% endfor %}</div>
 {% if not can_review %}<p class="note">只有 Wayne 可以核准發送。你可以先看草稿、按「修改」請 AI 重寫。</p>{% endif %}
 <div id="fb-feedback" class="note" role="status" hidden></div>
 <div id="fb-list" class="cards"><p class="muted">讀取中…</p></div>
@@ -34,6 +73,8 @@
 {% for r in rules %}<div class="rule{{ '' if r.active else ' off' }}"><p>{{ r.instruction }}</p><small class="muted">{{ r.label }} · {{ r.time }}{% if r.said %} · 當時客人說：{{ r.said }}{% endif %}</small><button data-rule-id="{{ r.id }}" data-active="{{ 'true' if r.active else 'false' }}">{{ '停用' if r.active else '重新啟用' }}</button></div>{% else %}<p class="muted none">目前還沒有。</p>{% endfor %}
 </details>{% endif %}
 <dialog id="fb-confirm"><h2 id="fb-recipient"></h2><p id="fb-public-warning" class="error" hidden>這是公開留言，所有人都看得到。</p><div id="fb-preview"></div><p id="fb-attach-note" class="note" hidden></p><div id="fb-links" class="note" hidden></div><label id="fb-public-label" class="check" hidden><input id="fb-public-check" type="checkbox">我確認要公開回覆這則留言</label><p class="muted">按下確認後，下一輪排程會照這段文字送出（最慢約 60 分鐘）。</p><div class="actions"><button id="fb-confirm-cancel">返回</button><button id="fb-confirm-ok" class="primary">確認發送</button></div></dialog>
+<template id="fb-brands">{% for key in labels %}<span data-ch="{{ key }}">{{ brand(key) }}</span>{% endfor %}</template>
 </main><script nonce="{{ g.nonce }}">const csrf={{ staff.csrf|tojson }},canReview={{ can_review|tojson }};
+const USER_ICON={{ icon('user')|tojson }},CHEV={{ ('<svg class="ic chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>')|tojson }};
 {% include 'fb.js' %}
 </script>{% endblock %}
