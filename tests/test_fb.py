@@ -102,6 +102,18 @@ def test_failed_send_returns_to_review(db, logged):
     assert fb.status(db)['send_failed'] == 1 and fb.pending(db) == []
 
 
+def test_send_skipped_because_someone_already_answered_closes_the_thread(db, logged):
+    _, _, staff, _ = logged
+    boss = wayne(db, staff)
+    fb.push(db, [thread()])
+    ready(db)
+    out = fb.approve(db, boss, approval(db))
+    fb.record_result(db, out['attempt_id'], 'failed', '已經有人回覆過，沒有重複送出')
+    c = fb.conversation(db, tid())
+    assert (c['status'], c['note']) == ('done', '同事已回覆')
+    assert fb.status(db)['send_failed'] == 0 and fb.status(db)['awaiting_review'] == 0
+
+
 def test_new_customer_message_expires_approval(db, logged):
     _, _, staff, _ = logged
     boss = wayne(db, staff)

@@ -306,8 +306,11 @@ def record_result(store, attempt_id, outcome, reason=''):
               VALUES(%s,%s,'page',%s,%s,%s,'browser',%s) ON CONFLICT(thread_id,fingerprint) DO NOTHING""",
               (c['id'],'attempt:'+attempt_id,a['content'],stamp,event_time(stamp),a['source_version']))
         if c['version']==a['source_version'] and a['status']=='approved' and c['status']=='approved':
-            cur.execute("UPDATE desk_fb_threads SET status=%s,note=%s,updated_at=NOW() WHERE id=%s",
-                ('done' if outcome=='sent' else 'ready','已由瀏覽器送出' if outcome=='sent' else '送出失敗：'+(reason or '請人工查核'),c['id']))
+            # Wayne 11/12 (阮海燕): a colleague had already answered in Meta; leaving it in review looked like a bad draft.
+            answered = outcome=='failed' and '已經有人回覆' in reason
+            state = 'done' if outcome=='sent' or answered else 'ready'
+            note = '已由瀏覽器送出' if outcome=='sent' else '同事已回覆' if answered else '送出失敗：'+(reason or '請人工查核')
+            cur.execute("UPDATE desk_fb_threads SET status=%s,note=%s,updated_at=NOW() WHERE id=%s",(state,note,c['id']))
     return dict(ok=True,status=outcome)
 
 
