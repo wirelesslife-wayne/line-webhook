@@ -35,7 +35,7 @@ def test_a_dead_connection_is_replaced(store):
     first = pid(store)
     with store.connect(fresh=True) as killer, killer.cursor() as cur:
         cur.execute('SELECT pg_terminate_backend(%s)', (first,))
-    store._used.clear()  # treat it as idle so it is checked before reuse
+    store._used.update({k: 0 for k in store._used})  # idle for ages: must be replaced, not reused
     assert pid(store) != first
 
 

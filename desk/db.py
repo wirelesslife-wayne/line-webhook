@@ -82,7 +82,7 @@ class Store:
     # (5-6 per page refresh); connections are now reused.
     POOL_KEEP = 4  # idle connections kept open (psycopg2 closes returned ones beyond this); matches gunicorn threads
     POOL_MAX = 8
-    IDLE_CHECK = 30  # seconds; Render closes idle connections, so an old one is tested before reuse
+    IDLE_CHECK = 60  # seconds; an older idle connection may have been dropped by the database: replace it
 
     def __init__(self, url):
         self.url = url
@@ -90,30 +90,34 @@ class Store:
         self._pool_lock = threading.Lock()
         self._used = {}
 
+    # 11/12 evening the whole server hung: a pooled connection the database had silently dropped was reused and
+    # waited forever for an answer. Connections idle longer than IDLE_CHECK are now replaced, never tested, and every
+    # socket has keepalives plus a send timeout so a dead peer is noticed instead of blocking a request thread.
+    OPTIONS = dict(connect_timeout=10, application_name='cs-desk', keepalives=1, keepalives_idle=20,
+                   keepalives_interval=5, keepalives_count=3, tcp_user_timeout=20000,
+                   options='-c statement_timeout=60000')
+
     def _open(self):
-        return psycopg2.connect(self.url, connect_timeout=10, application_name='cs-desk')
+        return psycopg2.connect(self.url, **self.OPTIONS)
 
     def _checkout(self):
         with self._pool_lock:
             if self._pool is None:  # lazy: installing the app must not touch the database
-                self._pool = ThreadedConnectionPool(self.POOL_KEEP, self.POOL_MAX, self.url, connect_timeout=10, application_name='cs-desk')
+                self._pool = ThreadedConnectionPool(self.POOL_KEEP, self.POOL_MAX, self.url, **self.OPTIONS)
+                born = time.monotonic()
+                for c in self._pool._pool:  # opened now; idle age counts from here
+                    self._used[id(c)] = born
         for _ in range(self.POOL_MAX + 1):
             try:
                 conn = self._pool.getconn()
             except PoolError:  # every pooled connection busy: fall back to a private one
                 return self._open(), False
-            if not conn.closed and time.monotonic() - self._used.get(id(conn), 0) <= self.IDLE_CHECK:
+            fresh = id(conn) not in self._used  # just opened by the pool
+            if not conn.closed and (fresh or time.monotonic() - self._used[id(conn)] <= self.IDLE_CHECK):
                 return conn, True
-            try:
-                if conn.closed:
-                    raise psycopg2.InterfaceError('closed')
-                with conn.cursor() as cur:
-                    cur.execute('SELECT 1')
-                conn.rollback()
-                return conn, True
-            except psycopg2.Error:
-                self._used.pop(id(conn), None)
-                self._pool.putconn(conn, close=True)
+            # Idle too long or closed: replace it (testing it could block on a dropped socket); the pool opens a new one.
+            self._used.pop(id(conn), None)
+            self._pool.putconn(conn, close=True)
         return self._open(), False
 
     @contextmanager
