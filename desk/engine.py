@@ -119,8 +119,13 @@ class Engine:
         """Replies Wayne approved on the FB/IG review page, most similar customer questions first."""
         rows = self.store.all("""SELECT question,content,ai_draft FROM desk_fb_attempts
           WHERE status IN ('approved','sent') AND question<>'' ORDER BY approved_at DESC LIMIT 400""")
-        return [f"客人：{r['question'][:200]}\nWayne 核准的回覆{'（他改過 AI 草稿）' if r['ai_draft'] and r['ai_draft']!=r['content'] else ''}：{r['content'][:900]}"
-                for r in topk(q, rows, lambda x: x['question']+' '+x['content'][:300], k)]
+        def show(r):
+            text = f"客人：{r['question'][:200]}\nWayne 核准送出的回覆：\n{r['content'][:900]}"
+            if r['ai_draft'] and r['ai_draft'].strip() != r['content'].strip():
+                # Showing what he changed teaches the layout and wording he rejects, not just the final text.
+                text += f"\n（AI 原本寫的是下面這版，被 Wayne 改掉了；他改掉的寫法、排版不要再用）：\n{r['ai_draft'][:700]}"
+            return text
+        return [show(r) for r in topk(q, rows, lambda x: x['question']+' '+x['content'][:300], k)]
 
     def attachments(self, text='', extract=None):
         # Employee uploads replace automatic product suggestions.

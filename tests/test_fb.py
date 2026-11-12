@@ -395,7 +395,8 @@ def test_approved_replies_become_examples_for_later_drafts(db, logged):
     provider = Mock(side_effect=[{}, dict(draft='您好～')])
     Engine(db, provider).draft([{'time': 'now', 'role': 'user', 'text': '電動尾門多少錢', 'new': True}], now(), channel='fb_message')
     system = provider.call_args.args[0][0]['content']
-    assert 'Wayne 親自核准送出的回覆範例（最高優先' in system and 'https://example.test/tailgate' in system and '他改過 AI 草稿' in system
+    assert 'Wayne 親自核准送出的回覆範例（最高優先' in system and 'https://example.test/tailgate' in system
+    assert '被 Wayne 改掉了' in system and 'AI 原本的草稿' in system  # what he changed, not only the result
     provider = Mock(side_effect=[{}, dict(draft='您好～')])
     Engine(db, provider).draft([{'time': 'now', 'role': 'user', 'text': '週日有開嗎', 'new': True}], now(), channel='line')
     assert 'https://example.test/tailgate' not in provider.call_args.args[0][0]['content']
