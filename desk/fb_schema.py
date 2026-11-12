@@ -36,6 +36,12 @@ CREATE TABLE IF NOT EXISTS desk_fb_media (
  uploaded_by BIGINT NOT NULL REFERENCES desk_users(id),
  uploaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), removed_at TIMESTAMPTZ);
 CREATE INDEX IF NOT EXISTS desk_fb_media_thread ON desk_fb_media(thread_id,uploaded_at);
+CREATE TABLE IF NOT EXISTS desk_media_library (
+ id TEXT PRIMARY KEY CHECK (id ~ '^[0-9a-f]{32}$'), filename TEXT NOT NULL UNIQUE,
+ topic TEXT NOT NULL DEFAULT '', summary TEXT NOT NULL DEFAULT '', use_when TEXT NOT NULL DEFAULT '',
+ content_type TEXT NOT NULL CHECK (content_type IN ('image/jpeg','image/png')),
+ data BYTEA NOT NULL, size BIGINT NOT NULL CHECK (size > 0), sha256 TEXT NOT NULL,
+ active BOOLEAN NOT NULL DEFAULT TRUE, added_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
 CREATE TABLE IF NOT EXISTS desk_edit_rules (
  id BIGSERIAL PRIMARY KEY, instruction TEXT NOT NULL, channel TEXT NOT NULL,
  conversation_summary TEXT NOT NULL, original_draft TEXT NOT NULL,

@@ -1,5 +1,5 @@
 from flask import request, jsonify, g, render_template, Response
-from . import fb, fb_media
+from . import fb, fb_media, library
 from .errors import ActionError
 from .knowledge import can_review, require_reviewer, submit
 from .worker import local_time, line_on
@@ -96,6 +96,21 @@ def register(bp,store):
         row=fb_media.read(store,media_id)
         if not row: raise ActionError('找不到附件',404)
         return Response(bytes(row['data']),mimetype=row['content_type'],headers={'Content-Disposition':'inline'})
+
+    @bp.get('/api/fb/library')
+    def fb_library(): return jsonify(cards=library.listing(store))
+
+    @bp.get('/api/fb/library/<lib_id>')
+    def fb_library_read(lib_id):
+        row=library.read(store,lib_id)
+        if not row: raise ActionError('找不到這張常用圖片',404)
+        return Response(bytes(row['data']),mimetype=row['content_type'],headers={'Content-Disposition':'inline','Cache-Control':'private, max-age=86400'})
+
+    @bp.post('/api/fb/media/library')
+    def fb_library_attach():
+        data=request.get_json(silent=True)
+        if not isinstance(data,dict): raise ActionError('請選擇圖片',400)
+        return jsonify(media=library.attach(store,g.staff,data.get('thread_id'),data.get('library_id'))),201
 
     @bp.post('/api/fb/links')
     def fb_links():

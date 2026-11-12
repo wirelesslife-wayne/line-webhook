@@ -51,6 +51,11 @@ def upload(store, staff, tid, file):
         image_info(data, mime)
     name = (file.filename or '附件').replace('\\', '/').rsplit('/', 1)[-1]
     name = ''.join(c for c in name if c.isprintable())[:120] or '附件'
+    return add(store, staff, tid, data, mime, name)
+
+
+def add(store, staff, tid, data, mime, name):
+    """Store one checked file for a reply; shared by uploads and the common-picture library."""
     with store.cursor() as cur:
         cur.execute('SELECT channel,status FROM desk_fb_threads WHERE id=%s FOR UPDATE', (tid if isinstance(tid, str) else '',))
         c = cur.fetchone()
