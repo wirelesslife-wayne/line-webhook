@@ -365,7 +365,10 @@ def test_auto_replies_and_holding_replies_do_not_close(db):
     assert fb.push(db, [thread(messages=away)]) == dict(threads=1, new_customer_messages=1, auto_closed=0)
     assert fb.conversation(db, tid())['status'] == 'waiting'
     assert [m['new'] for m in fb.messages(db, tid())] == [True, False, False]
-    holding = away + [dict(role='page', text='稍等，幫您確認一下', at='上午10:20', note='暫回')]
+    broadcast = away + [dict(role='page', text='如果您平常常需要抱小孩、搬東西…', at='上午10:00', note='群發')]
+    assert fb.push(db, [thread(messages=broadcast)])['auto_closed'] == 0
+    assert fb.conversation(db, tid())['status'] == 'waiting'
+    holding = broadcast + [dict(role='page', text='稍等，幫您確認一下', at='上午10:20', note='暫回')]
     assert fb.push(db, [thread(messages=holding)])['auto_closed'] == 0
     assert fb.conversation(db, tid())['status'] == 'waiting'
     answered = holding + [dict(role='page', text='CR-V 完工價 18,000 元', at='上午10:40')]

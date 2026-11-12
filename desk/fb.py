@@ -70,7 +70,8 @@ def answers(role, note):
     """A Page message only answers the customer when a person wrote it with substance.
     The browser run notes Meta auto-replies (away message, greeting, promotion, ad FAQ) as 「自動…」
     and colleagues' holding replies (「稍等」「幫您查」) as 「暫回」; neither closes the conversation."""
-    return role == 'page' and '自動' not in (note or '') and '暫回' not in (note or '')
+    # 「群發」: a broadcast reaches everyone, so it never answers this customer's question (11/12: 尤詠申 got one mid-question).
+    return role == 'page' and not any(w in (note or '') for w in ('自動', '暫回', '群發', '推播'))
 
 
 def kind(role, note):
