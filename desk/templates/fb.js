@@ -101,9 +101,9 @@ document.addEventListener('click',async event=>{
     if(b.id==='fb-prev'||b.id==='fb-next'){page=Math.max(0,page+(b.id==='fb-prev'?-1:1));await load(true);window.scrollTo(0,0);return}
     if(b.id==='fb-confirm-cancel'){f('confirm').close();confirmation=null;return}
     if(b.id==='fb-confirm-ok'&&confirmation){
-      const snap=confirmation;if(snap.is_public&&!f('public-check').checked)return;
+      const snap=confirmation;if(snap.is_public&&!f('public-check').checked)return;const lc=document.getElementById('fb-links-check');if(lc&&!lc.checked)return;
       busy=true;b.disabled=true;
-      try{const out=await api('send',{thread_id:snap.thread_id,version:snap.version,text:snap.text,retry_key:snap.retry_key,confirmed:true,public_confirmed:snap.is_public,media_ids:snap.media_ids});delete edits[snap.key];say(out.live?`給「${snap.name}」的回覆正在即時送出。`:`已核准給「${snap.name}」的回覆，下一輪排程送出。`)}
+      try{const out=await api('send',{thread_id:snap.thread_id,version:snap.version,text:snap.text,retry_key:snap.retry_key,confirmed:true,public_confirmed:snap.is_public,links_confirmed:!!(lc&&lc.checked),media_ids:snap.media_ids});delete edits[snap.key];say(out.live?`給「${snap.name}」的回覆正在即時送出。`:`已核准給「${snap.name}」的回覆，下一輪排程送出。`)}
       catch(e){say(e.message,true)}
       finally{busy=false;b.disabled=false;f('confirm').close();confirmation=null}
       await load(true);return}
@@ -121,9 +121,11 @@ document.addEventListener('click',async event=>{
       const text=joined(el);if(partsOf(text).some(x=>!x.trim())){say('有一則是空的，請填內容或按「併回上一則」。',true);return}if(!text.trim()){say('草稿是空的，請先寫內容或按「修改」。',true);return}
       confirmation=Object.freeze({thread_id:d.id,version:d.version,text,name:d.name,is_public:d.is_public,key:editKey(d),retry_key:crypto.randomUUID(),media_ids:(d.media||[]).map(m=>m.id)});
       f('links').hidden=true;f('links').innerHTML='';
-      api('links',{text}).then(out=>{if(!confirmation||confirmation.text!==text||!out.links.length)return;const bad=out.links.some(l=>l.state==='broken');
-        f('links').innerHTML='<b>連結會開到：</b>'+out.links.map(l=>`<div>${l.state==='broken'?'❌ 打不開':l.state==='ok'?'✅':'⚠️ 沒查到'} ${esc(l.url)}<br><small>→ ${esc(l.title||l.target||'（無法確認）')}</small></div>`).join('');
-        f('links').hidden=false;if(bad){f('confirm-ok').disabled=true;f('links').insertAdjacentHTML('beforeend','<p class="error">有連結打不開，請先返回改掉。</p>')}}).catch(()=>{});
+      api('links',{text}).then(out=>{if(!confirmation||confirmation.text!==text||!out.links.length)return;const bad=out.links.some(l=>l.state==='broken'),wrong=out.links.some(l=>l.verdict==='mismatch');
+        f('links').innerHTML='<b>連結檢查：</b>'+out.links.map(l=>`<div class="${l.verdict==='mismatch'||l.state==='broken'?'error':''}">${l.state==='broken'?'❌ 打不開':l.verdict==='mismatch'?'❌ 不相符':l.state==='ok'?'✅':'⚠️ 沒查到'} ${l.label?'「'+esc(l.label)+'」':''} ${esc(l.url)}<br><small>實際開到：${esc(l.title||l.target||'（無法確認）')}${l.verdict==='mismatch'?'（這是'+esc(l.goes.join('、'))+'，前面寫的是'+esc(l.says.join('、'))+'）':''}</small></div>`).join('');
+        f('links').hidden=false;if(bad){f('confirm-ok').disabled=true;f('links').insertAdjacentHTML('beforeend','<p class="error">有連結打不開，請先返回改掉。</p>')}
+        else if(wrong){f('confirm-ok').disabled=true;f('links').insertAdjacentHTML('beforeend','<p class="error">有連結開到別的產品，請按「返回」改掉。</p><label class="check"><input id="fb-links-check" type="checkbox">連結我核對過了，沒有貼錯</label>');
+          document.getElementById('fb-links-check').addEventListener('change',e=>{f('confirm-ok').disabled=!e.target.checked||(confirmation&&confirmation.is_public&&!f('public-check').checked)})}}).catch(()=>{});
       f('attach-note').hidden=!(d.media||[]).length;f('attach-note').textContent=(d.media||[]).length?`另附 ${d.media.length} 個檔案：${d.media.map(m=>m.name).join('、')}`:'';
       f('recipient').textContent=`發送給「${d.name}」（${d.label}）`;f('when').textContent=d.live?'按下確認後，會用 Meta 官方 API 立刻送出。':'按下確認後，下一輪排程會照這段文字送出（最慢約 60 分鐘）。';const ps=partsOf(text);f('preview').textContent=ps.length>1?ps.map((x,n)=>`【第 ${n+1} 則】\n${x}`).join('\n\n'):text;f('public-warning').hidden=f('public-label').hidden=!d.is_public;f('public-check').checked=false;f('confirm-ok').disabled=d.is_public;f('confirm').showModal();return}
     if(act==='lib-open'){const box=el.querySelector('.libgrid');box.hidden=!box.hidden;b.textContent=box.hidden?'從常用圖片挑':'收起常用圖片';if(!box.hidden&&!box.innerHTML){box.innerHTML='<p class="muted">讀取中…</p>';try{await libraryGrid(box)}catch(e){box.innerHTML='';say(e.message,true)}}return}
@@ -148,6 +150,6 @@ document.addEventListener('click',async event=>{
       await load(true);return}
   }catch(e){say(e.message,true);b.disabled=false}
 });
-f('public-check').addEventListener('change',()=>{f('confirm-ok').disabled=!f('public-check').checked});
+f('public-check').addEventListener('change',()=>{const lc=document.getElementById('fb-links-check');f('confirm-ok').disabled=!f('public-check').checked||!!(lc&&!lc.checked)});
 f('confirm').addEventListener('cancel',e=>{if(busy)e.preventDefault();else confirmation=null});
 void load(true);setInterval(()=>load(false),8000);

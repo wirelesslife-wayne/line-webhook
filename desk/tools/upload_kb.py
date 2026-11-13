@@ -2,7 +2,7 @@ import json
 from .common import WORKSPACE,store
 from ..worker import validate_prices
 
-FILES = ['口吻規則.md','canned_v2.json','faq_v2.json','install_hours.json','經銷商清單.txt','wlf-data.json','price_table_v2.json']
+FILES = ['口吻規則.md','canned_v2.json','faq_v2.json','install_hours.json','經銷商清單.txt','wlf-data.json','price_table_v2.json','line_saved_replies.json']
 
 
 def run():

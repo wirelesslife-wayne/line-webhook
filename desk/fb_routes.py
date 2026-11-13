@@ -166,11 +166,11 @@ def register(bp,store):
 
     @bp.post('/api/fb/links')
     def fb_links():
-        from .links import check
+        from .links import audit
         data=request.get_json(silent=True)
         text=data.get('text') if isinstance(data,dict) else None
         if not isinstance(text,str) or len(text)>4000: raise ActionError('內容格式不正確',400)
-        return jsonify(links=check(store,text))
+        return jsonify(links=audit(store,text))
 
     @bp.post('/api/fb/rules/<int:rule_id>')
     def fb_rule(rule_id):

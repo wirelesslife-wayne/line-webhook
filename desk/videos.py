@@ -95,6 +95,22 @@ def for_car(store, ex, names):
     return [dict(標題=r['title'], 網址=short.get(r['id']) or link(r['id'])) for r in rows[:6]]
 
 
+MAKES = {'TOYOTA': '豐田|TOYOTA', 'LEXUS': '凌志|雷克薩斯|LEXUS', 'HONDA': '本田|HONDA', 'NISSAN': '日產|NISSAN', 'MAZDA': '馬自達|MAZDA',
+         'MITSUBISHI': '三菱|MITSUBISHI', 'SUBARU': '速霸陸|SUBARU', 'SUZUKI': '鈴木|SUZUKI', 'HYUNDAI': '現代汽車|HYUNDAI', 'KIA': '起亞|KIA',
+         'FORD': '福特|FORD', 'VOLKSWAGEN': '福斯|VOLKSWAGEN|VW', 'SKODA': '斯柯達|SKODA', 'AUDI': '奧迪|AUDI', 'BENZ': '賓士|BENZ|MERCEDES',
+         'BMW': '寶馬|BMW', 'PORSCHE': '保時捷|PORSCHE', 'VOLVO': '富豪|VOLVO', 'LUXGEN': '納智捷|LUXGEN', 'TESLA': '特斯拉|TESLA', 'MG': r'\bMG\b'}
+
+
+def other_make(title, brand):
+    """The make a title is about when it is not the customer's (「福斯全車系環景改裝」 for a Lexus owner), else ''.
+    Says nothing when we do not know the customer's make, or the title names theirs too."""
+    mine = (brand or '').upper().replace('MERCEDES-BENZ', 'BENZ').replace('MERCEDES', 'BENZ')
+    if mine not in MAKES:
+        return ''
+    found = [make for make, pattern in MAKES.items() if re.search(pattern, title or '', re.I)]
+    return '' if not found or mine in found else found[0]
+
+
 def titles(store):
     """url -> title for every channel video, in the form drafts link them."""
     return {link(r['id']): 'YouTube：' + r['title'] for r in store.all('SELECT id,title FROM desk_videos')}

@@ -123,6 +123,8 @@ class Engine:
         if any(k not in kb for k in required):
             raise ValueError('知識庫尚未上傳完整')
         self.RULES, self.WLF, self.CANNED, self.FAQ, self.HOURS, self.DEALERS = [kb[k] for k in required]
+        # Short phrases staff keep in the LINE back office (「預設訊息」); entries marked skip contradict a newer rule.
+        self.SAVED = [x for x in store.kb(['line_saved_replies.json']).get('line_saved_replies.json') or [] if not x.get('skip')]
         self.MODELS = sorted({(c['b'], c['model']) for c in self.WLF['cars']})
         if hasattr(provider, 'public'):
             # Shop addresses and phones are published on our site; without this the privacy filter masks them.
@@ -218,10 +220,12 @@ class Engine:
                       '寫法、口吻、格式類的指示每一則都要遵守；明顯只針對當時那位客人的內容（特定車款、金額、日期）只在情境相同時套用。\n')
             rules += '\n'.join('- '+r['instruction']+('（當時客人說：'+r['conversation_summary'][:80]+'）' if r['conversation_summary'] else '')
                                for r in edit_rules)
-        rules += ('\n\n安裝影片（Wayne 11/13：有 YouTube 影片就附，沒有就不用）：參考資料 videos 是我們 YouTube 頻道裡、標題寫著這位客人車款的影片。'
+        rules += ('\n\n安裝影片（Wayne 11/13：有 YouTube 影片就附；11/14：沒有同車款的就附該產品的通用影片）：參考資料 videos 是我們 YouTube 頻道裡、標題寫著這位客人車款的影片。'
                   '其中有標題講的產品就是客人問的產品的（問電動尾門，標題就要有「電動尾門／尾門」），報價或介紹產品時就附最符合的 1 支：'
                   '單獨一行「安裝影片：網址」，放在產品介紹連結的下一行（分兩則時放第一則）。網址照 videos 給的原樣貼。'
-                  'videos 是空的、或沒有一支講到客人問的產品，就不要附影片，也不用在 staff_note 提。'
+                  'videos 是空的、或沒有一支講到客人問的產品時（Wayne 11/14）：改附制式回覆或 Wayne 核准範例裡「這個產品的通用影片」，'
+                  '也就是那個產品主題底下、標題沒有指定別款車或別的車廠的產品介紹／功能影片，最多 1 支，單獨一行「產品影片：網址」；'
+                  '連通用影片也沒有就不要附，也不用在 staff_note 提。'
                   '範例、制式回覆裡的影片或「安裝實例」連結，標題寫的是別款車的，不能給這位客人（Wayne 11/12：RAV4 客人收到 Corolla Cross 的影片）；'
                   '範例裡「安裝實例：」後面接的若是 YouTube 影片，就是這種影片，改成這位客人車款的那支、標籤寫「安裝影片：」。'
                   + ('官網安裝實例只能用參考資料 install_cases 裡同車款、實裝產品有客人問的產品的那一頁。' if SITE_CASES else
@@ -290,16 +294,27 @@ class Engine:
             for url in re.findall(r'https?://[^\s<>"「」（）()，。、]+', v['draft']):
                 if url.rstrip('.,;:!?') not in known:
                     out['flags'].append(tag + '草稿用了資料裡沒有的連結，請確認：' + url)
+            out['flags'] += [tag + x for x in self.wrong_links(v['draft'])]
             if comment and (len([s for s in v['draft'].splitlines() if s.strip()]) > 10 or len(v['draft']) > 700):
                 out['flags'].append(tag + '公開留言草稿偏長，建議精簡後再發送')
         out.pop('images',None)
         out['cards'] = suggestions(out.get('cards'), numbered)
         return out
 
+    def wrong_links(self, text):
+        """Links whose label names one product while the page is about another (Wayne 11/14). Pages already looked up only:
+        drafting never waits for the network; the review page looks up the rest before he can send."""
+        from .links import find, judge, complaint
+        from .videos import titles as video_titles
+        titles = video_titles(self.store)
+        titles.update({r['url']: r['title'] for r in self.store.all("SELECT url,title FROM desk_links WHERE title<>'' AND state='ok'")})
+        found = [dict(url=u, target='', title=titles[u], state='ok') for u in find(text) if u in titles]
+        return ['連結和前面寫的產品對不上，請核對：' + complaint(l) for l in judge(text, found) if l['verdict'] == 'mismatch']
+
     def strip_other_cars(self, text, ex):
         """Drop lines linking to another car model's install case (Wayne 11/12: a RAV4 customer got a Corolla Cross video)."""
         from .cases import same_car, models as case_models
-        from .videos import cars_in, titles as video_titles
+        from .videos import cars_in, other_make, titles as video_titles
         model = (ex or {}).get('model') or ''
         names = {m for _, m in self.MODELS} | set(case_models(self.store))
         titles = video_titles(self.store)
@@ -317,10 +332,13 @@ class Engine:
                 named = [pages[u]] if u in pages else cars_in(titles.get(u, ''), names)
                 if named and not any(same_car(model, m) for m in named):
                     wrong = (u, max(named, key=len))  # the most specific name: 「Corolla Cross」, not 「Corolla」
+                make = not named and other_make(titles.get(u, ''), (ex or {}).get('brand'))
+                if make:
+                    wrong = (u, make + '車系')
             if not wrong:
                 lines.append(line)
-            elif model:
-                notes.append(f'已拿掉別款車（{wrong[1]}）的安裝實例連結，客人是 {model}：{wrong[0]}')
+            elif model or wrong[1].endswith('車系'):
+                notes.append(f'已拿掉別款車（{wrong[1]}）的安裝實例連結，客人是 {model or ex.get("brand")}：{wrong[0]}')
                 if lines and re.fullmatch(r'\s*\S{1,10}[：:]\s*', lines[-1]):
                     lines.pop()  # the label left on its own line (「安裝實例：」)
             else:
@@ -366,5 +384,7 @@ class Engine:
         for c in topk(s, self.CANNED, lambda x: x['topic'] + x['text'][:300], 3):
             if c not in chosen and len(chosen) < 4:
                 chosen.append(c)
+        for c in topk(s, self.SAVED, lambda x: x['topic'] + x['text'][:300], 2):
+            chosen.append(dict(topic='LINE 後台同事常用短句（參考用；跟口吻規則或 Wayne 核准的回覆不同時，以後者為準）：' + c['topic'], text=c['text']))
         return chosen
 

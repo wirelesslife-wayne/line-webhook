@@ -243,10 +243,14 @@ def approve(store, staff, data):
     pieces = parts(text)
     if len(pieces) > MAX_PARTS or any(not p.strip() for p in pieces):
         raise ActionError('最多分成 3 則，而且每一則都要有內容',400)
-    from .links import check as check_links
-    broken = [l['url'] for l in check_links(store, text) if l['state'] == 'broken']
+    from .links import audit, complaint
+    found = audit(store, text)
+    broken = [l['url'] for l in found if l['state'] == 'broken']
     if broken:
         raise ActionError('這個連結打不開，請改掉再核准：' + '、'.join(broken), 400)
+    wrong = [complaint(l) for l in found if l['verdict'] == 'mismatch']
+    if wrong and data.get('links_confirmed') is not True:  # Wayne 11/14: two short links pasted the wrong way round
+        raise ActionError('連結和前面寫的產品對不上，請改掉；確定沒錯再勾「連結我核對過了」：' + '；'.join(wrong), 400)
     try:
         key = str(uuid.UUID(data.get('retry_key','')))
     except (ValueError,TypeError,AttributeError):
