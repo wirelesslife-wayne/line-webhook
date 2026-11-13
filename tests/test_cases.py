@@ -45,15 +45,17 @@ def test_refresh_keeps_the_old_index_when_the_site_is_down(db):
     assert [r['model'] for r in db.all('SELECT model FROM desk_cases')] == ['CR-V']
 
 
-def test_another_cars_case_video_is_taken_out_of_the_draft(db):
+def test_another_cars_case_video_is_taken_out_of_the_draft(db, monkeypatch):
     """Wayne 11/12: a RAV4 customer got the Corolla Cross tailgate video as 「安裝實例」."""
     seed(db)
     draft = f'您好～RAV4 可以升級電動尾門。\n\n詳細介紹：https://carandroid.com.tw/電動尾門/\n安裝實例：\n{CC_VIDEO}\n\n歡迎來門市看實機～'
     out, provider = tailgate(db, 'RAV4', draft)
     assert CC_VIDEO not in out['draft'] and '安裝實例' not in out['draft'] and '詳細介紹' in out['draft']
     assert any('Corolla Cross' in f.title() or 'COROLLA CROSS' in f for f in out['flags'])
-    prompt = provider.call_args.args[0][1]['content']
-    assert RAV4_PAGE in prompt and 'corolla-cross-install-cases' not in prompt  # only this car's case pages
+    assert 'install-cases' not in provider.call_args.args[0][1]['content']  # Wayne 11/13: site case pages are off for now
+    monkeypatch.setattr('desk.engine.SITE_CASES', True)  # once they are switched back on: only this car's pages
+    prompt = tailgate(db, 'RAV4', draft)[1].call_args.args[0][1]['content']
+    assert RAV4_PAGE in prompt and 'corolla-cross-install-cases' not in prompt
     out, _ = tailgate(db, 'Corolla Cross', draft)
     assert CC_VIDEO in out['draft']  # same car: the video is right
 

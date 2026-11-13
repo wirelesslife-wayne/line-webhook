@@ -7,6 +7,9 @@ import re
 from urllib.parse import urlsplit
 
 LINK = re.compile(r'https?://[^\s<>"「」『』（）()，。、！？]+')
+# Wayne 11/13: the website's install-case pages are not linked for now (a customer has to click through several
+# levels); drafts link our YouTube video of the customer's car instead. Set True once the pages are reworked.
+SITE_CASES = False
 
 class ProviderPending(RuntimeError):
     pass
@@ -176,9 +179,10 @@ class Engine:
         hist = self.history(newtext, now_local)
         approved = self.approved(newtext)
         from .cases import for_car
-        cases = for_car(self.store, ex)
+        from .videos import for_car as videos_for
         context = json.dumps({'prices':prices,'canned':canned,'faq':faq,'hours':self.HOURS,'dealers':self.DEALERS,'history':hist,
-                              'install_cases':cases}, ensure_ascii=False)
+                              'videos':videos_for(self.store, ex, {m for _, m in self.MODELS}),
+                              **({'install_cases':for_car(self.store, ex)} if SITE_CASES else {})}, ensure_ascii=False)
         from .knowledge import reference
         learned = reference(self.store,newtext)
         learned_context = ('Wayne 核准的正確答法，優先於歷史問答。只適用於相符車款／產品；'
@@ -193,7 +197,8 @@ class Engine:
         if instruction:
             prompt += '\n本次修改指示：'+instruction+'\n原草稿：'+original_draft
         from .library import catalog, suggestions
-        numbered = catalog(self.store) if channel in ('fb_message', 'ig_message', 'line_message') else []
+        # Not ig_comment: Instagram comments cannot carry a picture.
+        numbered = catalog(self.store) if channel in ('fb_message', 'ig_message', 'line_message', 'fb_comment') else []
         if numbered:
             prompt += ('\n可以附的常用圖片（Wayne 的圖卡）。這則草稿在介紹產品、報價、回答安裝前疑問或排除問題時，'
                        '或客人問什麼時候可以安排、哪天有營業時，下面清單裡只要有符合「何時附」的圖卡就要挑（最多 2 張，最相關的放前面）；'
@@ -213,10 +218,15 @@ class Engine:
                       '寫法、口吻、格式類的指示每一則都要遵守；明顯只針對當時那位客人的內容（特定車款、金額、日期）只在情境相同時套用。\n')
             rules += '\n'.join('- '+r['instruction']+('（當時客人說：'+r['conversation_summary'][:80]+'）' if r['conversation_summary'] else '')
                                for r in edit_rules)
-        rules += ('\n\n安裝實例連結（Wayne 11/12：RAV4 客人收到 Corolla Cross 的電動尾門影片）：只能用參考資料 install_cases 裡'
-                  '跟客人同一款車的那一頁，而且那一頁的「實裝產品」要有客人問的產品（問電動尾門就要有「電動尾門」）。'
-                  '範例、制式回覆裡的安裝實例或影片連結，標題寫的是別款車的，就不能給這位客人。'
-                  '找不到符合的就不要附安裝實例，staff_note 寫「官網沒有這款車的〇〇安裝實例」。產品介紹、適用車型這類不分車款的連結照常附。')
+        rules += ('\n\n安裝影片（Wayne 11/13：有 YouTube 影片就附，沒有就不用）：參考資料 videos 是我們 YouTube 頻道裡、標題寫著這位客人車款的影片。'
+                  '其中有標題講的產品就是客人問的產品的（問電動尾門，標題就要有「電動尾門／尾門」），報價或介紹產品時就附最符合的 1 支：'
+                  '單獨一行「安裝影片：網址」，放在產品介紹連結的下一行（分兩則時放第一則）。網址照 videos 給的原樣貼。'
+                  'videos 是空的、或沒有一支講到客人問的產品，就不要附影片，也不用在 staff_note 提。'
+                  '範例、制式回覆裡的影片或「安裝實例」連結，標題寫的是別款車的，不能給這位客人（Wayne 11/12：RAV4 客人收到 Corolla Cross 的影片）；'
+                  '範例裡「安裝實例：」後面接的若是 YouTube 影片，就是這種影片，改成這位客人車款的那支、標籤寫「安裝影片：」。'
+                  + ('官網安裝實例只能用參考資料 install_cases 裡同車款、實裝產品有客人問的產品的那一頁。' if SITE_CASES else
+                     '官網的安裝實例頁（網址有 install-cases）先一律不要附：頁面還沒整理好，客人要點好幾層才看得到。')
+                  + '產品介紹、適用車型這類不分車款的連結照常附。')
         comment = channel in ('fb_comment','ig_comment')
         if channel == 'line_message':
             rules += ('\n\n本次是 LINE 官方帳號的私訊（客人在 LINE 加了我們好友）。我方訊息標「自動回應」「自動（夜間AI）」的是系統自動送的，不算真人回過；'
@@ -246,7 +256,7 @@ class Engine:
                       '要回的是客人自己打的字。客人自己打的問題只收到自動回覆的，視為還沒處理：'
                       '要寫出實質回覆，能報價就報價並附連結，缺車款或年份就請客人提供；不要因為自動回覆講過就回空白草稿。'
                       '\n客人是點廣告或貼文進來的：客人問價格、工時、能不能裝，指的就是那支廣告／貼文的產品，只回那個產品，不要改推別的產品。'
-                      '對話裡有「廣告預設問題」但資料裡沒有廣告是哪一支時，不要自己猜產品（Wayne 11/12：何浚榕點電動尾門廣告，AI 卻報了安卓主機）：'
+                      '對話裡有「廣告預設問題」但資料裡沒有廣告是哪一支時，不要自己猜產品（Wayne 11/12：有客人點電動尾門廣告，AI 卻報了安卓主機）：'
                       '先請客人說想了解哪一項產品，staff_note 寫「沒抓到廣告是哪一支，請看截圖確認」。')
         if comment:
             rules += ('\n\n本次是社群公開留言，所有人都看得到。寫得比私訊精簡，最多 8 行；可以照價格資料報完工價；介紹產品或報價時附 1 個最相關的介紹連結；'
@@ -288,17 +298,23 @@ class Engine:
 
     def strip_other_cars(self, text, ex):
         """Drop lines linking to another car model's install case (Wayne 11/12: a RAV4 customer got a Corolla Cross video)."""
-        from .cases import norm, same_car, models as case_models
+        from .cases import same_car, models as case_models
+        from .videos import cars_in, titles as video_titles
         model = (ex or {}).get('model') or ''
-        names = [m for m in {m for _, m in self.MODELS} | set(case_models(self.store)) if len(norm(m)) >= 3]
-        titles = {r['url']: r['title'] for r in self.store.all("SELECT url,title FROM desk_links WHERE title<>''")}
+        names = {m for _, m in self.MODELS} | set(case_models(self.store))
+        titles = video_titles(self.store)
+        titles.update({r['url']: r['title'] for r in self.store.all("SELECT url,title FROM desk_links WHERE title<>''")})
         pages = {r['url']: r['model'] for r in self.store.all('SELECT url,model FROM desk_cases')}
         lines, notes = [], []
         for line in (text or '').split('\n'):
             wrong = None
+            if not SITE_CASES and any(u.rstrip('.,;:!?') in pages or 'install-cases' in u for u in LINK.findall(line)):
+                if lines and re.fullmatch(r'\s*\S{1,10}[：:]\s*', lines[-1]):
+                    lines.pop()
+                continue  # website case pages are not linked for now; nothing for Wayne to do, so no note
             for url in LINK.findall(line):
                 u = url.rstrip('.,;:!?')
-                named = [pages[u]] if u in pages else [m for m in names if norm(m) in norm(titles.get(u, ''))]
+                named = [pages[u]] if u in pages else cars_in(titles.get(u, ''), names)
                 if named and not any(same_car(model, m) for m in named):
                     wrong = (u, max(named, key=len))  # the most specific name: 「Corolla Cross」, not 「Corolla」
             if not wrong:

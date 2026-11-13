@@ -437,14 +437,26 @@ def test_attachments_travel_with_the_approved_private_reply(db, logged, tmp_path
     """Wayne 11/12: let me attach photos and videos to FB/IG replies."""
     from desk import fb_media
     _, _, staff, _ = logged
-    fb.push(db, [thread(), thread('fb_comment', key='900002', context='合成貼文')])
+    fb.push(db, [thread(), thread('fb_comment', key='900002', context='合成貼文'), thread('ig_comment', key='900003', context='合成貼文')])
     ready(db)
     with pytest.raises(ActionError) as denied:
         fb_media.upload(db, staff, tid(), picture())
     assert denied.value.status == 403
     boss = wayne(db, staff)
-    with pytest.raises(ActionError, match='公開留言'):
-        fb_media.upload(db, boss, tid('fb_comment', '900002'), picture())
+    # Wayne 11/13: comment replies too. A Facebook comment takes one photo or video, an Instagram comment none.
+    with pytest.raises(ActionError, match='Instagram 留言不能附'):
+        fb_media.upload(db, boss, tid('ig_comment', '900003'), picture())
+    shown = fb_media.upload(db, boss, tid('fb_comment', '900002'), picture())
+    with pytest.raises(ActionError, match='只能附 1 個'):
+        fb_media.upload(db, boss, tid('fb_comment', '900002'), picture('第二張.png'))
+    def comment(ids):
+        return dict(thread_id=tid('fb_comment', '900002'), version=fb.conversation(db, tid('fb_comment', '900002'))['version'], text='您好～完工價 $18,000。',
+                    retry_key=str(uuid.uuid4()), confirmed=True, public_confirmed=True, media_ids=ids)
+    with pytest.raises(ActionError, match='附件清單'):
+        fb.approve(db, boss, comment([shown['id'], 'f' * 32]))
+    sent = fb.approve(db, boss, comment([shown['id']]))
+    assert [m['id'] for m in fb_media.attached(db, sent['attempt_id'])] == [shown['id']]
+    assert len(fb_media.export(db, sent['attempt_id'], tmp_path / 'comment')) == 1  # the browser run gets the file for the comment
     one = fb_media.upload(db, boss, tid(), picture())
     two = fb_media.upload(db, boss, tid(), picture('第二張.png'))
     assert one['type'] == 'image' and sorted(m['name'] for m in fb_media.listing(db, tid())) == sorted(['實機照.png', '第二張.png'])  # same transaction: same upload time
@@ -552,7 +564,7 @@ def test_push_keeps_a_screenshot_of_the_real_conversation(db, logged, tmp_path, 
 
 
 def test_ad_context_arriving_later_redrafts_the_wrong_product_draft(db):
-    # Wayne 11/12 (何浚榕): the ad banner was missed, so the AI guessed the product; once the ad is known, draft again.
+    # Wayne 11/12: the ad banner was missed, so the AI guessed the product; once the ad is known, draft again.
     fb.push(db, [thread()])
     ready(db)
     assert fb.conversation(db, tid())['status'] == 'ready'

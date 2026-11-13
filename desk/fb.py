@@ -276,7 +276,7 @@ def approve(store, staff, data):
         cur.execute("""INSERT INTO desk_fb_attempts(retry_key,thread_id,staff_id,source_version,content,public_confirmed,status,question,ai_draft)
           VALUES(%s,%s,%s,%s,%s,%s,'approved',%s,%s)""",(key,tid,staff['id'],version,text,public,question,chosen(c['draft'], text)[:4000]))
         from .fb_media import bind
-        bind(cur,tid,key,data.get('media_ids'),c['channel'].endswith('_comment'))
+        bind(cur,tid,key,data.get('media_ids'),c['channel'])
         cur.execute("UPDATE desk_fb_threads SET status='approved',note='',draft_token=NULL,updated_at=NOW() WHERE id=%s",(tid,))
     return dict(ok=True,attempt_id=key,status='approved')
 
@@ -347,7 +347,7 @@ def record_result(store, attempt_id, outcome, reason='', via='browser'):
               VALUES(%s,%s,'page',%s,%s,%s,%s,%s) ON CONFLICT(thread_id,fingerprint) DO NOTHING""",
               (c['id'],'attempt:'+attempt_id,a['content'],stamp,event_time(stamp),via,a['source_version']))
         if c['version']==a['source_version'] and a['status']=='approved' and c['status']=='approved':
-            # Wayne 11/12 (阮海燕): a colleague had already answered in Meta; leaving it in review looked like a bad draft.
+            # Wayne 11/12: a colleague had already answered in Meta; leaving it in review looked like a bad draft.
             answered = outcome=='failed' and '已經有人回覆' in reason
             state = 'done' if outcome=='sent' or answered else 'ready'
             note = ('已即時送出' if via=='api' else '已由瀏覽器送出') if outcome=='sent' else '同事已回覆' if answered else '送出失敗：'+(reason or '請人工查核')
@@ -480,6 +480,8 @@ def start_worker(store):
             try:
                 from .cases import refresh_if_due
                 refresh_if_due(store)  # the website's install-case index, about once a day
+                from .videos import refresh_if_due as videos_due
+                videos_due(store)  # new uploads on our YouTube channel
             except Exception:
                 pass
             try:

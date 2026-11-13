@@ -1,4 +1,5 @@
-"""Attachments Wayne adds to an FB/IG private reply. The browser run uploads them with the approved text.
+"""Attachments Wayne adds to an FB/IG/LINE private reply or an FB comment reply. The browser run uploads them
+with the approved text.
 
 Bytes stay in the desk database until exported to the local machine that operates the inbox;
 nothing here contacts Meta.
@@ -12,6 +13,14 @@ from .media import MB, TOKEN, image_info, mp4_valid
 IMAGE_LIMIT = 10 * MB
 VIDEO_LIMIT = 25 * MB   # Messenger's own attachment limit
 PER_THREAD = 3
+
+
+def allowed(channel):
+    """How many files one reply on this channel can carry. Checked in Meta's inbox 11/13: a Facebook comment reply
+    takes one photo or video; an Instagram comment has no attach button at all."""
+    if channel == 'ig_comment':
+        raise ActionError('Instagram 留言不能附圖片或影片（Instagram 本身不支援），請改貼連結', 400)
+    return 1 if channel == 'fb_comment' else PER_THREAD
 CAPACITY = 300 * MB
 TYPES = {'image/jpeg': '.jpg', 'image/png': '.png', 'video/mp4': '.mp4'}
 # Free to use: not removed, bytes present, and not tied to a reply that is approved or already sent.
@@ -61,14 +70,13 @@ def add(store, staff, tid, data, mime, name):
         c = cur.fetchone()
         if not c:
             raise ActionError('找不到對話', 404)
-        if c['channel'].endswith('_comment'):
-            raise ActionError('公開留言不能附檔，請改貼連結', 400)
+        most = allowed(c['channel'])
         if c['status'] not in ('waiting', 'drafting', 'ready', 'blocked', 'error'):
             raise ActionError('這則已核准或已處理，請重新載入', 409)
         cur.execute("UPDATE desk_fb_media SET data=NULL WHERE data IS NOT NULL AND uploaded_at<NOW()-INTERVAL '30 days'")
         cur.execute(f'SELECT COUNT(*) AS n FROM desk_fb_media m WHERE thread_id=%s AND {FREE}', (tid,))
-        if cur.fetchone()['n'] >= PER_THREAD:
-            raise ActionError('一則回覆最多附 3 個檔案，請先移除不用的', 400)
+        if cur.fetchone()['n'] >= most:
+            raise ActionError('Facebook 留言只能附 1 個圖片或影片，請先移除原本那個' if most == 1 else '一則回覆最多附 3 個檔案，請先移除不用的', 400)
         cur.execute('SELECT COALESCE(SUM(size),0) AS total FROM desk_fb_media WHERE data IS NOT NULL')
         if cur.fetchone()['total'] + len(data) > CAPACITY:
             raise ActionError('附件空間已滿，請改貼連結或通知管理者', 507)
@@ -87,15 +95,13 @@ def remove(store, staff, media_id, tid):
         raise ActionError('附件已核准送出或不屬於這則對話，無法移除', 409)
 
 
-def bind(cur, tid, key, ids, public):
+def bind(cur, tid, key, ids, channel):
     """Inside the approval transaction: tie exactly the files Wayne saw to this approval."""
     if ids in (None, []):
         return
-    if (not isinstance(ids, list) or len(ids) > PER_THREAD or len(set(ids)) != len(ids)
+    if (not isinstance(ids, list) or len(ids) > allowed(channel) or len(set(ids)) != len(ids)
             or not all(isinstance(i, str) and TOKEN.fullmatch(i) for i in ids)):
         raise ActionError('附件清單不正確，請重新載入', 400)
-    if public:
-        raise ActionError('公開留言不能附檔', 400)
     cur.execute(f'UPDATE desk_fb_media m SET attempt_key=%s WHERE thread_id=%s AND id=ANY(%s) AND {FREE}', (key, tid, ids))
     if cur.rowcount != len(ids):
         raise ActionError('附件已變動，請重新載入後再核准', 409)

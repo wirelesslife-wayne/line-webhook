@@ -77,6 +77,8 @@ from .links import SCHEMA as LINK_SCHEMA
 SCHEMA += LINK_SCHEMA
 from .cases import SCHEMA as CASE_SCHEMA
 SCHEMA += CASE_SCHEMA
+from .videos import SCHEMA as VIDEO_SCHEMA
+SCHEMA += VIDEO_SCHEMA
 
 
 class Store:

@@ -23,7 +23,7 @@ def card(db, name='電動尾門Q&A.png', use_when='問電動尾門', topic='電�
     return lib_id
 
 
-def test_drafts_suggest_only_real_library_cards_for_private_messages(db):
+def test_drafts_suggest_only_real_library_cards_where_a_picture_can_be_sent(db):
     a, b = card(db), card(db, '三款電子後視鏡.jpg', '問電子後視鏡')
     provider = Mock(side_effect=[{}, dict(draft='您好～', cards=[1, '2', 2, 99, 'x'])])
     out = Engine(db, provider).draft([{'time': 'now', 'role': 'user', 'text': '電動尾門多少錢', 'new': True}], now(), channel='fb_message')
@@ -34,7 +34,10 @@ def test_drafts_suggest_only_real_library_cards_for_private_messages(db):
     assert [c['id'] for c in out['cards']] == [numbered[1]['id'], numbered[2]['id']]  # duplicates and unknown numbers dropped
     provider = Mock(side_effect=[{}, dict(draft='您好～', cards=[1])])
     out = Engine(db, provider).draft([{'time': 'now', 'role': 'user', 'text': '多少錢', 'new': True}], now(), channel='fb_comment')
-    assert out['cards'] == [] and '電動尾門Q&A.png' not in provider.call_args.args[0][1]['content']
+    assert len(out['cards']) == 1 and '電動尾門Q&A.png' in provider.call_args.args[0][1]['content']  # Wayne 11/13: FB comments carry a picture too
+    provider = Mock(side_effect=[{}, dict(draft='您好～', cards=[1])])
+    out = Engine(db, provider).draft([{'time': 'now', 'role': 'user', 'text': '多少錢', 'new': True}], now(), channel='ig_comment')
+    assert out['cards'] == [] and '電動尾門Q&A.png' not in provider.call_args.args[0][1]['content']  # Instagram comments cannot
 
 
 def test_attach_from_library_then_send_with_the_reply(db, logged):
