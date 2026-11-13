@@ -21,10 +21,10 @@ function card(d,i){
   h+=`<div class="detail"><p class="muted">${esc(d.label)} · ${esc(STATUS[d.status]||d.status)}${d.note?' · '+esc(d.note):''}</p>`;
   if(d.context)h+=`<p class="context"><b>所屬貼文：</b>${esc(d.context.slice(0,200))}</p>`;
   h+=`<div class="messages">${d.messages.map(m=>`<div class="message ${m.role==='assistant'?'ours':''}"><small>${m.role==='assistant'?'我們':'客人'} · ${esc(when(m.time))}</small>${esc(m.text)}</div>`).join('')||'<p class="muted">沒有訊息內容</p>'}</div>`;
-  if(d.shot)h+=`<details class="shot" open><summary>Meta 原始畫面截圖（${esc(d.shot)}）· 可以對照上面整理的文字</summary><a href="/desk/api/fb/shot?thread_id=${encodeURIComponent(d.id)}" target="_blank" rel="noopener"><img src="/desk/api/fb/shot?thread_id=${encodeURIComponent(d.id)}&t=${encodeURIComponent(d.shot)}" alt="Meta 收件匣這則對話的截圖" loading="lazy"></a></details>`;
-  if(/^https:\/\//.test(d.url||''))h+=`<p><a href="${esc(d.url)}" target="_blank" rel="noopener noreferrer">在 Meta 收件匣打開這則</a></p>`;
+  if(d.shot)h+=`<details class="shot" open><summary>原始畫面截圖 ${esc(d.shot.replace('-','/'))}</summary><a href="/desk/api/fb/shot?thread_id=${encodeURIComponent(d.id)}" target="_blank" rel="noopener"><img src="/desk/api/fb/shot?thread_id=${encodeURIComponent(d.id)}&t=${encodeURIComponent(d.shot)}" alt="Meta 收件匣這則對話的截圖" loading="lazy"></a></details>`;
+  if(/^https:\/\//.test(d.url||''))h+=`<p><a class="meta-link" href="${esc(d.url)}" target="_blank" rel="noopener noreferrer">在 Meta 收件匣打開這則</a></p>`;
   if(todo){
-    if(r.staff_note)h+=`<p class="note">AI 的提醒：${esc(r.staff_note)}</p>`;
+    if(r.staff_note)h+=`<p class="note ainote" title="點一下看全文">💡 ${esc(r.staff_note)}</p>`;
     h+=(r.flags||[]).map(x=>`<p class="error">${esc(x)}</p>`).join('');
     const vers=[{label:r.label,draft:r.draft},...(r.alternatives||[])].filter(v=>typeof v.draft==='string'&&v.draft);
     if(vers.length>1&&!waiting)h+=`<p class="muted">AI 寫了 ${vers.length} 個版本，按「用這版」會放進下面的框，可以再改字：</p><div class="versions">${vers.map((v,n)=>{const on=draft===v.draft;return `<section class="ver${on?' on':''}"><h3>版本${'ABC'[n]} <small>${esc(v.label||'')}${n===0?'（推薦）':''}</small></h3><pre>${esc(v.draft)}</pre><button data-act="version" data-v="${n}" aria-pressed="${on}" class="${on?'primary':''}">${on?'✓ 正在用這版':'用這版'}</button></section>`}).join('')}</div>`;
@@ -80,6 +80,7 @@ async function load(force){
 }
 function remember_rule(id,instruction){const box=f('rules');if(!box)return;const row=document.createElement('div');row.className='rule';row.innerHTML=`<p>${esc(instruction)}</p><small class="muted">剛剛記住</small><button data-rule-id="${Number(id)}" data-active="true">停用</button>`;box.querySelector('.rule')?box.insertBefore(row,box.querySelector('.rule')):box.appendChild(row);box.querySelector('.none')?.remove();box.querySelector('summary').textContent=`我記住的修改指示（${box.querySelectorAll('.rule').length} 條）`}
 function pick(button){const el=button.closest('article');const d=items.find(x=>x.id===el?.dataset.id);return d?{d,el}:null}
+document.addEventListener('click',e=>{const n=e.target.closest('.ainote');if(n)n.classList.toggle('full')});
 document.addEventListener('input',e=>{if(e.target.matches('[data-draft]')){const p=pick(e.target);if(p)edits[editKey(p.d)]=e.target.value}});
 document.addEventListener('click',async event=>{
   const b=event.target.closest('button');if(!b||busy)return;

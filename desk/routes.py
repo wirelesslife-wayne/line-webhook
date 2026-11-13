@@ -27,8 +27,8 @@ def make_blueprint(store,notifier=None):
         # Only GET/HEAD to this exact endpoint may bypass session/CSRF.
         if request.endpoint == 'desk.media_read' and request.method in ('GET','HEAD'):
             return
-        if request.endpoint == 'desk.login':
-            return
+        if request.endpoint in ('desk.login','desk.app_icon','desk.manifest'):
+            return  # the home-screen icon is fetched by the phone without the login cookie
         try:
             g.staff = auth.session(request.cookies.get(COOKIE))
         except Exception:
@@ -64,6 +64,24 @@ def make_blueprint(store,notifier=None):
         if isinstance(e,HTTPException):
             return jsonify(error=e.name),e.code
         return jsonify(error='客服後台暫時無法處理；草稿請先保留，再重新載入'),503
+
+    # Home-screen app icon (Wayne 11/13; design picked with ChatGPT/Gemini/Claude: stacked drafts + orange check).
+    assets = os.path.join(os.path.dirname(__file__),'assets')
+
+    @bp.get('/app-icon-<int:size>.png')
+    def app_icon(size):
+        if size not in (180,192,512):
+            return jsonify(error='Not Found'),404
+        return send_file(os.path.join(assets,f'app-icon-{size}.png'),mimetype='image/png')
+
+    @bp.get('/manifest.webmanifest')
+    def manifest():
+        body = dict(name='無限科技 客服工作台',short_name='無限客服',start_url='/desk/fb',scope='/desk/',display='standalone',
+                    background_color='#0f3d5c',theme_color='#0f3d5c',
+                    icons=[dict(src=f'/desk/app-icon-{n}.png',sizes=f'{n}x{n}',type='image/png') for n in (192,512)])
+        response = jsonify(body)
+        response.headers['Content-Type'] = 'application/manifest+json'
+        return response
 
     @bp.route('/login',methods=['GET','POST'])
     def login():
