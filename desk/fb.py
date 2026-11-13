@@ -10,6 +10,14 @@ from .db import now
 from .errors import ActionError
 from .worker import local_time, TAIPEI
 
+# Wayne 11/13: a long reply can go out as up to 3 separate messages; the approved text keeps them joined by this line.
+SPLIT_MARK = '[[下一則]]'
+MAX_PARTS = 3
+
+
+def parts(text):
+    return [p.strip('\n') for p in str(text or '').split(SPLIT_MARK)]
+
 CHANNELS = ('fb_message', 'ig_message', 'fb_comment', 'ig_comment')
 LABELS = dict(zip(CHANNELS, ('FB 私訊', 'IG 私訊', 'FB 留言', 'IG 留言')))
 TODO = ('waiting','drafting','ready','blocked','error')
@@ -198,7 +206,7 @@ def pending(store):
             cur.execute("SELECT content FROM desk_fb_events WHERE thread_id=%s AND role='user' ORDER BY id DESC LIMIT 1",(c['id'],))
             last = cur.fetchone()
             result.append(dict(attempt_id=str(a['retry_key']),channel=c['channel'],key=c['key'],name=c['name'],url=c['url'],
-                content=a['content'],last_customer_text=last['content'] if last else '',approved_at=a['approved_at'].isoformat(),
+                content=a['content'],parts=parts(a['content']),last_customer_text=last['content'] if last else '',approved_at=a['approved_at'].isoformat(),
                 is_public=c['channel'].endswith('_comment'),files=[]))
     return result
 
@@ -211,6 +219,9 @@ def approve(store, staff, data):
     tid,text,version = data.get('thread_id'),data.get('text'),data.get('version')
     if not isinstance(tid,str) or not isinstance(text,str) or not text.strip() or len(text)>2000 or type(version) is not int:
         raise ActionError('回覆內容或快照不正確，文字上限 2,000 字',400)
+    pieces = parts(text)
+    if len(pieces) > MAX_PARTS or any(not p.strip() for p in pieces):
+        raise ActionError('最多分成 3 則，而且每一則都要有內容',400)
     from .links import check as check_links
     broken = [l['url'] for l in check_links(store, text) if l['state'] == 'broken']
     if broken:
@@ -222,6 +233,8 @@ def approve(store, staff, data):
     with store.cursor() as cur:
         c = locked(cur,tid,version,check_state=False)
         public = data.get('public_confirmed') is True
+        if c['channel'].endswith('_comment') and len(pieces) > 1:
+            raise ActionError('公開留言只能回一則，請先合併成一則',400)
         if c['channel'].endswith('_comment') and not public:
             raise ActionError('這是公開留言，所有人看得到；請勾選確認',400)
         cur.execute('SELECT * FROM desk_fb_attempts WHERE retry_key=%s',(key,))

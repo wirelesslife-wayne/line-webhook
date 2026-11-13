@@ -210,10 +210,17 @@ class Engine:
                       '版本之間只差在內容詳略與強調的重點，不改結構（ChatGPT、Gemini、Claude 11/12 審稿共識）。報價、介紹產品時固定這三種：'
                       '①「完整功能」（推薦，放 draft）：完工價＋全部功能＋選配＋保固；'
                       '②「精簡重點」：條列只留完工價、選配、保固；'
-                      '③「生活情境」：同①，結尾前多一句這項產品日常用起來的好處（例如電動尾門「升級後日常拿東西、上下行李會方便很多」），不要編資料沒有的功能。'
+                      '③「分期到府」（Wayne 11/13 選；三家 AI 都建議第 3 版要處理付款或施工方式這類成交阻力）：條列同②（完工價、選配、保固），'
+                      '再加兩行「👉 可刷卡 0 利率分期 3／6／12 期，無卡分期只要身分證＋手機」「👉 苗栗以北可安排師傅到府施工（另收車馬費）」；'
+                      '已知客人在苗栗以南就不寫到府那行；不要報車馬費金額，也不要寫分期每月多少錢。'
                       '還不知道客人在哪時，任何版本都不要提「新北」「板橋有展示車」，邀請只寫固定句「歡迎先到門市體驗參觀，滿意再安裝就可以囉！」'
                       '（Wayne 11/12：客人吃這套、沒壓力；人在屏東叫他來新北，他會直接說謝謝再聯絡）。'
                       '其他情境（售後、預約、問地址）給 2 個版本就好，例如一個直接回答、一個多一句貼心說明；不要為了湊版本拿掉必要資訊或編資料沒有的事。')
+        if channel in ('fb_message', 'ig_message'):
+            rules += ('\n\n分兩則送（Wayne 11/13，ChatGPT、Gemini、Claude 討論共識）：報價、產品介紹這種有「條列＋結尾邀請」的長回覆，'
+                      '在條列與連結之後、結尾那段（工時＋縣市＋邀請）之前，單獨放一行 [[下一則]]，客人會先收到第一則再收到第二則。'
+                      '第一則要能單獨看懂（第一行結論＋條列＋連結），第二則就是原本的結尾段，不要再打招呼。'
+                      '每個版本都用同樣的拆法。短回答、道謝、只問一句、拆完有一則不到一句話的，都維持一則、不要放 [[下一則]]；最多 3 則。')
         if channel != 'line':
             rules += ('\n\n本次是 FB／IG 的對話。我方訊息後面標著「自動回覆」「自動問候」的，是系統自動送出的罐頭訊息，不算真人回覆過；'
                       '標著「廣告預設問題」的是客人點了廣告上的按鈕，那題自動回覆已經答過，不要再重答一次；'
@@ -241,6 +248,11 @@ class Engine:
         versions = [out] + out['alternatives']
         for n, v in enumerate(versions):
             tag = f'版本{"ABC"[n]}：' if len(versions) > 1 else ''
+            pieces = [p.strip('\n') for p in v['draft'].split('[[下一則]]')]
+            if channel not in ('fb_message', 'ig_message') or len(pieces) > 3 or any(not p.strip() for p in pieces):
+                v['draft'] = '\n\n'.join(p for p in pieces if p.strip())  # comments and LINE go out as one message
+            else:
+                v['draft'] = '\n[[下一則]]\n'.join(pieces)
             v['draft'], removed = self.strip_other_cars(v['draft'], ex)
             out['flags'] += [tag + x for x in removed]
             out['flags'] += [tag + x for x in check(v['draft'], context)]

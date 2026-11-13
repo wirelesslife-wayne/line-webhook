@@ -13,6 +13,9 @@ function when(t){const d=new Date(t);if(/^\d{4}-\d\d-\d\dT/.test(t||'')&&!isNaN(
   // Meta's own long form 「2026年11月12日 星期四上午7:23」 → 「11/12 上午7:23」 (phone review 11/13: it overlapped the status tag)
   const m=/\d{4}年(\d+)月(\d+)日\s*星期.\s*(上午|下午)?\s*(\d+:\d+)/.exec(t||'');return m?`${m[1]}/${m[2]} ${m[3]||''}${m[4]}`:(t||'')}
 const PHONE=matchMedia('(max-width:700px)');
+const SPLIT='\n[[下一則]]\n',MAXPARTS=3;
+const partsOf=t=>String(t??'').split('[[下一則]]').map(x=>x.replace(/^\n+|\n+$/g,''));
+const joined=el=>[...el.querySelectorAll('[data-draft]')].map(t=>t.value.replace(/^\n+|\n+$/g,'')).filter((x,n,a)=>x.trim()||a.length===1).join(SPLIT);
 function grow(t){if(!t)return;t.style.height='auto';t.style.height=Math.max(t.scrollHeight+2,150)+'px'}
 function files(list,removable){return (list||[]).map(m=>`<figure>${m.type==='image'?`<img src="/desk/api/fb/media/${esc(m.id)}" alt="" loading="lazy">`:'<div class="vid">🎬</div>'}<span>${esc(m.name)}</span>${removable?`<button data-act="media-remove" data-media="${esc(m.id)}">移除</button>`:''}</figure>`).join('')}
 function card(d,i){
@@ -32,7 +35,9 @@ function card(d,i){
     h+=(r.flags||[]).map(x=>`<p class="error">${esc(x)}</p>`).join('');
     const vers=[{label:r.label,draft:r.draft},...(r.alternatives||[])].filter(v=>typeof v.draft==='string'&&v.draft);
     if(vers.length>1&&!waiting)h+=`<p class="muted">AI 寫了 ${vers.length} 個版本，按「用這版」會放進下面的框，可以再改字：</p><div class="versions">${vers.map((v,n)=>{const on=draft===v.draft;return `<section class="ver${on?' on':''}"><h3>版本${'ABC'[n]} <small>${esc(v.label||'')}${n===0?'（推薦）':''}</small></h3><pre class="${v.draft.split('\n').length>9||v.draft.length>260?'clamp':''}">${esc(v.draft)}</pre>${v.draft.split('\n').length>9||v.draft.length>260?'<button class="more" data-act="ver-more">展開全文</button>':''}<button data-act="version" data-v="${n}" aria-pressed="${on}" class="${on?'primary':''}">${on?'✓ 正在用這版':'用這版'}</button></section>`}).join('')}</div>`;
-    h+=`<label for="fb-draft-${i}">草稿（可以直接改字）</label><textarea id="fb-draft-${i}" data-draft maxlength="2000" ${waiting?'disabled':''}>${esc(draft)}</textarea>`;
+    const parts=partsOf(draft),many=parts.length>1;
+    h+=`<label for="fb-draft-${i}-0">${many?`草稿分成 ${parts.length} 則，會一則一則送出（可以直接改字）`:'草稿（可以直接改字）'}</label><div class="parts">${parts.map((t,n)=>`<div class="part">${many?`<div class="part-head"><b>第 ${n+1} 則</b>${n?`<button class="link" data-act="part-merge" data-n="${n}">併回上一則</button>`:''}</div>`:''}<textarea id="fb-draft-${i}-${n}" data-draft data-n="${n}" maxlength="2000" ${waiting?'disabled':''}>${esc(t)}</textarea></div>`).join('')}</div>`;
+    if(!waiting&&!d.is_public&&parts.length<MAXPARTS)h+=`<div class="part-tools"><button class="link" data-act="part-cut">✂ 從游標處分成下一則</button><button class="link" data-act="part-add">＋ 加一則</button></div>`;
     if(!d.is_public&&canReview){
       const have=new Set((d.media||[]).map(m=>m.name)),sug=(r.cards||[]).filter(c=>!have.has(c.name));
       h+=`<div class="attach"><div class="files">${files(d.media,true)}</div>`;
@@ -86,7 +91,8 @@ async function load(force){
 function remember_rule(id,instruction){const box=f('rules');if(!box)return;const row=document.createElement('div');row.className='rule';row.innerHTML=`<p>${esc(instruction)}</p><small class="muted">剛剛記住</small><button data-rule-id="${Number(id)}" data-active="true">停用</button>`;box.querySelector('.rule')?box.insertBefore(row,box.querySelector('.rule')):box.appendChild(row);box.querySelector('.none')?.remove();box.querySelector('summary').textContent=`我記住的修改指示（${box.querySelectorAll('.rule').length} 條）`}
 function pick(button){const el=button.closest('article');const d=items.find(x=>x.id===el?.dataset.id);return d?{d,el}:null}
 document.addEventListener('click',e=>{const n=e.target.closest('.ainote');if(n)n.classList.toggle('full')});
-document.addEventListener('input',e=>{if(e.target.matches('[data-draft]')){grow(e.target);const p=pick(e.target);if(p)edits[editKey(p.d)]=e.target.value}});
+let lastCaret={};document.addEventListener('selectionchange',()=>{const t=document.activeElement;if(t&&t.matches&&t.matches('[data-draft]'))lastCaret={id:t.id,pos:t.selectionStart}});
+document.addEventListener('input',e=>{if(e.target.matches('[data-draft]')){grow(e.target);const p=pick(e.target);if(p)edits[editKey(p.d)]=joined(p.el)}});
 document.addEventListener('click',async event=>{
   const b=event.target.closest('button');if(!b||busy)return;
   try{
@@ -105,16 +111,21 @@ document.addEventListener('click',async event=>{
     const act=b.dataset.act;if(!act)return;const p=pick(b);if(!p)return;const {d,el}=p;
     if(act==='toggle'){openId=openId===d.id?null:d.id;if(lastData)draw(lastData);if(openId)document.querySelector(`.item[data-id="${CSS.escape(openId)}"]`)?.scrollIntoView({block:'nearest'});return}
     if(act==='ver-more'){const pre=b.previousElementSibling,open=pre.classList.toggle('clamp');b.textContent=open?'展開全文':'收合';return}
-    if(act==='version'){const r=d.result||{},vers=[{draft:r.draft},...(r.alternatives||[])],v=vers[Number(b.dataset.v)];if(!v)return;const box=el.querySelector('[data-draft]');const cur=edits[editKey(d)];if(cur!==undefined&&!vers.some(x=>x.draft===cur)&&!confirm('框裡改過的字會被換掉，確定換版本嗎？'))return;box.value=v.draft;grow(box);edits[editKey(d)]=v.draft;el.querySelectorAll('[data-act=version]').forEach(x=>{const on=x===b;x.setAttribute('aria-pressed',String(on));x.classList.toggle('primary',on);x.textContent=on?'✓ 正在用這版':'用這版';x.closest('.ver').classList.toggle('on',on)});return}
+    if(act==='version'){const r=d.result||{},vers=[{draft:r.draft},...(r.alternatives||[])],v=vers[Number(b.dataset.v)];if(!v)return;const cur=edits[editKey(d)];if(cur!==undefined&&!vers.some(x=>x.draft===cur)&&!confirm('框裡改過的字會被換掉，確定換版本嗎？'))return;edits[editKey(d)]=v.draft;draw(lastData);return}
+    if(act==='part-cut'||act==='part-add'||act==='part-merge'){const ps=[...el.querySelectorAll('[data-draft]')].map(t=>t.value);
+      if(act==='part-merge'){const n=Number(b.dataset.n);ps[n-1]=ps[n-1].replace(/\n+$/,'')+'\n\n'+ps[n].replace(/^\n+/,'');ps.splice(n,1)}
+      else if(act==='part-add')ps.push('');
+      else{const t=lastCaret.id&&el.querySelector('#'+CSS.escape(lastCaret.id));if(!t){say('先在框裡點一下要切開的位置，再按「從游標處分成下一則」。',true);return}const n=Number(t.dataset.n),pos=lastCaret.pos;if(!ps[n].slice(0,pos).trim()||!ps[n].slice(pos).trim()){say('游標要放在文字中間（前後都要有字）才能切開。',true);return}ps.splice(n,1,ps[n].slice(0,pos),ps[n].slice(pos))}
+      edits[editKey(d)]=ps.map(x=>x.replace(/^\n+|\n+$/g,'')).join(SPLIT);lastCaret={};draw(lastData);return}
     if(act==='send'){
-      const text=el.querySelector('[data-draft]').value;if(!text.trim()){say('草稿是空的，請先寫內容或按「修改」。',true);return}
+      const text=joined(el);if(partsOf(text).some(x=>!x.trim())){say('有一則是空的，請填內容或按「併回上一則」。',true);return}if(!text.trim()){say('草稿是空的，請先寫內容或按「修改」。',true);return}
       confirmation=Object.freeze({thread_id:d.id,version:d.version,text,name:d.name,is_public:d.is_public,key:editKey(d),retry_key:crypto.randomUUID(),media_ids:(d.media||[]).map(m=>m.id)});
       f('links').hidden=true;f('links').innerHTML='';
       api('links',{text}).then(out=>{if(!confirmation||confirmation.text!==text||!out.links.length)return;const bad=out.links.some(l=>l.state==='broken');
         f('links').innerHTML='<b>連結會開到：</b>'+out.links.map(l=>`<div>${l.state==='broken'?'❌ 打不開':l.state==='ok'?'✅':'⚠️ 沒查到'} ${esc(l.url)}<br><small>→ ${esc(l.title||l.target||'（無法確認）')}</small></div>`).join('');
         f('links').hidden=false;if(bad){f('confirm-ok').disabled=true;f('links').insertAdjacentHTML('beforeend','<p class="error">有連結打不開，請先返回改掉。</p>')}}).catch(()=>{});
       f('attach-note').hidden=!(d.media||[]).length;f('attach-note').textContent=(d.media||[]).length?`另附 ${d.media.length} 個檔案：${d.media.map(m=>m.name).join('、')}`:'';
-      f('recipient').textContent=`發送給「${d.name}」（${d.label}）`;f('preview').textContent=text;f('public-warning').hidden=f('public-label').hidden=!d.is_public;f('public-check').checked=false;f('confirm-ok').disabled=d.is_public;f('confirm').showModal();return}
+      f('recipient').textContent=`發送給「${d.name}」（${d.label}）`;const ps=partsOf(text);f('preview').textContent=ps.length>1?ps.map((x,n)=>`【第 ${n+1} 則】\n${x}`).join('\n\n'):text;f('public-warning').hidden=f('public-label').hidden=!d.is_public;f('public-check').checked=false;f('confirm-ok').disabled=d.is_public;f('confirm').showModal();return}
     if(act==='lib-open'){const box=el.querySelector('.libgrid');box.hidden=!box.hidden;b.textContent=box.hidden?'從常用圖片挑':'收起常用圖片';if(!box.hidden&&!box.innerHTML){box.innerHTML='<p class="muted">讀取中…</p>';try{await libraryGrid(box)}catch(e){box.innerHTML='';say(e.message,true)}}return}
     if(act==='lib-attach'){busy=true;b.disabled=true;try{const out=await api('media/library',{thread_id:d.id,library_id:b.dataset.lib});say(`已附上「${out.media.name}」，會跟回覆一起送出。`)}catch(e){say(e.message,true);b.disabled=false}finally{busy=false}const box=el.querySelector('.libgrid');if(box)box.hidden=true;await load(true);return}
     if(act==='media-remove'){busy=true;b.disabled=true;try{await api('media/'+b.dataset.media+'/remove',{thread_id:d.id});say('已移除附件。')}catch(e){say(e.message,true)}finally{busy=false}await load(true);return}
@@ -124,7 +135,7 @@ document.addEventListener('click',async event=>{
       const instruction=el.querySelector('[data-instruction]').value.trim();if(!instruction){say('請寫下要改哪裡。',true);return}
       const remember=el.querySelector('[data-remember]')?.checked??false;
       busy=true;b.disabled=true;
-      try{const out=await api('redraft',{thread_id:d.id,version:d.version,instruction,original_draft:el.querySelector('[data-draft]').value,remember});delete edits[editKey(d)];if(out.rule_id)remember_rule(out.rule_id,instruction);say(out.remembered?'已記住這條指示，AI 正在重寫，約 1 分鐘。':'AI 正在重寫，約 1 分鐘。')}
+      try{const out=await api('redraft',{thread_id:d.id,version:d.version,instruction,original_draft:joined(el),remember});delete edits[editKey(d)];if(out.rule_id)remember_rule(out.rule_id,instruction);say(out.remembered?'已記住這條指示，AI 正在重寫，約 1 分鐘。':'AI 正在重寫，約 1 分鐘。')}
       catch(e){say(e.message,true)}
       finally{busy=false}
       await load(true);return}
