@@ -284,9 +284,13 @@ def test_tool_reads_and_writes_utf8_json(db, tmp_path, capsys):
     assert fb_browser.main(['result', 'not-a-uuid', 'sent'], lambda: db) == 1
 
 
-def test_desk_never_calls_meta():
+def test_only_the_meta_module_calls_meta():
+    """11/13: the official API path lives in desk/meta.py (and the local setup tool); nothing else talks to Meta."""
     root = Path(fb.__file__).parent
+    allowed = {root / 'meta.py', root / 'tools' / 'meta_setup.py'}
     for path in list(root.rglob('*.py')) + list(root.rglob('*.js')) + list(root.rglob('*.html')):
+        if path in allowed:
+            continue
         text = path.read_text(encoding='utf-8')
         assert 'graph.facebook.com' not in text and 'FB_PAGE_ACCESS_TOKEN' not in text, path.name
 

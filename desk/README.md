@@ -1,5 +1,23 @@
 # 客服工作台
 
+## FB／IG 私訊：Meta 官方 API 即時收發（2026-11-13，預設關閉）
+
+`desk/meta.py`。開關 `DESK_META_API`：
+
+| 值 | 收 | 送 |
+| --- | --- | --- |
+| 未設／`off` | 全部由瀏覽器排程 | 全部由瀏覽器排程；webhook 驗簽後回 200 但不處理 |
+| `test` | webhook 對話（key `psid:`／`igsid:`）即時；其他照排程 | webhook 對話按「確認發送」立刻用 Send API 送；其他照排程 |
+| `on` | 私訊只走 webhook；排程 `push` 自動略過 `fb_message`／`ig_message` | 同上；排程只剩留言與舊對話的核准 |
+
+- `/desk/meta/webhook`：GET 驗證 `FB_VERIFY_TOKEN`；POST 驗 `X-Hub-Signature-256`（`FB_APP_SECRET`），先存 `desk_meta_inbox` 再由背景執行緒處理（drafter 迴圈每 5 秒補處理）。事件沿用 `fb.push` 的規則：客人新訊息讓核准失效、同事在 Meta 直接回（message_echoes）自動結案、Meta 自動回覆／暫回不算回覆、只按廣告按鈕的第一次接觸略過；只傳貼圖／讚不重開對話；照片算新訊息。webhook 對話靜默 60 秒才擬稿。
+- 送出：核准後背景用 `/{FB_PAGE_ID}/messages` 依序送 `[[下一則]]` 各段，附件放在最後一段之前（Meta 經 `/desk/meta/media/<128-bit id>` 取檔，只開放已核准／已送出的附件）。結果寫回 `desk_fb_attempts`（`delivery`、`message_ids`），失敗或不確定退回待審並寫原因，**不自動重送**。超過 24 小時拒送；`DESK_META_HUMAN_AGENT=1` 時 FB 可到 7 天。中斷超過 10 分鐘的發送標「不確定有沒有送出」。
+- 自己送出的訊息 echo 回來時以 `metadata`、`FB_APP_ID` 或文字比對認出，不會被當成同事回覆、也不會被學習。
+- 公開頁（免登入）：`/desk/privacy`、`/desk/terms`、`/desk/data-deletion`（送審用）。
+- 本機工具：`python -m desk.tools.meta_setup check|subscribe`（讀 `secretsb_cs_desk.env`，只印設定有沒有、權杖對不對、訂閱欄位）。
+- 送審步驟與英文說明：`AI工作紀錄_專案\社群留言與私訊\Meta送審資料包_20261113.md`（不在公開 repo）。
+- 新表／欄位：`desk_meta_inbox`、`desk_fb_attempts.delivery/delivery_at/message_ids`（`fb_schema.py`，由既有補表程序套用）。
+
 ## FB／IG 私訊與留言：瀏覽器收發＋逐則審稿（2026-11-11）
 
 工作台本身**不連 Meta、不呼叫 Graph API、不送任何 FB／IG 訊息**。收訊與送出都由排程在已登入的 Meta 收件匣（瀏覽器）操作，工作台只負責擬稿、讓 Wayne 逐則決定、記錄結果。

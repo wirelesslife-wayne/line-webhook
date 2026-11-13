@@ -1,5 +1,6 @@
+import json
 from flask import request, jsonify, g, render_template, Response
-from . import fb, fb_media, library
+from . import fb, fb_media, library, meta
 from .errors import ActionError
 from .knowledge import can_review, require_reviewer, submit
 from .worker import local_time, line_on
@@ -37,7 +38,7 @@ def register(bp,store):
             out.append(dict(id=c['id'],name=c['name'],channel=c['channel'],label=fb.LABELS[c['channel']],key=c['key'],url=c['url'],
                 context=c['context'],status=c['status'],version=c['version'],note=c['note'],result=c['draft'] or {},
                 messages=fb.shape(e for e in events if e['thread_id']==c['id'])[-12:],is_public=c['channel'].endswith('_comment'),
-                media=[fb_media.describe(m) for m in media],shot=shots.get(c['id']),
+                media=[fb_media.describe(m) for m in media],shot=shots.get(c['id']),live=meta.live(c),
                 attempts=[dict(status=a['status'],time=local_time(a['approved_at']),staff=a['username'],text=a['content'],reason=a['reason']) for a in attempts]))
         return out
 
@@ -71,7 +72,49 @@ def register(bp,store):
     def fb_detail(): return jsonify(detail(get_thread(request.args.get('thread_id'))))
 
     @bp.post('/api/fb/send')
-    def fb_send(): return jsonify(fb.approve(store,g.staff,request.get_json(silent=True)))
+    def fb_send():
+        data=request.get_json(silent=True)
+        c=get_thread(data.get('thread_id')) if isinstance(data,dict) else None
+        if c: meta.check_sendable(c)
+        out=fb.approve(store,g.staff,data)
+        if c and meta.live(c) and out.get('status')=='approved':
+            meta.dispatch(store,out['attempt_id'])  # Send API right away, in the background
+            out['live']=True
+        return jsonify(out)
+
+    # Meta webhook (Messenger + Instagram). Only signed deliveries are accepted; ignored while DESK_META_API is off.
+    @bp.route('/meta/webhook',methods=['GET','POST'])
+    def meta_webhook():
+        if request.method=='GET':
+            challenge=meta.verify_challenge(request.args)
+            return (challenge,200,{'Content-Type':'text/plain'}) if challenge is not None else ('Forbidden',403)
+        body=request.get_data(cache=False)
+        if not meta.signed(body,request.headers.get('X-Hub-Signature-256')):
+            return 'Forbidden',403
+        if meta.mode()=='off':
+            return 'EVENT_RECEIVED',200
+        try:
+            payload=json.loads(body)
+        except ValueError:
+            return 'Bad Request',400
+        meta.enqueue(store,payload)
+        meta.RUN(lambda: meta.process(store))
+        return 'EVENT_RECEIVED',200
+
+    @bp.get('/meta/media/<media_id>')
+    def meta_media(media_id):
+        row=meta.public_media(store,media_id)
+        if not row: return jsonify(error='Not Found'),404
+        return Response(bytes(row['data']),mimetype=row['content_type'],headers={'Content-Disposition':'inline'})
+
+    @bp.get('/privacy')
+    def privacy(): return render_template('privacy.html')
+
+    @bp.get('/data-deletion')
+    def data_deletion(): return render_template('data_deletion.html')
+
+    @bp.get('/terms')
+    def terms(): return render_template('terms.html')
 
     @bp.post('/api/fb/redraft')
     def fb_redraft(): return jsonify(fb.revise(store,g.staff,request.get_json(silent=True)))

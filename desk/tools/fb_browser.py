@@ -30,7 +30,14 @@ def main(argv=None, store_factory=None):
             fb.validate(data)
         db=(store_factory or store)()
         if args.command=='push':
+            from .. import meta
+            skipped=0
+            if meta.stored_mode(db)=='on':
+                # Private messages now come through the Meta webhook; a browser copy would be a second conversation.
+                kept=[r for r in data if not (isinstance(r,dict) and r.get('channel') in ('fb_message','ig_message'))]
+                skipped,data=len(data)-len(kept),kept
             out=fb.push(db,data)
+            out['skipped_private']=skipped
             from .. import fb_shots
             saved=0
             for row in fb.validate(data):  # optional "shot": local screenshot of the conversation column
@@ -39,7 +46,12 @@ def main(argv=None, store_factory=None):
                     try: saved+=fb_shots.save(db,row['id'],Path(path).read_bytes())
                     except OSError: pass
             out['screenshots']=saved
-        elif args.command=='status': out=fb.status(db)
+        elif args.command=='status':
+            from .. import meta
+            out=fb.status(db)
+            out['meta_api']=meta.stored_mode(db)  # 'on': read and send only comments in the browser
+            out['api_new_last_hour']=db.one("""SELECT COUNT(*) AS n FROM desk_fb_threads WHERE (key LIKE 'psid:%%' OR key LIKE 'igsid:%%')
+              AND status=ANY(%s) AND last_at > NOW()-INTERVAL '65 minutes'""",(list(fb.TODO),))['n']
         elif args.command=='pending':
             from .. import fb_media
             out=fb.pending(db,args.line)

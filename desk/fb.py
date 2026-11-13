@@ -1,4 +1,5 @@
-"""Browser-only ingestion, drafts and approval receipts. No outbound transport."""
+"""FB/IG conversations, drafts and approval receipts. The browser run (or, when switched on, desk.meta's webhook and
+Send API) does the reading and sending; this module only keeps the state."""
 from datetime import datetime, timezone, timedelta
 import hashlib
 import json
@@ -147,7 +148,13 @@ def push(store, payload):
                 state, note = 'done', '同事已回覆'
                 cur.execute("""UPDATE desk_fb_attempts SET status='cancelled',reason='同事已回覆',updated_at=NOW()
                   WHERE thread_id=%s AND status='approved'""",(tid,))
-            if seen and old[-len(seen):]!=seen or any(o[0]!=n[0] for o,n in zip(old[-len(seen):],seen)):
+            if old and len(seen)>len(old) and seen[:len(old)]==old:
+                # Exactly what we had plus newer messages (always so for the webhook): add only the new ones.
+                for i,msg in enumerate(row['messages'][len(old):],len(old)):
+                    cur.execute("""INSERT INTO desk_fb_events(thread_id,fingerprint,role,content,at,note,event_at)
+                      VALUES(%s,%s,%s,%s,%s,%s,%s) ON CONFLICT(thread_id,fingerprint) DO NOTHING""",
+                      (tid,digest([i,msg['role'],msg['text'],msg['at']]),msg['role'],msg['text'],msg['at'],msg.get('note',''),event_time(msg['at'])))
+            elif seen and old[-len(seen):]!=seen or any(o[0]!=n[0] for o,n in zip(old[-len(seen):],seen)):
                 # Keep the longer history when this read simply saw fewer old messages; otherwise take the new snapshot.
                 cur.execute('DELETE FROM desk_fb_events WHERE thread_id=%s',(tid,))
                 for i,msg in enumerate(row['messages']):
@@ -197,16 +204,18 @@ def awaiting(store, line=False):
     """Conversations still open on the desk, oldest first, so the browser run can re-check that nobody has answered them."""
     rows = store.all("""SELECT t.channel,t.key,t.name,t.url,
       (SELECT content FROM desk_fb_events e WHERE e.thread_id=t.id AND e.role='user' ORDER BY e.id DESC LIMIT 1) AS last_customer_text
-      FROM desk_fb_threads t WHERE t.status=ANY(%s) AND (t.channel='line_message')=%s ORDER BY t.last_at,t.id LIMIT 60""",(list(TODO),line))
+      FROM desk_fb_threads t WHERE t.status=ANY(%s) AND (t.channel='line_message')=%s AND NOT (t.key LIKE 'psid:%%' OR t.key LIKE 'igsid:%%')
+      ORDER BY t.last_at,t.id LIMIT 60""",(list(TODO),line))
     return [dict(r,last_customer_text=r['last_customer_text'] or '',is_public=r['channel'].endswith('_comment')) for r in rows]
 
 
 def pending(store, line=False):
-    """Approved replies to send. The Meta run gets FB/IG only, the LINE run (line=True) LINE only."""
+    """Approved replies to send. The Meta run gets FB/IG only, the LINE run (line=True) LINE only.
+    Conversations that came through the Meta webhook (key psid:/igsid:) are sent by desk.meta, never by the browser."""
     result = []
     with store.cursor() as cur:
         cur.execute("""SELECT t.* FROM desk_fb_threads t WHERE EXISTS(SELECT 1 FROM desk_fb_attempts a WHERE a.thread_id=t.id AND a.status='approved')
-          AND (t.channel='line_message')=%s ORDER BY t.id FOR UPDATE""",(line,))
+          AND (t.channel='line_message')=%s AND NOT (t.key LIKE 'psid:%%' OR t.key LIKE 'igsid:%%') ORDER BY t.id FOR UPDATE""",(line,))
         for c in cur.fetchall():
             cur.execute("SELECT * FROM desk_fb_attempts WHERE thread_id=%s AND status='approved'",(c['id'],))
             a = cur.fetchone()
@@ -307,7 +316,7 @@ def action(store,staff,data,kind):
     return dict(ok=True)
 
 
-def record_result(store, attempt_id, outcome, reason=''):
+def record_result(store, attempt_id, outcome, reason='', via='browser'):
     if outcome not in ('sent','failed') or not isinstance(reason,str) or len(reason)>1000:
         raise ActionError('結果必須是 sent 或 failed，原因上限 1,000 字',400)
     try:
@@ -335,13 +344,13 @@ def record_result(store, attempt_id, outcome, reason=''):
         if outcome=='sent':
             stamp = now().isoformat()
             cur.execute("""INSERT INTO desk_fb_events(thread_id,fingerprint,role,content,at,event_at,origin,source_version)
-              VALUES(%s,%s,'page',%s,%s,%s,'browser',%s) ON CONFLICT(thread_id,fingerprint) DO NOTHING""",
-              (c['id'],'attempt:'+attempt_id,a['content'],stamp,event_time(stamp),a['source_version']))
+              VALUES(%s,%s,'page',%s,%s,%s,%s,%s) ON CONFLICT(thread_id,fingerprint) DO NOTHING""",
+              (c['id'],'attempt:'+attempt_id,a['content'],stamp,event_time(stamp),via,a['source_version']))
         if c['version']==a['source_version'] and a['status']=='approved' and c['status']=='approved':
             # Wayne 11/12 (阮海燕): a colleague had already answered in Meta; leaving it in review looked like a bad draft.
             answered = outcome=='failed' and '已經有人回覆' in reason
             state = 'done' if outcome=='sent' or answered else 'ready'
-            note = '已由瀏覽器送出' if outcome=='sent' else '同事已回覆' if answered else '送出失敗：'+(reason or '請人工查核')
+            note = ('已即時送出' if via=='api' else '已由瀏覽器送出') if outcome=='sent' else '同事已回覆' if answered else '送出失敗：'+(reason or '請人工查核')
             cur.execute("UPDATE desk_fb_threads SET status=%s,note=%s,updated_at=NOW() WHERE id=%s",(state,note,c['id']))
     return dict(ok=True,status=outcome)
 
@@ -410,7 +419,9 @@ def draft_once(store,engine_factory=None):
           (status='drafting' AND draft_started_at<NOW()-INTERVAL '10 minutes') OR
           (status='blocked' AND draft->>'budget_month' IS NOT NULL AND draft->>'budget_month'<>%s) OR
           (status='blocked' AND draft->>'retry'='true' AND updated_at<NOW()-INTERVAL '30 minutes')""",(month_key(),))
-        for c in store.all("SELECT * FROM desk_fb_threads WHERE status='waiting' ORDER BY last_at LIMIT 20"):
+        # Webhook conversations arrive message by message: wait for a quiet minute instead of drafting every line.
+        for c in store.all("""SELECT * FROM desk_fb_threads WHERE status='waiting' AND (NOT (key LIKE 'psid:%%' OR key LIKE 'igsid:%%')
+          OR last_at < NOW()-INTERVAL '60 seconds') ORDER BY last_at LIMIT 20"""):
             c['draft_token'] = str(uuid.uuid4())
             if store.execute("UPDATE desk_fb_threads SET status='drafting',draft_token=%s,draft_started_at=NOW() WHERE id=%s AND version=%s AND status='waiting'",(c['draft_token'],c['id'],c['version'])):
                 draft_thread(store,c,engine_factory,c['pending_instruction'],c['pending_original'],c['pending_rule'])
@@ -447,12 +458,19 @@ def daily_redraft(store, at=None):
 
 
 def start_worker(store):
+    from . import meta
     def drafter():
+        try:
+            meta.publish_mode(store)  # tells the browser tool on Wayne's PC who handles private messages
+        except Exception:
+            pass
         while True:
-            try:
-                draft_once(store)
-            except Exception:
-                pass
+            jobs = [lambda: meta.process(store)] if meta.mode()!='off' else []
+            for job in jobs + [lambda: meta.sweep(store), lambda: draft_once(store)]:
+                try:
+                    job()
+                except Exception:
+                    pass
             time.sleep(5)
     def learner():
         # Replies typed directly in FB/IG/LINE: one small batch every 10 minutes, only the better ones are kept.

@@ -63,4 +63,11 @@ CREATE TABLE IF NOT EXISTS desk_edit_rules (
  revised_draft TEXT NOT NULL DEFAULT '', created_by BIGINT NOT NULL REFERENCES desk_users(id),
  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), active BOOLEAN NOT NULL DEFAULT TRUE);
 CREATE INDEX IF NOT EXISTS desk_edit_rules_active ON desk_edit_rules(active,id DESC);
+CREATE TABLE IF NOT EXISTS desk_meta_inbox (
+ id BIGSERIAL PRIMARY KEY, payload JSONB, received_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+ done_at TIMESTAMPTZ, tries INT NOT NULL DEFAULT 0, error TEXT NOT NULL DEFAULT '');
+CREATE INDEX IF NOT EXISTS desk_meta_inbox_todo ON desk_meta_inbox(id) WHERE done_at IS NULL;
+ALTER TABLE desk_fb_attempts ADD COLUMN IF NOT EXISTS delivery TEXT;
+ALTER TABLE desk_fb_attempts ADD COLUMN IF NOT EXISTS delivery_at TIMESTAMPTZ;
+ALTER TABLE desk_fb_attempts ADD COLUMN IF NOT EXISTS message_ids JSONB;
 """

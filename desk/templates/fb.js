@@ -1,6 +1,6 @@
 const f=id=>document.getElementById('fb-'+id);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const STATUS={waiting:'AI 擬稿中，約 1 分鐘',drafting:'AI 擬稿中，約 1 分鐘',ready:'草稿好了',blocked:'AI 暫停，請直接在框裡寫',error:'擬稿失敗，請按「修改」重試或直接寫',approved:'已核准，等下一輪排程送出',done:'已處理',skip:'不回覆'};
+const STATUS={waiting:'AI 擬稿中，約 1 分鐘',drafting:'AI 擬稿中，約 1 分鐘',ready:'草稿好了',blocked:'AI 暫停，請直接在框裡寫',error:'擬稿失敗，請按「修改」重試或直接寫',approved:'已核准，等送出',done:'已處理',skip:'不回覆'};
 const TODO=['waiting','drafting','ready','blocked','error'];
 const CHIP={waiting:['AI 擬稿中','wait'],drafting:['AI 擬稿中','wait'],ready:['待你決定',''],blocked:['待你決定',''],error:['擬稿失敗',''],approved:['已核准','ok'],done:['已處理','off'],skip:['不回覆','off']};
 const BRAND={};document.getElementById('fb-brands').content.querySelectorAll('span').forEach(s=>BRAND[s.dataset.ch]=s.innerHTML);
@@ -48,7 +48,7 @@ function card(d,i){
     h+=`<div class="editbox" hidden><label for="fb-ins-${i}">要改哪裡？</label><textarea id="fb-ins-${i}" data-instruction maxlength="2000" placeholder="例如：不要問縣市、價格寫 18,000、語氣再輕鬆一點"></textarea>${canReview?'<label class="check"><input type="checkbox" data-remember>以後都照這樣寫（記住這條指示，會影響之後所有草稿）</label>':''}<div class="actions"><button class="primary" data-act="revise">照這樣重寫</button><button data-act="edit-cancel">取消</button></div></div>`;
   }else if(d.status==='approved'){
     const a=d.attempts.find(x=>x.status==='approved');
-    h+=`<label>已核准的內容</label><div class="preview">${esc(a?a.text:'')}</div>${(d.media||[]).length?`<div class="attach"><div class="files">${files(d.media,false)}</div></div>`:''}<p class="muted">下一輪排程會照這段文字送出（最慢約 60 分鐘）。</p><div class="actions"><button data-act="cancel" ${canReview?'':'disabled'}>取消核准</button></div>`;
+    h+=`<label>已核准的內容</label><div class="preview">${esc(a?a.text:'')}</div>${(d.media||[]).length?`<div class="attach"><div class="files">${files(d.media,false)}</div></div>`:''}<p class="muted">${d.live?'正在用 Meta 官方 API 送出，幾秒內完成；送不出去會退回待審並寫原因。':'下一輪排程會照這段文字送出（最慢約 60 分鐘）。'}</p><div class="actions"><button data-act="cancel" ${canReview?'':'disabled'}>取消核准</button></div>`;
   }else{
     const a=d.attempts.find(x=>x.status==='sent');
     if(a)h+=`<label>已送出的內容（${esc(a.time)}）</label><div class="preview">${esc(a.text)}</div>`;
@@ -103,7 +103,7 @@ document.addEventListener('click',async event=>{
     if(b.id==='fb-confirm-ok'&&confirmation){
       const snap=confirmation;if(snap.is_public&&!f('public-check').checked)return;
       busy=true;b.disabled=true;
-      try{await api('send',{thread_id:snap.thread_id,version:snap.version,text:snap.text,retry_key:snap.retry_key,confirmed:true,public_confirmed:snap.is_public,media_ids:snap.media_ids});delete edits[snap.key];say(`已核准給「${snap.name}」的回覆，下一輪排程送出。`)}
+      try{const out=await api('send',{thread_id:snap.thread_id,version:snap.version,text:snap.text,retry_key:snap.retry_key,confirmed:true,public_confirmed:snap.is_public,media_ids:snap.media_ids});delete edits[snap.key];say(out.live?`給「${snap.name}」的回覆正在即時送出。`:`已核准給「${snap.name}」的回覆，下一輪排程送出。`)}
       catch(e){say(e.message,true)}
       finally{busy=false;b.disabled=false;f('confirm').close();confirmation=null}
       await load(true);return}
@@ -125,7 +125,7 @@ document.addEventListener('click',async event=>{
         f('links').innerHTML='<b>連結會開到：</b>'+out.links.map(l=>`<div>${l.state==='broken'?'❌ 打不開':l.state==='ok'?'✅':'⚠️ 沒查到'} ${esc(l.url)}<br><small>→ ${esc(l.title||l.target||'（無法確認）')}</small></div>`).join('');
         f('links').hidden=false;if(bad){f('confirm-ok').disabled=true;f('links').insertAdjacentHTML('beforeend','<p class="error">有連結打不開，請先返回改掉。</p>')}}).catch(()=>{});
       f('attach-note').hidden=!(d.media||[]).length;f('attach-note').textContent=(d.media||[]).length?`另附 ${d.media.length} 個檔案：${d.media.map(m=>m.name).join('、')}`:'';
-      f('recipient').textContent=`發送給「${d.name}」（${d.label}）`;const ps=partsOf(text);f('preview').textContent=ps.length>1?ps.map((x,n)=>`【第 ${n+1} 則】\n${x}`).join('\n\n'):text;f('public-warning').hidden=f('public-label').hidden=!d.is_public;f('public-check').checked=false;f('confirm-ok').disabled=d.is_public;f('confirm').showModal();return}
+      f('recipient').textContent=`發送給「${d.name}」（${d.label}）`;f('when').textContent=d.live?'按下確認後，會用 Meta 官方 API 立刻送出。':'按下確認後，下一輪排程會照這段文字送出（最慢約 60 分鐘）。';const ps=partsOf(text);f('preview').textContent=ps.length>1?ps.map((x,n)=>`【第 ${n+1} 則】\n${x}`).join('\n\n'):text;f('public-warning').hidden=f('public-label').hidden=!d.is_public;f('public-check').checked=false;f('confirm-ok').disabled=d.is_public;f('confirm').showModal();return}
     if(act==='lib-open'){const box=el.querySelector('.libgrid');box.hidden=!box.hidden;b.textContent=box.hidden?'從常用圖片挑':'收起常用圖片';if(!box.hidden&&!box.innerHTML){box.innerHTML='<p class="muted">讀取中…</p>';try{await libraryGrid(box)}catch(e){box.innerHTML='';say(e.message,true)}}return}
     if(act==='lib-attach'){busy=true;b.disabled=true;try{const out=await api('media/library',{thread_id:d.id,library_id:b.dataset.lib});say(`已附上「${out.media.name}」，會跟回覆一起送出。`)}catch(e){say(e.message,true);b.disabled=false}finally{busy=false}const box=el.querySelector('.libgrid');if(box)box.hidden=true;await load(true);return}
     if(act==='media-remove'){busy=true;b.disabled=true;try{await api('media/'+b.dataset.media+'/remove',{thread_id:d.id});say('已移除附件。')}catch(e){say(e.message,true)}finally{busy=false}await load(true);return}

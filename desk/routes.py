@@ -23,12 +23,13 @@ def make_blueprint(store,notifier=None):
         g.nonce = secrets.token_urlsafe(18)
         # Flask 3.0 has no per-request max_content_length setter.
         request.stream = get_input_stream(request.environ,max_content_length=(media.VIDEO_LIMIT+media.PREVIEW_LIMIT+32768)
-            if request.endpoint=='desk.media_upload' else 25_000_000+32768 if request.endpoint=='desk.fb_media_upload' else 32768)
+            if request.endpoint=='desk.media_upload' else 25_000_000+32768 if request.endpoint=='desk.fb_media_upload'
+            else 1_000_000 if request.endpoint=='desk.meta_webhook' else 32768)
         # Only GET/HEAD to this exact endpoint may bypass session/CSRF.
-        if request.endpoint == 'desk.media_read' and request.method in ('GET','HEAD'):
+        if request.endpoint in ('desk.media_read','desk.meta_media','desk.privacy','desk.data_deletion','desk.terms') and request.method in ('GET','HEAD'):
             return
-        if request.endpoint in ('desk.login','desk.app_icon','desk.manifest'):
-            return  # the home-screen icon is fetched by the phone without the login cookie
+        if request.endpoint in ('desk.login','desk.app_icon','desk.manifest','desk.meta_webhook'):
+            return  # the home-screen icon is fetched by the phone without the login cookie; Meta signs its webhook
         try:
             g.staff = auth.session(request.cookies.get(COOKIE))
         except Exception:
