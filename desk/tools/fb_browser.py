@@ -16,8 +16,8 @@ def main(argv=None, store_factory=None):
     sub=parser.add_subparsers(dest='command',required=True)
     sub.add_parser('push').add_argument('file')
     sub.add_parser('status')
-    sub.add_parser('pending')
-    sub.add_parser('open')
+    sub.add_parser('pending').add_argument('--line',action='store_true',help='only the official LINE account')
+    sub.add_parser('open').add_argument('--line',action='store_true',help='only the official LINE account')
     result=sub.add_parser('result')
     result.add_argument('attempt_id')
     result.add_argument('outcome',choices=('sent','failed'))
@@ -42,10 +42,10 @@ def main(argv=None, store_factory=None):
         elif args.command=='status': out=fb.status(db)
         elif args.command=='pending':
             from .. import fb_media
-            out=fb.pending(db)
+            out=fb.pending(db,args.line)
             for item in out:  # the browser attaches these local files together with the text
                 item['files']=fb_media.export(db,item['attempt_id'],WORKSPACE/'AI客服訓練'/'fb_media')
-        elif args.command=='open': out=fb.awaiting(db)
+        elif args.command=='open': out=fb.awaiting(db,args.line)
         else: out=fb.record_result(db,args.attempt_id,args.outcome,args.reason)
         print(json.dumps(out,ensure_ascii=False))
         return 0

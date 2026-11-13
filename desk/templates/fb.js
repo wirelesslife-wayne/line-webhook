@@ -38,7 +38,8 @@ function card(d,i){
     const parts=partsOf(draft),many=parts.length>1;
     h+=`<label for="fb-draft-${i}-0">${many?`草稿分成 ${parts.length} 則，會一則一則送出（可以直接改字）`:'草稿（可以直接改字）'}</label><div class="parts">${parts.map((t,n)=>`<div class="part">${many?`<div class="part-head"><b>第 ${n+1} 則</b>${n?`<button class="link" data-act="part-merge" data-n="${n}">併回上一則</button>`:''}</div>`:''}<textarea id="fb-draft-${i}-${n}" data-draft data-n="${n}" maxlength="2000" ${waiting?'disabled':''}>${esc(t)}</textarea></div>`).join('')}</div>`;
     if(!waiting&&!d.is_public&&parts.length<MAXPARTS)h+=`<div class="part-tools"><button class="link" data-act="part-cut">✂ 從游標處分成下一則</button><button class="link" data-act="part-add">＋ 加一則</button></div>`;
-    if(!d.is_public&&canReview){
+    if(!d.is_public&&canReview&&d.channel!=='line_message'){  // LINE back office: text only for now
+
       const have=new Set((d.media||[]).map(m=>m.name)),sug=(r.cards||[]).filter(c=>!have.has(c.name));
       h+=`<div class="attach"><div class="files">${files(d.media,true)}</div>`;
       if(sug.length)h+=`<div class="suggest"><b>AI 建議附圖</b><div class="files">${sug.map(c=>`<figure><img src="/desk/api/fb/library/${esc(c.id)}" alt="" loading="lazy"><span>${esc(c.name)}</span><button data-act="lib-attach" data-lib="${esc(c.id)}">附上</button></figure>`).join('')}</div></div>`;

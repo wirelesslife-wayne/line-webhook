@@ -9,6 +9,9 @@ CREATE TABLE IF NOT EXISTS desk_fb_threads (
  pending_instruction TEXT NOT NULL DEFAULT '', pending_original TEXT NOT NULL DEFAULT '', pending_rule BIGINT,
  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), UNIQUE(channel,key));
 CREATE INDEX IF NOT EXISTS desk_fb_threads_wait ON desk_fb_threads(status,last_at);
+ALTER TABLE desk_fb_threads DROP CONSTRAINT IF EXISTS desk_fb_threads_channel_check;
+ALTER TABLE desk_fb_threads ADD CONSTRAINT desk_fb_threads_channel_check
+ CHECK(channel IN ('fb_message','ig_message','fb_comment','ig_comment','line_message'));
 CREATE TABLE IF NOT EXISTS desk_fb_events (
  id BIGSERIAL PRIMARY KEY, thread_id TEXT NOT NULL REFERENCES desk_fb_threads(id),
  fingerprint TEXT NOT NULL, role TEXT NOT NULL CHECK(role IN ('user','page')),

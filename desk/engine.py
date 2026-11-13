@@ -218,6 +218,10 @@ class Engine:
                   '範例、制式回覆裡的安裝實例或影片連結，標題寫的是別款車的，就不能給這位客人。'
                   '找不到符合的就不要附安裝實例，staff_note 寫「官網沒有這款車的〇〇安裝實例」。產品介紹、適用車型這類不分車款的連結照常附。')
         comment = channel in ('fb_comment','ig_comment')
+        if channel == 'line_message':
+            rules += ('\n\n本次是 LINE 官方帳號的私訊（客人在 LINE 加了我們好友）。我方訊息標「自動回應」「自動（夜間AI）」的是系統自動送的，不算真人回過；'
+                      '標「選單」的是客人點了圖文選單（所有門市、某地區、未購買_XX_客服、所有商品資訊），不是客人自己打的字，不要回應選單本身。'
+                      '客人點了「呼叫客服」或「未購買_XX_客服」代表想找真人，請針對那項產品主動提供資訊。不要叫客人加 LINE（他已經在 LINE 上了）。')
         if channel != 'line':
             rules += ('\n\n請寫 2～3 個版本讓 Wayne 挑（Wayne 11/12）：draft 放你最推薦的，label 用 4～8 個字說它的特色；'
                       '另外 1～2 個版本放在 alternatives 陣列，每個是 {"label": 4～8 個字說差在哪, "draft": 完整可直接送出的文字}。'
@@ -231,7 +235,7 @@ class Engine:
                       '還不知道客人在哪時，任何版本都不要提「新北」「板橋有展示車」，邀請只寫固定句「歡迎先到門市體驗參觀，滿意再安裝就可以囉！」'
                       '（Wayne 11/12：客人吃這套、沒壓力；人在屏東叫他來新北，他會直接說謝謝再聯絡）。'
                       '其他情境（售後、預約、問地址）給 2 個版本就好，例如一個直接回答、一個多一句貼心說明；不要為了湊版本拿掉必要資訊或編資料沒有的事。')
-        if channel in ('fb_message', 'ig_message'):
+        if channel in ('fb_message', 'ig_message', 'line_message'):
             rules += ('\n\n分兩則送（Wayne 11/13，ChatGPT、Gemini、Claude 討論共識）：報價、產品介紹這種有「條列＋結尾邀請」的長回覆，'
                       '在條列與連結之後、結尾那段（工時＋縣市＋邀請）之前，單獨放一行 [[下一則]]，客人會先收到第一則再收到第二則。'
                       '第一則要能單獨看懂（第一行結論＋條列＋連結），第二則就是原本的結尾段，不要再打招呼。'
@@ -263,10 +267,10 @@ class Engine:
         versions = [out] + out['alternatives']
         for n, v in enumerate(versions):
             tag = f'版本{"ABC"[n]}：' if len(versions) > 1 else ''
-            if channel in ('fb_message', 'ig_message') and '[[下一則]]' not in v['draft']:
+            if channel in ('fb_message', 'ig_message', 'line_message') and '[[下一則]]' not in v['draft']:
                 v['draft'] = split_long(v['draft'])
             pieces = [p.strip('\n') for p in v['draft'].split('[[下一則]]')]
-            if channel not in ('fb_message', 'ig_message') or len(pieces) > 3 or any(not p.strip() for p in pieces):
+            if channel not in ('fb_message', 'ig_message', 'line_message') or len(pieces) > 3 or any(not p.strip() for p in pieces):
                 v['draft'] = '\n\n'.join(p for p in pieces if p.strip())  # comments and LINE go out as one message
             else:
                 v['draft'] = '\n[[下一則]]\n'.join(pieces)

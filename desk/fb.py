@@ -19,8 +19,11 @@ MAX_PARTS = 3
 def parts(text):
     return [p.strip('\n') for p in str(text or '').split(SPLIT_MARK)]
 
-CHANNELS = ('fb_message', 'ig_message', 'fb_comment', 'ig_comment')
-LABELS = dict(zip(CHANNELS, ('FB 私訊', 'IG 私訊', 'FB 留言', 'IG 留言')))
+# Wayne 11/13: the official LINE account joins the same review page; the browser run reads and sends in the LINE OA back office.
+CHANNELS = ('fb_message', 'ig_message', 'fb_comment', 'ig_comment', 'line_message')
+LABELS = dict(zip(CHANNELS, ('FB 私訊', 'IG 私訊', 'FB 留言', 'IG 留言', 'LINE 官方')))
+PRIVATE = ('fb_message', 'ig_message', 'line_message')
+LINE_CHAT_URL = 'https://chat.line.biz/Uec58b69514d4768bb1176cd4b2a22ef6/chat/{}'  # WirelessLife 無限 (@infinite5000)
 TODO = ('waiting','drafting','ready','blocked','error')
 
 
@@ -56,6 +59,11 @@ def validate(payload):
         if row['url'] and not row['url'].startswith('https://'):
             raise ActionError('url 必須是 https 網址', 400)
         row['key'] = row['key'] or 'name:' + digest([row['channel'],row['name']])
+        if row['channel'] == 'line_message' and not row['key'].startswith('name:'):
+            row['key'] = row['key'].replace('-', '')  # the LINE run writes chat ids in groups of four
+            row['id'] = thread_id(row['channel'], row['key'])
+        if row['channel'] == 'line_message' and not row['url'] and not row['key'].startswith('name:'):
+            row['url'] = LINE_CHAT_URL.format(row['key'])  # the LINE run leaves links out of its JSON
         row['id'] = thread_id(row['channel'], row['key'])
         if not isinstance(row.get('messages'), list) or len(row['messages']) > 2000:
             raise ActionError('messages 必須是依畫面時間由舊到新排列的陣列', 400)
@@ -87,7 +95,8 @@ def kind(role, note):
     """'user' only for words the customer typed: a button pressed on an ad (「廣告預設問題」) is answered by
     the ad's own automatic reply, so on its own it is not a question waiting for us (Wayne 11/12)."""
     if role == 'user':
-        return 'auto' if '廣告預設問題' in (note or '') else 'user'
+        # 「選單」: a LINE rich-menu tap (所有門市, 南部地區, 未購買_XX_客服) is written as a customer message but nobody typed it.
+        return 'auto' if any(w in (note or '') for w in ('廣告預設問題', '選單')) else 'user'
     return 'page' if answers(role, note) else 'auto'
 
 
@@ -184,18 +193,20 @@ def status(store):
                 send_failed=store.one("SELECT COUNT(*) AS n FROM desk_fb_threads WHERE note LIKE '送出失敗：%%'")['n'])
 
 
-def awaiting(store):
+def awaiting(store, line=False):
     """Conversations still open on the desk, oldest first, so the browser run can re-check that nobody has answered them."""
     rows = store.all("""SELECT t.channel,t.key,t.name,t.url,
       (SELECT content FROM desk_fb_events e WHERE e.thread_id=t.id AND e.role='user' ORDER BY e.id DESC LIMIT 1) AS last_customer_text
-      FROM desk_fb_threads t WHERE t.status=ANY(%s) ORDER BY t.last_at,t.id LIMIT 60""",(list(TODO),))
+      FROM desk_fb_threads t WHERE t.status=ANY(%s) AND (t.channel='line_message')=%s ORDER BY t.last_at,t.id LIMIT 60""",(list(TODO),line))
     return [dict(r,last_customer_text=r['last_customer_text'] or '',is_public=r['channel'].endswith('_comment')) for r in rows]
 
 
-def pending(store):
+def pending(store, line=False):
+    """Approved replies to send. The Meta run gets FB/IG only, the LINE run (line=True) LINE only."""
     result = []
     with store.cursor() as cur:
-        cur.execute("SELECT t.* FROM desk_fb_threads t WHERE EXISTS(SELECT 1 FROM desk_fb_attempts a WHERE a.thread_id=t.id AND a.status='approved') ORDER BY t.id FOR UPDATE")
+        cur.execute("""SELECT t.* FROM desk_fb_threads t WHERE EXISTS(SELECT 1 FROM desk_fb_attempts a WHERE a.thread_id=t.id AND a.status='approved')
+          AND (t.channel='line_message')=%s ORDER BY t.id FOR UPDATE""",(line,))
         for c in cur.fetchall():
             cur.execute("SELECT * FROM desk_fb_attempts WHERE thread_id=%s AND status='approved'",(c['id'],))
             a = cur.fetchone()

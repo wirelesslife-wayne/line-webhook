@@ -46,7 +46,7 @@ def candidates(store, limit=BATCH):
                 asked.append(r['content'].strip())
         elif answers(r['role'], r['note']):
             if asked and squash(r['content']) not in sent:  # the desk's own sends were already approved by Wayne
-                add('ig' if r['channel'].startswith('ig') else 'fb', ' / '.join(asked), r['content'])
+                add(r['channel'].split('_')[0], ' / '.join(asked), r['content'])
             asked = []
     # LINE: colleagues' replies synced from the LINE OA (newest first).
     for r in store.all(f"""SELECT question,answer FROM desk_qa WHERE asked_at > NOW() - INTERVAL '{LINE_DAYS} days'
