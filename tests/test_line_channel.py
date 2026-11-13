@@ -33,13 +33,13 @@ def test_colleague_reply_in_line_back_office_closes_and_is_learned_as_line(db):
     assert [x['source'] for x in learning.candidates(db) if 'RAV4' in x['question']] == ['line']
 
 
-def test_line_drafts_follow_line_rules_and_have_no_picture_cards(db):
+def test_line_drafts_follow_line_rules_and_may_suggest_picture_cards(db):
     provider = Mock(side_effect=[{}, dict(draft='您好～\n\n👉 一\n👉 二\n👉 三\n詳細介紹：https://carandroid.com.tw/電動尾門/\n\n請問您在哪個縣市呢？歡迎先到門市體驗參觀，滿意再安裝就可以囉！',
                                           cards=[1])])
     out = Engine(db, provider).draft([{'time': 'now', 'role': 'user', 'text': '電動尾門多少錢', 'new': True}], now(), channel='line_message')
     rules, prompt = provider.call_args.args[0][0]['content'], provider.call_args.args[0][1]['content']
-    assert 'LINE 官方帳號的私訊' in rules and '[[下一則]]' in out['draft'] and out['cards'] == []
-    assert '常用圖片' not in prompt
+    assert 'LINE 官方帳號的私訊' in rules and '[[下一則]]' in out['draft']
+    assert ('常用圖片' in prompt) == bool(db.one('SELECT COUNT(*) AS n FROM desk_media_library WHERE active')['n'])  # Wayne 11/13: LINE sends pictures too
 
 
 def test_meta_run_and_line_run_each_get_only_their_own_approvals(db, logged):
