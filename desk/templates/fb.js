@@ -16,7 +16,7 @@ const PHONE=matchMedia('(max-width:700px)');
 const SPLIT='\n[[下一則]]\n',MAXPARTS=3;
 const partsOf=t=>String(t??'').split('[[下一則]]').map(x=>x.replace(/^\n+|\n+$/g,''));
 const joined=el=>[...el.querySelectorAll('[data-draft]')].map(t=>t.value.replace(/^\n+|\n+$/g,'')).filter((x,n,a)=>x.trim()||a.length===1).join(SPLIT);
-function grow(t){if(!t)return;t.style.height='auto';t.style.height=Math.max(t.scrollHeight+2,150)+'px'}
+function grow(t){if(!t)return;t.style.height='auto';t.style.height=Math.max(t.scrollHeight+2,t.closest('.parts')&&t.closest('.parts').children.length>1?72:150)+'px'}
 function files(list,removable){return (list||[]).map(m=>`<figure>${m.type==='image'?`<img src="/desk/api/fb/media/${esc(m.id)}" alt="" loading="lazy">`:'<div class="vid">🎬</div>'}<span>${esc(m.name)}</span>${removable?`<button data-act="media-remove" data-media="${esc(m.id)}">移除</button>`:''}</figure>`).join('')}
 function card(d,i){
   const todo=TODO.includes(d.status),waiting=d.status==='waiting'||d.status==='drafting',r=d.result||{};
@@ -42,7 +42,7 @@ function card(d,i){
       const have=new Set((d.media||[]).map(m=>m.name)),sug=(r.cards||[]).filter(c=>!have.has(c.name));
       h+=`<div class="attach"><div class="files">${files(d.media,true)}</div>`;
       if(sug.length)h+=`<div class="suggest"><b>AI 建議附圖</b><div class="files">${sug.map(c=>`<figure><img src="/desk/api/fb/library/${esc(c.id)}" alt="" loading="lazy"><span>${esc(c.name)}</span><button data-act="lib-attach" data-lib="${esc(c.id)}">附上</button></figure>`).join('')}</div></div>`;
-      h+=`<div class="actions"><label class="pick"><input type="file" data-file accept="image/jpeg,image/png,video/mp4" hidden>＋ 加圖片／影片</label><button data-act="lib-open">從常用圖片挑</button></div><div class="libgrid" hidden></div><small class="muted">會跟文字一起送出。JPEG／PNG 每張 10MB、MP4 影片 25MB 以內，最多 3 個。</small></div>`;
+      h+=`<div class="actions"><label class="pick"><input type="file" data-file accept="image/jpeg,image/png,video/mp4" hidden>＋ 加圖片／影片</label><button data-act="lib-open">從常用圖片挑</button></div><div class="libgrid" hidden></div><small class="muted">會跟文字一起送出（分成多則時，跟最後一則一起送）。JPEG／PNG 每張 10MB、MP4 影片 25MB 以內，最多 3 個。</small></div>`;
     }
     h+=`<div class="actions mainacts"><button class="primary" data-act="send" ${canReview&&!waiting?'':'disabled'}>發送</button><button data-act="edit" ${waiting?'disabled':''}>修改</button><button data-act="skip" ${canReview?'':'disabled'}>不發送</button></div>`;
     h+=`<div class="editbox" hidden><label for="fb-ins-${i}">要改哪裡？</label><textarea id="fb-ins-${i}" data-instruction maxlength="2000" placeholder="例如：不要問縣市、價格寫 18,000、語氣再輕鬆一點"></textarea>${canReview?'<label class="check"><input type="checkbox" data-remember>以後都照這樣寫（記住這條指示，會影響之後所有草稿）</label>':''}<div class="actions"><button class="primary" data-act="revise">照這樣重寫</button><button data-act="edit-cancel">取消</button></div></div>`;
