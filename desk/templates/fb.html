@@ -56,14 +56,25 @@ header .title{border-left:1px solid #ffffff40;padding-left:18px}header form{marg
 .attach .libgrid small{font-size:11px;line-height:1.3}
 .attach .pick{display:inline-flex;align-items:center;border:1px dashed var(--line);border-radius:8px;padding:10px 14px;cursor:pointer;background:white;justify-self:start;margin:0;font-weight:600}
 .shot{margin:10px 0;background:var(--bg);border-radius:8px;padding:8px 12px}.shot summary{cursor:pointer;font-weight:600;color:var(--brand)}.shot img{display:block;max-width:100%;max-height:420px;margin-top:8px;border:1px solid var(--line);border-radius:8px;background:white}
-.versions{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin:6px 0 4px}.ver{border:1px solid var(--line);border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;background:white}.ver.on{border:2px solid var(--orange);background:var(--orange-soft)}.ver h3{margin:0 0 6px;font-size:15px}.ver h3 small{color:var(--muted);font-weight:normal}.ver pre{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;font-size:14px;margin:0 0 10px;flex:1;background:var(--bg);border-radius:8px;padding:8px 10px;max-height:340px;overflow:auto}.ver button{width:100%}
+.versions{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin:6px 0 4px}.ver{border:1px solid var(--line);border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;background:white}.ver.on{border:2px solid var(--orange);background:var(--orange-soft)}.ver h3{margin:0 0 6px;font-size:15px}.ver h3 small{color:var(--muted);font-weight:normal}.ver pre{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;font-size:14px;margin:0 0 10px;flex:1;background:var(--bg);border-radius:8px;padding:8px 10px}.ver pre.clamp{max-height:13.5em;overflow:hidden;-webkit-mask-image:linear-gradient(#000 80%,transparent);mask-image:linear-gradient(#000 80%,transparent)}.ver .more{width:auto;min-height:32px;padding:0 4px;margin:-6px 0 8px;align-self:flex-start;border:0;background:none;color:var(--brand);font-weight:600}.detail textarea[data-draft]{overflow:hidden;resize:none}.ver button{width:100%}
 .meta-link{text-decoration:none;color:var(--brand);font-weight:600}
 .ainote{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}.ainote.full{white-space:normal}
 #fb-rules{margin-top:16px}#fb-rules summary{cursor:pointer;font-weight:700}#fb-feedback.bad{background:#fbe4e2;color:var(--bad)}
 @media(max-width:700px){.brandmark{display:none}header .title{border:0;padding:0}header::after{display:none}
 .nav{gap:6px;padding:8px 0}.nav a,.nav button{flex:1;min-width:0;padding:8px 6px;font-size:14px}.nav.main a{font-size:15px;padding:8px}.nav.state button,.nav.channel button{min-width:0;font-size:13px}.nav.channel .ic{display:none}
 .row{grid-template-columns:44px minmax(0,1fr) 20px;gap:10px;padding:12px 14px}.row .sep{display:none}.avatar{width:42px;height:42px}.avatar .ic{width:24px;height:24px}
-.row .when{grid-column:2;grid-row:2;justify-self:start}.row .state-chip{grid-column:2;grid-row:2;justify-self:end}.row .chev{grid-column:3;grid-row:1}.row .avatar{grid-row:1/3}.detail{padding:4px 14px 16px}}
+.row .when{grid-column:2;grid-row:2;justify-self:start}.row .state-chip{grid-column:2;grid-row:2;justify-self:end}.row .chev{grid-column:3;grid-row:1}.row .avatar{grid-row:1/3}.detail{padding:4px 14px 16px}
+/* phone review 11/13 (ChatGPT, Gemini, Claude): fewer stacked rows, no squeezed text, buttons always reachable */
+header{padding:10px 14px}header small{display:none}header form button{padding:4px 10px;min-height:36px}
+.nav.main a{min-height:44px}.nav.state,.nav.channel{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}.nav.state::-webkit-scrollbar,.nav.channel::-webkit-scrollbar{display:none}
+.nav.state button,.nav.channel button{flex:0 0 auto;white-space:nowrap;min-height:40px;padding:6px 12px;gap:6px}.nav.state .ic{width:18px;height:18px}
+.row{grid-template-columns:44px minmax(0,1fr) auto;row-gap:2px}.row .who-said{grid-column:2;grid-row:1}.row .state-chip{grid-column:3;grid-row:1;align-self:start;font-size:12px;padding:2px 10px}
+.row .when{grid-column:2/4;grid-row:2;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}.row .chev{display:none}
+textarea,input{font-size:16px}
+.detail .mainacts{position:sticky;bottom:0;z-index:5;background:white;margin:12px -14px 0;padding:8px 14px calc(8px + env(safe-area-inset-bottom));box-shadow:0 -6px 12px #0f3d5c1a}
+.detail .mainacts button{flex:1 1 0}.detail .mainacts .primary{flex:2 1 0}
+.attach .suggest .files{display:grid;gap:8px}.attach .suggest figure{max-width:none;width:100%;display:grid;grid-template-columns:56px minmax(0,1fr) auto;align-items:center;justify-items:start;text-align:left;gap:10px}
+.attach .suggest img{width:56px;height:56px}.attach small{font-size:12px}}
 </style>
 <nav class="nav main" aria-label="客服管道">{% if line_on %}<a href="/desk/">{{ icon('line') }}LINE</a>{% endif %}<a href="/desk/fb" aria-current="page">{{ icon('edit') }}FB／IG 審稿</a>{% if can_review %}<a href="/desk/knowledge">{{ icon('book') }}知識</a>{% endif %}</nav>
 <div class="nav state" aria-label="狀態"><button data-fb-tab="todo" aria-pressed="true">{{ icon('clock') }}待你決定<span class="badge" id="fb-n-todo"></span></button><button data-fb-tab="approved" aria-pressed="false">{{ icon('check') }}已核准待送出<span class="badge" id="fb-n-approved"></span></button><button data-fb-tab="done" aria-pressed="false">{{ icon('archive') }}已處理</button></div>
