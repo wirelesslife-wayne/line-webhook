@@ -5,6 +5,7 @@ import json
 import threading
 import time
 import uuid
+from decimal import Decimal
 from psycopg2.extras import Json
 from .db import now
 from .errors import ActionError
@@ -404,6 +405,36 @@ def draft_once(store,engine_factory=None):
                 draft_thread(store,c,engine_factory,c['pending_instruction'],c['pending_original'],c['pending_rule'])
 
 
+REDRAFT_AT = (9, 30)            # Taipei, Monday to Saturday, before the shop opens
+REDRAFT_RESERVE = Decimal('5')  # always leave this much of the month's AI budget for new customers
+REDRAFT_EACH = Decimal('0.04')  # generous cost of one redraft (three versions)
+
+
+def daily_redraft(store, at=None):
+    """Wayne 11/13: every morning, redraft every draft still waiting for him, using everything learned since
+    (his approvals and edits, kept direct replies, active rules). The old draft stays as the fallback if the AI fails.
+    Only as many as the month's remaining budget allows, newest customers first."""
+    from .provider import budget_status
+    at = (at or now()).astimezone(TAIPEI)
+    if at.weekday() == 6 or (at.hour, at.minute) < REDRAFT_AT:
+        return 0
+    day = at.strftime('%Y-%m-%d')
+    with store.lock('desk-daily-redraft') as acquired:
+        if not acquired or store.one("SELECT 1 AS x FROM desk_marks WHERE name='daily_redraft' AND value=%s", (day,)):
+            return 0
+        b = budget_status(store)
+        room = Decimal(b['limit_usd']) - Decimal(b['usd']) - Decimal(b['reserved_usd']) - REDRAFT_RESERVE
+        n = max(0, int(room / REDRAFT_EACH))
+        done = 0
+        for r in store.all("SELECT id,draft FROM desk_fb_threads WHERE status='ready' ORDER BY last_at DESC LIMIT %s", (n,)):
+            done += store.execute("""UPDATE desk_fb_threads SET status='waiting',draft=NULL,drafted_version=NULL,draft_token=NULL,
+              pending_instruction='',pending_original=%s,pending_rule=NULL,note='早上依最新學習重擬' WHERE id=%s AND status='ready'""",
+              (((r['draft'] or {}).get('draft') or ''), r['id']))
+        store.execute("""INSERT INTO desk_marks(name,value) VALUES('daily_redraft',%s)
+          ON CONFLICT(name) DO UPDATE SET value=EXCLUDED.value,at=NOW()""", (day,))
+        return done
+
+
 def start_worker(store):
     def drafter():
         while True:
@@ -420,6 +451,10 @@ def start_worker(store):
             try:
                 from .cases import refresh_if_due
                 refresh_if_due(store)  # the website's install-case index, about once a day
+            except Exception:
+                pass
+            try:
+                daily_redraft(store)  # 09:30 Mon-Sat; the drafter thread does the AI calls
             except Exception:
                 pass
             try:

@@ -47,6 +47,8 @@ CREATE TABLE IF NOT EXISTS desk_fb_shots (
  thread_id TEXT PRIMARY KEY REFERENCES desk_fb_threads(id), data BYTEA NOT NULL,
  content_type TEXT NOT NULL CHECK (content_type IN ('image/jpeg','image/png')),
  size BIGINT NOT NULL CHECK (size > 0), taken_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
+CREATE TABLE IF NOT EXISTS desk_marks (
+ name TEXT PRIMARY KEY, value TEXT NOT NULL DEFAULT '', at TIMESTAMPTZ NOT NULL DEFAULT NOW());
 CREATE TABLE IF NOT EXISTS desk_learned (
  digest TEXT PRIMARY KEY, source TEXT NOT NULL CHECK (source IN ('fb','ig','line')),
  question TEXT NOT NULL DEFAULT '', answer TEXT NOT NULL DEFAULT '',
