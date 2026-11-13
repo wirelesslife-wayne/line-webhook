@@ -80,6 +80,21 @@ def check(d, ctx):
             flags.append(f'出現禁用句「{w}」')
     return flags
 
+def split_long(text):
+    """Wayne 11/13: long replies always go out as two messages. If the AI did not split a quote
+    (3+ 👉 lines followed by a closing paragraph), split before that closing paragraph."""
+    blocks = re.split(r'\n\s*\n', (text or '').strip())
+    if len(blocks) < 2 or sum(1 for l in text.splitlines() if l.lstrip().startswith('👉')) < 3:
+        return text
+    last = blocks[-1]
+    if any(l.lstrip().startswith('👉') or URL_LINE.search(l) for l in last.splitlines()) or len(last.strip()) < 15:
+        return text
+    return '\n\n'.join(blocks[:-1]) + '\n[[下一則]]\n' + last
+
+
+URL_LINE = re.compile(r'https?://')
+
+
 def image_url(value):
     try:
         u = urlsplit(value)
@@ -248,6 +263,8 @@ class Engine:
         versions = [out] + out['alternatives']
         for n, v in enumerate(versions):
             tag = f'版本{"ABC"[n]}：' if len(versions) > 1 else ''
+            if channel in ('fb_message', 'ig_message') and '[[下一則]]' not in v['draft']:
+                v['draft'] = split_long(v['draft'])
             pieces = [p.strip('\n') for p in v['draft'].split('[[下一則]]')]
             if channel not in ('fb_message', 'ig_message') or len(pieces) > 3 or any(not p.strip() for p in pieces):
                 v['draft'] = '\n\n'.join(p for p in pieces if p.strip())  # comments and LINE go out as one message

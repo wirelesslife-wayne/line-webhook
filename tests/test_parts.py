@@ -54,3 +54,15 @@ def test_ai_splits_long_private_replies_but_not_comments(db):
     assert '[[下一則]]' not in out['draft'] and '[[下一則]]' not in out['alternatives'][0]['draft'] and '分兩則送' not in rules
     out, _ = drafted(db, 'ig_message', '一\n[[下一則]]\n\n[[下一則]]\n')  # an empty part is folded back into one message
     assert out['draft'] == '一'
+
+
+def test_long_quote_is_split_even_if_the_ai_forgot(db):
+    """Wayne 11/13: 「以後長回覆都分兩則送」."""
+    one = TWO.replace('\n[[下一則]]\n', '\n👉 產品保固一年\n👉 腳踢感應選配 $2,500\n\n')
+    out, _ = drafted(db, 'fb_message', one)
+    assert out['draft'].split('[[下一則]]')[1].strip() == '安裝約 3 小時，請問您在哪個縣市呢？'
+    short = '您好～週日公休喔！\n\n歡迎平日來門市體驗參觀，滿意再安裝就可以囉！'
+    out, _ = drafted(db, 'fb_message', short)
+    assert '[[下一則]]' not in out['draft']  # no list: stays one message
+    out, _ = drafted(db, 'fb_comment', one)
+    assert '[[下一則]]' not in out['draft']
