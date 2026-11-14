@@ -99,3 +99,22 @@ def test_list_counts_each_source_and_can_show_newest_first(db, logged):
     assert [i['messages'][-1]['text'] for i in new['items']] == ['環景多少', '台中有店嗎', '尾門多少']
     assert client.get('/desk/api/fb/list?order=x').status_code == 400
     assert client.get('/desk/api/fb/list?tab=done').get_json()['per_channel'] == {}
+
+
+def test_list_shows_how_long_each_customer_waited_and_can_show_only_the_late_ones(db, logged):
+    """Wayne 11/14: 「N 則超過 24 小時未回覆」 and 「未回覆 2 天」 on the list."""
+    from test_fb import thread as t
+    from datetime import datetime, timedelta, timezone
+    _, client, _, _ = logged
+    old = (datetime.now(timezone(timedelta(hours=8))) - timedelta(days=2, hours=1)).isoformat(timespec='seconds')
+    new = (datetime.now(timezone(timedelta(hours=8))) - timedelta(hours=2)).isoformat(timespec='seconds')
+    fb.push(db, [t(key='900021', messages=[dict(role='user', text='等很久了', at=old)]),
+                 t(key='900022', messages=[dict(role='user', text='剛剛問', at=new)])])
+    db.execute("UPDATE desk_fb_threads SET status='blocked' WHERE key='900022'")
+    out = client.get('/desk/api/fb/list').get_json()
+    waited = {i['messages'][-1]['text']: i['waited'] for i in out['items']}
+    assert 48 <= waited['等很久了'] < 50 and 1.5 < waited['剛剛問'] < 3
+    assert (out['total'], out['overdue'], out['manual']) == (2, 1, 1)
+    late = client.get('/desk/api/fb/list?late=1').get_json()
+    assert [i['messages'][-1]['text'] for i in late['items']] == ['等很久了'] and late['total'] == 1 and late['late'] is True
+    assert client.get('/desk/api/fb/list?tab=done&late=1').get_json()['late'] is False

@@ -2,10 +2,10 @@ const f=id=>document.getElementById('fb-'+id);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const STATUS={waiting:'AI 擬稿中，約 1 分鐘',drafting:'AI 擬稿中，約 1 分鐘',ready:'草稿好了',blocked:'AI 暫停，請直接在框裡寫',error:'擬稿失敗，請按「請 AI 重寫」重試或直接寫',approved:'已核准，等送出',done:'已結案',skip:'不回覆'};
 const TODO=['waiting','drafting','ready','blocked','error'];
-const CHIP={waiting:['AI 擬稿中','wait'],drafting:['AI 擬稿中','wait'],ready:['待你決定',''],blocked:['待你決定',''],error:['擬稿失敗',''],approved:['已核准','ok'],done:['已結案','off'],skip:['不回覆','off']};
+const CHIP={waiting:['AI 擬稿中','wait'],drafting:['AI 擬稿中','wait'],ready:['待審核',''],blocked:['需人工回覆','manual'],error:['擬稿失敗',''],approved:['已核准','ok'],done:['已結案','off'],skip:['不回覆','off']};
 const BRAND={};document.getElementById('fb-brands').content.querySelectorAll('span').forEach(s=>BRAND[s.dataset.ch]=s.innerHTML);
 let openId=null,lastData=null;
-let tab='todo',channel='',page=0,order='old',items=[],edits={},confirmation=null,busy=false,shown='',listVersion=0,polling=false;
+let tab='todo',channel='',page=0,order='old',late=false,items=[],edits={},confirmation=null,busy=false,shown='',listVersion=0,polling=false;
 async function api(path,body){const r=await fetch('/desk/api/fb/'+path,{method:body?'POST':'GET',headers:body?{'Content-Type':'application/json','X-CSRF-Token':csrf}:{},body:body?JSON.stringify(body):undefined});let d={};try{d=await r.json()}catch(e){}if(r.status===401){location.href='/desk/login';throw Error('請重新登入')}if(!r.ok)throw Error(d.error||'暫時無法處理，請重新載入');return d}
 function say(text,bad){const e=f('feedback');e.textContent=text||'';e.hidden=!text;e.classList.toggle('bad',!!bad)}
 const editKey=d=>d.id+':'+d.version;
@@ -23,7 +23,8 @@ function card(d,i,closed){
   const todo=TODO.includes(d.status),waiting=d.status==='waiting'||d.status==='drafting',r=d.result||{};
   const draft=edits[editKey(d)]??r.draft??'';
   const lastUser=[...d.messages].reverse().find(m=>m.role!=='assistant')||d.messages[d.messages.length-1]||{};
-  const [chip,tone]=CHIP[d.status]||[d.status,'off'],open=openId===d.id&&!closed;
+  let [chip,tone]=CHIP[d.status]||[d.status,'off'];const open=openId===d.id&&!closed;
+  if(TODO.includes(d.status)&&d.waited>=24){chip=`未回覆 ${Math.floor(d.waited/24)} 天`;tone='late'}
   let h=`<article class="item${open?' open':''}${closed&&openId===d.id?' sel':''}" data-id="${esc(d.id)}"><button class="row" data-act="toggle" aria-expanded="${open}"><span class="avatar">${d.avatar?`<img src="/desk/api/fb/avatar?thread_id=${encodeURIComponent(d.id)}&t=${esc(d.avatar)}" alt="" decoding="async">`:USER_ICON}${(BRAND[d.channel]||'').split('<svg class="ic"')[0]}</span><span class="sep"></span><span class="who-said"><b>${esc(d.name)}</b><span>${esc((lastUser.text||'').replace(/\s+/g,' '))}</span></span><span class="when">${esc(when(lastUser.time||''))}</span><span class="state-chip ${tone}">${esc(chip)}</span>${CHEV}</button>`;
   if(!open)return h+'</article>';
   h+=`<div class="detail"><p class="muted">${esc(d.label)} · ${esc(STATUS[d.status]||d.status)}${d.note?' · '+esc(d.note):''}</p>`;
@@ -78,7 +79,10 @@ async function libraryGrid(box){
 function draw(d){
   lastData=d;items=d.items;f('n-todo').textContent=d.todo||'';f('n-approved').textContent=d.approved||'';const per=d.per_channel||{},all=Object.values(per).reduce((a,b)=>a+b,0);document.querySelectorAll('[data-cnt]').forEach(x=>{const n=x.dataset.cnt?per[x.dataset.cnt]:all;x.textContent=n?` ${n}`:''});
   f('prev').disabled=page===0;f('next').disabled=!d.has_more;
-  const empty={todo:'目前沒有等你決定的訊息。',approved:'目前沒有即將送出的回覆。',done:'還沒有結案的紀錄。'}[tab];
+  f('total').textContent=`共 ${d.total||0} 位`;f('alert').hidden=tab!=='todo'||!(d.overdue||d.manual||late);
+  f('late').textContent=late?`只看超過 24 小時未回覆的 ${d.total||0} 則・顯示全部 ›`:d.overdue?`⚠ ${d.overdue} 則超過 24 小時未回覆 ›`:'';f('late').setAttribute('aria-pressed',String(late));
+  f('manual').textContent=d.manual?`${d.manual} 則需人工回覆`:'';
+  const empty={todo:'目前沒有待審核的訊息。',approved:'目前沒有即將送出的回覆。',done:'還沒有結案的紀錄。'}[tab];
   if(WIDE.matches&&items.length){
     if(!items.some(x=>x.id===openId))openId=items[0].id;  // two columns always show one conversation
     const n=items.findIndex(x=>x.id===openId);
@@ -89,7 +93,7 @@ function draw(d){
 async function load(force){
   if(!force&&polling)return; // a slow answer must not be discarded by the next timer tick
   const v=++listVersion;polling=true;
-  try{const d=await api(`list?channel=${encodeURIComponent(channel)}&tab=${tab}&page=${page}&order=${order}`);if(v!==listVersion)return;const sig=JSON.stringify(d);if(!force&&(sig===shown||editing()))return;shown=sig;draw(d)}
+  try{const d=await api(`list?channel=${encodeURIComponent(channel)}&tab=${tab}&page=${page}&order=${order}${late?'&late=1':''}`);if(v!==listVersion)return;const sig=JSON.stringify(d);if(!force&&(sig===shown||editing()))return;shown=sig;draw(d)}
   catch(e){if(v===listVersion&&force)say(e.message,true)}
   finally{if(v===listVersion)polling=false}
 }
@@ -101,8 +105,9 @@ document.addEventListener('input',e=>{if(e.target.matches('[data-draft]')){grow(
 document.addEventListener('click',async event=>{
   const b=event.target.closest('button');if(!b||busy)return;
   try{
-    if(b.id==='fb-order'){order=order==='old'?'new':'old';b.textContent=order==='old'?'等最久的在上':'最新的在上';page=0;await load(true);return}
-    if(b.dataset.fbTab!==undefined){tab=b.dataset.fbTab;page=0;document.querySelectorAll('[data-fb-tab]').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));say('');await load(true);return}
+    if(b.id==='fb-order'){order=order==='old'?'new':'old';b.textContent=order==='old'?'排序：等最久優先 ⇅':'排序：最新優先 ⇅';page=0;await load(true);return}
+    if(b.id==='fb-late'){late=!late;page=0;await load(true);return}
+    if(b.dataset.fbTab!==undefined){tab=b.dataset.fbTab;page=0;late=false;document.querySelectorAll('[data-fb-tab]').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));say('');await load(true);return}
     if(b.dataset.fbChannel!==undefined){channel=b.dataset.fbChannel;page=0;document.querySelectorAll('[data-fb-channel]').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));await load(true);return}
     if(b.id==='fb-prev'||b.id==='fb-next'){page=Math.max(0,page+(b.id==='fb-prev'?-1:1));await load(true);window.scrollTo(0,0);return}
     if(b.id==='fb-confirm-cancel'){f('confirm').close();confirmation=null;return}
@@ -151,7 +156,7 @@ document.addEventListener('click',async event=>{
     if(act==='skip'||act==='cancel'){
       if(act==='skip'&&!b.dataset.armed){b.dataset.armed='1';b.textContent='再按一次確定';setTimeout(()=>{if(b.isConnected){delete b.dataset.armed;b.textContent='不發送'}},4000);return}
       busy=true;b.disabled=true;
-      try{await api(act,{thread_id:d.id,version:d.version});delete edits[editKey(d)];say(act==='skip'?`「${d.name}」已標成不回覆。`:'已取消核准，回到待你決定。')}
+      try{await api(act,{thread_id:d.id,version:d.version});delete edits[editKey(d)];say(act==='skip'?`「${d.name}」已標成不回覆。`:'已取消核准，回到待審核。')}
       catch(e){say(e.message,true)}
       finally{busy=false}
       await load(true);return}

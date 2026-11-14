@@ -55,16 +55,27 @@ def register(bp,store):
         except ValueError: raise ActionError('頁碼不正確',400)
         order=request.args.get('order','old')
         if order not in ('old','new'): raise ActionError('排序不正確',400)
+        late=request.args.get('late')=='1' and tab=='todo'  # Wayne 11/14: only those waiting more than 24 hours
         states=list(fb.TODO) if tab=='todo' else ['approved'] if tab=='approved' else ['done','skip']
         # Wayne 11/14: the customer who has waited longest first, unless he switches to newest first
         # by when the customer last wrote (the desk may read it an hour later), not when the desk picked it up
         said="COALESCE((SELECT MAX(e.event_at) FROM desk_fb_events e WHERE e.thread_id=t.id AND e.role='user'),t.last_at)"
-        rows=store.all(f"""SELECT t.* FROM desk_fb_threads t WHERE t.status=ANY(%s) AND (%s='' OR t.channel=%s)
+        where=f"t.status=ANY(%s) AND (%s='' OR t.channel=%s){f' AND {said} < NOW()-INTERVAL {chr(39)}24 hours{chr(39)}' if late else ''}"
+        rows=store.all(f"""SELECT t.*,EXTRACT(EPOCH FROM NOW()-{said})/3600 AS waited FROM desk_fb_threads t WHERE {where}
           ORDER BY {said} {'' if order=='old' else 'DESC'},t.id LIMIT 21 OFFSET %s""",(states,channel,channel,page*20))
+        total=store.one(f'SELECT COUNT(*) AS n FROM desk_fb_threads t WHERE {where}',(states,channel,channel))['n']
+        overdue=manual=0
+        if tab=='todo':
+            overdue=store.one(f"SELECT COUNT(*) AS n FROM desk_fb_threads t WHERE t.status=ANY(%s) AND {said} < NOW()-INTERVAL '24 hours'",(states,))['n']
+            manual=store.one("SELECT COUNT(*) AS n FROM desk_fb_threads WHERE status='blocked'")['n']
         counts=fb.status(store)
         per=({r['channel']:r['n'] for r in store.all('SELECT channel,COUNT(*) AS n FROM desk_fb_threads WHERE status=ANY(%s) GROUP BY channel',(states,))}
              if tab!='done' else {})  # the finished tab only grows; a count there says nothing
-        return dict(items=details(rows[:20]),has_more=len(rows)>20,page=page,tab=tab,channel=channel,order=order,per_channel=per,
+        items=details(rows[:20])
+        for item,row in zip(items,rows):
+            item['waited']=round(float(row['waited'] or 0),1)  # hours since the customer last wrote
+        return dict(items=items,has_more=len(rows)>20,page=page,tab=tab,channel=channel,order=order,per_channel=per,
+            total=total,overdue=overdue,manual=manual,late=late,
             todo=counts['waiting_draft']+counts['awaiting_review']+counts['draft_failed'],approved=counts['approved_unsent'])
 
     @bp.get('/fb')
