@@ -31,7 +31,10 @@ def test_greetings_and_repeats_do_not_pick_the_references(db):
     db.execute("INSERT INTO desk_qa VALUES(910003, NOW()-INTERVAL '2 days', '你好想請問一下 CarPlay 音量忽大忽小', '請先把手機切成靜音測試')")
     db.execute("INSERT INTO desk_qa VALUES(910004, NOW()-INTERVAL '1 days', '你好想請問一下 CarPlay 音量忽大忽小', '請先把手機切成靜音測試')")
     db.execute("INSERT INTO desk_qa VALUES(910005, NOW()-INTERVAL '1 days', '電腦讀記憶卡說要格式化', '先不要格式化，可以用手機 App 下載影片')")
-    db.put_kb('line_saved_replies.json', [dict(topic='詢問', text='您好，請問有什麼地方需要為您服務的嗎？')])
+    db.execute("INSERT INTO desk_qa VALUES(910006, NOW()-INTERVAL '1 days', 'WRM-B42 可以裝嗎', 'WRM-B42 MAX 沒問題')")  # 11/15: same model only
+    db.execute("INSERT INTO desk_qa VALUES(910007, NOW()-INTERVAL '1 days', '記憶卡要格式化嗎', '您好～今天的預約目前已經額滿了，不好意思')")  # booking only
+    db.put_kb('line_saved_replies.json', [dict(topic='詢問', text='您好，請問有什麼地方需要為您服務的嗎？'),
+                                          dict(topic='B42 報價', text='WRM-B42 MAX 完工價 $12,800')])
     msgs = [dict(role='user', text='你好想請問一下 B42 用讀卡機讀記憶卡，電腦顯示需要格式化'), dict(role='user', text='好 謝謝')]
     got = lookup.for_thread(db, msgs)
     assert [h['text'] for h in got['history']] == ['先不要格式化，可以用手機 App 下載影片'] and got['canned'] == []

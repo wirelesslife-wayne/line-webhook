@@ -9,7 +9,8 @@ from .worker import local_time
 _QA = {}
 # Greetings and filler outweighed the real question (11/14, a B42 memory-card question got CarPlay answers)
 FILLER = re.compile(r'你好|您好|哈囉|請問|想問|一下|謝謝|感謝|麻煩|不好意思|是什麼|什麼|怎麼|可以|需要|的時候|但是|因為|所以|嗎|呢|喔|哦|啊|吧')
-MIN_WEIGHT = 1.25  # shared rare pairs must outweigh 1.25 "never seen" pairs (≈12 for the 16k past answers)
+MIN_WEIGHT = 1.4  # shared rare pairs must outweigh 1.4 "never seen" pairs (≈13.5 for the 16k past answers; 1.25 let 記憶＋影片 pull in an unrelated saved reply)
+MODEL = re.compile(r'[a-z0-9]')  # pairs from model names and numbers (b42, rav4)
 
 
 def grams(text):
@@ -35,13 +36,21 @@ class Index:
         # rarity means nothing in a handful of rows (tests, a new install): two shared pairs are enough there
         q, floor = grams(query), MIN_WEIGHT * self.unseen if len(self.size) >= 20 else 0
         total = sum(self.idf.get(g, self.unseen) for g in q) or 1
-        weight, shared = Counter(), Counter()
+        # 11/15 ChatGPT and Gemini: the same model name alone is not a match (a B42 memory-card question got
+        # B42 quotes and comparisons); the words about the problem itself must match too
+        # short questions are mostly a model name (「B42 多少錢」): ask for a share of their few topic words instead
+        need = min(floor / 2, 0.4 * sum(self.idf.get(g, self.unseen) for g in q if not MODEL.search(g)))
+        weight, topic, shared, on_topic = Counter(), Counter(), Counter(), Counter()
         for g in q:
+            model = bool(MODEL.search(g))
             for i in self.where.get(g, ()):
                 weight[i] += self.idf[g]
                 shared[i] += 1
+                if not model:
+                    topic[i] += self.idf[g]
+                    on_topic[i] += 1
         hits = sorted(((w / total / (1 + math.log(1 + self.size[i] / 40)), i) for i, w in weight.items()
-                       if shared[i] >= 2 and w >= floor), reverse=True)
+                       if shared[i] >= 2 and w >= floor and on_topic[i] and topic[i] >= need), reverse=True)
         return [i for _, i in hits]
 
 
@@ -55,7 +64,8 @@ def history_rows(store):
     return rows, hit[2]
 
 
-AUTO_REPLY = re.compile(r'請先留言|請您先留言|請點選您感興趣|客服回覆時間|感謝您預約我們的服務|工作時間是週一')
+# also answers that only handle booking, not the question (11/15 ChatGPT and Gemini: 喇叭破音 → 「今天預約額滿」)
+AUTO_REPLY = re.compile(r'請先留言|請您先留言|請點選您感興趣|客服回覆時間|感謝您預約我們的服務|工作時間是週一|預約[^，。]{0,6}額滿')
 
 
 def _pick(rows, order, k, key):
