@@ -25,6 +25,19 @@ def test_references_match_what_the_customer_asked(db):
     assert lookup.search(db, '', 'history', 8) == [] and lookup.for_thread(db, [])['canned'] == []
 
 
+def test_greetings_and_repeats_do_not_pick_the_references(db):
+    """11/14: a WRM-B42 memory-card question got 「關心」「詢問」 and the same CarPlay answer twice."""
+    seed(db)
+    db.execute("INSERT INTO desk_qa VALUES(910003, NOW()-INTERVAL '2 days', '你好想請問一下 CarPlay 音量忽大忽小', '請先把手機切成靜音測試')")
+    db.execute("INSERT INTO desk_qa VALUES(910004, NOW()-INTERVAL '1 days', '你好想請問一下 CarPlay 音量忽大忽小', '請先把手機切成靜音測試')")
+    db.execute("INSERT INTO desk_qa VALUES(910005, NOW()-INTERVAL '1 days', '電腦讀記憶卡說要格式化', '先不要格式化，可以用手機 App 下載影片')")
+    db.put_kb('line_saved_replies.json', [dict(topic='詢問', text='您好，請問有什麼地方需要為您服務的嗎？')])
+    msgs = [dict(role='user', text='你好想請問一下 B42 用讀卡機讀記憶卡，電腦顯示需要格式化'), dict(role='user', text='好 謝謝')]
+    got = lookup.for_thread(db, msgs)
+    assert [h['text'] for h in got['history']] == ['先不要格式化，可以用手機 App 下載影片'] and got['canned'] == []
+    assert lookup.for_thread(db, [dict(role='user', text='好 謝謝')])['history'] == []
+
+
 def test_lookup_routes(db, logged):
     seed(db)
     _, client, _, _ = logged

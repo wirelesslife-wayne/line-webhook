@@ -81,7 +81,8 @@ async function libraryGrid(box){
 // Wayne 11/14: what the draft could lean on, found automatically; 依此重寫 is one more tap
 const REFS={},REFUSED={};let refsShut=new Set(),lookupFor=null,lkKind='history';
 function refKey(d){return d.id+':'+d.version}
-function refCard(x,n,where){return `<div class="ref"><b>${x.kind==='canned'?'📘 制式回覆｜'+esc(x.title):'💬 真人案例｜'+esc(x.date||'')}</b>${x.question?`<p class="q">客人問：${esc(x.question)}</p>`:''}<p>${x.kind==='history'?'同事答：':''}${esc(x.text)}</p><button data-act="ref-use" data-where="${where}" data-n="${n}">依此重寫</button></div>`}
+const RISKY=/格式化|恢復原廠|原廠設定|重置|reset|刪除/i;  // ChatGPT and Gemini 11/14: steps that wipe a customer's videos
+function refCard(x,n,where){return `<div class="ref"><b>${x.kind==='canned'?'📘 制式回覆｜'+esc(x.title):'💬 真人案例｜'+esc(x.date||'')}</b>${x.question?`<p class="q">客人問：${esc(x.question)}</p>`:''}<p>${x.kind==='history'?'同事答：':''}${esc(x.text)}</p>${RISKY.test(x.text)?'<p class="warn">⚠️ 含格式化／重置等會清掉資料的步驟，客人要先備份；客人還想留影片時不要照做</p>':''}<button data-act="ref-use" data-where="${where}" data-n="${n}">依此重寫</button></div>`}
 function refsBlock(d){
   const r=REFS[refKey(d)];
   if(r===undefined){fetchRefs(d);return '<div class="refs"><p class="muted">參考資料：查詢中…</p></div>'}
@@ -95,7 +96,7 @@ async function fetchRefs(d){
 async function useRef(d,el,x){
   const label=x.kind==='canned'?'制式回覆〈'+x.title+'〉':x.kind==='history'?'真人案例 '+(x.date||''):'你貼上的答案';
   const body=(x.question?'客人問：'+x.question+'\n':'')+(x.kind==='history'?'同事答：':'')+x.text;
-  const instruction=('請依照這份參考資料重寫草稿（價格、連結仍以價格表和制式回覆為準；參考資料裡的舊價格、舊活動不要照抄）：\n【'+label+'】\n'+body).slice(0,2000);
+  const instruction=('請依照這份參考資料重寫草稿（價格、連結仍以價格表和制式回覆為準；參考資料裡的舊價格、舊活動不要照抄'+(RISKY.test(body)?'；格式化、重置這類會清掉資料的步驟，不要叫客人直接做，要先請客人備份重要影片，客人還想保留影片時優先教他保存的方法':'')+'）：\n【'+label+'】\n'+body).slice(0,2000);
   busy=true;try{await api('redraft',{thread_id:d.id,version:d.version,instruction,original_draft:el?joined(el):'',remember:false});delete edits[editKey(d)];REFUSED[d.id]=label;say(`AI 正在依「${label}」重寫，約 1 分鐘。`)}
   catch(e){say(e.message,true)}finally{busy=false}
   await load(true)}
