@@ -83,3 +83,19 @@ def test_saved_replies_from_the_line_back_office_join_as_reference(db):
     Engine(db, provider).draft([{'time': 'now', 'role': 'user', 'text': '請問主機是台灣組裝的嗎，有經過檢驗認證嗎', 'new': True}], now(), channel='fb_message')
     user = provider.call_args.args[0][1]['content']
     assert 'LINE 後台同事常用短句' in user and '台灣組裝' in user and '5%手續費' not in user
+
+
+def test_list_counts_each_source_and_can_show_newest_first(db, logged):
+    """Wayne 11/14: numbers on the source buttons (only where there is something), oldest first unless he switches."""
+    from test_fb import thread as t
+    _, client, _, _ = logged
+    fb.push(db, [t(key='900011', messages=[dict(role='user', text='尾門多少', at='2026-11-11T09:00:00+08:00')]),
+                 t(key='900012', messages=[dict(role='user', text='環景多少', at='2026-11-11T11:00:00+08:00')]),
+                 t('ig_comment', key='900013#a', messages=[dict(role='user', text='台中有店嗎', at='2026-11-11T10:00:00+08:00')])])
+    old = client.get('/desk/api/fb/list').get_json()
+    assert old['per_channel'] == {'fb_message': 2, 'ig_comment': 1} and old['order'] == 'old'
+    assert [i['messages'][-1]['text'] for i in old['items']] == ['尾門多少', '台中有店嗎', '環景多少']
+    new = client.get('/desk/api/fb/list?order=new').get_json()
+    assert [i['messages'][-1]['text'] for i in new['items']] == ['環景多少', '台中有店嗎', '尾門多少']
+    assert client.get('/desk/api/fb/list?order=x').status_code == 400
+    assert client.get('/desk/api/fb/list?tab=done').get_json()['per_channel'] == {}

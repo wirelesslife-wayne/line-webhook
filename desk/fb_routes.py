@@ -51,11 +51,18 @@ def register(bp,store):
             raise ActionError('分類不正確',400)
         try: page=max(0,int(request.args.get('page','0')))
         except ValueError: raise ActionError('頁碼不正確',400)
+        order=request.args.get('order','old')
+        if order not in ('old','new'): raise ActionError('排序不正確',400)
         states=list(fb.TODO) if tab=='todo' else ['approved'] if tab=='approved' else ['done','skip']
-        rows=store.all("""SELECT * FROM desk_fb_threads WHERE status=ANY(%s) AND (%s='' OR channel=%s)
-          ORDER BY last_at,id LIMIT 21 OFFSET %s""",(states,channel,channel,page*20))
+        # Wayne 11/14: the customer who has waited longest first, unless he switches to newest first
+        # by when the customer last wrote (the desk may read it an hour later), not when the desk picked it up
+        said="COALESCE((SELECT MAX(e.event_at) FROM desk_fb_events e WHERE e.thread_id=t.id AND e.role='user'),t.last_at)"
+        rows=store.all(f"""SELECT t.* FROM desk_fb_threads t WHERE t.status=ANY(%s) AND (%s='' OR t.channel=%s)
+          ORDER BY {said} {'' if order=='old' else 'DESC'},t.id LIMIT 21 OFFSET %s""",(states,channel,channel,page*20))
         counts=fb.status(store)
-        return dict(items=details(rows[:20]),has_more=len(rows)>20,page=page,tab=tab,channel=channel,
+        per=({r['channel']:r['n'] for r in store.all('SELECT channel,COUNT(*) AS n FROM desk_fb_threads WHERE status=ANY(%s) GROUP BY channel',(states,))}
+             if tab!='done' else {})  # the finished tab only grows; a count there says nothing
+        return dict(items=details(rows[:20]),has_more=len(rows)>20,page=page,tab=tab,channel=channel,order=order,per_channel=per,
             todo=counts['waiting_draft']+counts['awaiting_review']+counts['draft_failed'],approved=counts['approved_unsent'])
 
     @bp.get('/fb')

@@ -30,6 +30,7 @@ header .title{border-left:1px solid #ffffff40;padding-left:18px}header form{marg
 .nav.main a{font-size:17px;padding:10px 26px;border-bottom:4px solid transparent}.nav.main a[aria-current=page]{background:var(--brand);color:white;border-color:var(--brand);border-bottom-color:var(--orange)}
 .nav.state button{min-width:150px;font-size:16px}.nav.state button[aria-pressed=true]{background:var(--orange-soft);border-color:var(--orange);color:var(--orange-ink)}
 .badge{background:var(--orange);color:white;border-radius:20px;padding:0 9px;font-size:14px;line-height:22px;font-weight:700}.badge:empty{display:none}
+.cnt{color:var(--muted);font-weight:500;font-size:13px}.cnt:empty{display:none}[aria-pressed=true] .cnt{color:inherit;opacity:.8}.nav.channel .order{margin-left:auto;min-width:0;font-weight:500;color:var(--muted)}
 .nav.channel button{font-size:15px;padding:6px 16px;min-width:110px}.nav.channel button[aria-pressed=true]{background:var(--brand);color:white;border-color:var(--brand)}
 .cards{display:grid;gap:10px}
 .item{background:white;border:1px solid var(--line);border-radius:12px;overflow:hidden;box-shadow:0 1px 3px #0f3d5c12}
@@ -79,14 +80,14 @@ textarea,input{font-size:16px}
 .attach .suggest img{width:56px;height:56px}.attach small{font-size:12px}}
 </style>
 <nav class="nav main" aria-label="客服管道">{% if line_on %}<a href="/desk/">{{ icon('line') }}LINE</a>{% endif %}<a href="/desk/fb" aria-current="page">{{ icon('edit') }}FB／IG 審稿</a>{% if can_review %}<a href="/desk/knowledge">{{ icon('book') }}知識</a>{% endif %}</nav>
-<div class="nav state" aria-label="狀態"><button data-fb-tab="todo" aria-pressed="true">{{ icon('clock') }}待你決定<span class="badge" id="fb-n-todo"></span></button><button data-fb-tab="approved" aria-pressed="false">{{ icon('check') }}已核准待送出<span class="badge" id="fb-n-approved"></span></button><button data-fb-tab="done" aria-pressed="false">{{ icon('archive') }}已處理</button></div>
-<div class="nav channel" aria-label="管道"><button data-fb-channel="" aria-pressed="true">{{ icon('layers') }}全部</button>{% for key,label in labels.items() %}<button data-fb-channel="{{ key }}" aria-pressed="false">{{ brand(key) }}{{ label }}</button>{% endfor %}</div>
-{% if not can_review %}<p class="note">只有 Wayne 可以核准發送。你可以先看草稿、按「修改」請 AI 重寫。</p>{% endif %}
+<div class="nav state" aria-label="狀態"><button data-fb-tab="todo" aria-pressed="true">{{ icon('clock') }}待你決定<span class="badge" id="fb-n-todo"></span></button><button data-fb-tab="approved" aria-pressed="false">{{ icon('check') }}即將送出<span class="badge" id="fb-n-approved"></span></button><button data-fb-tab="done" aria-pressed="false">{{ icon('archive') }}已結案</button></div>
+<div class="nav channel" aria-label="管道"><button data-fb-channel="" aria-pressed="true">{{ icon('layers') }}全部<span class="cnt" data-cnt=""></span></button>{% for key,label in labels.items() %}<button data-fb-channel="{{ key }}" aria-pressed="false">{{ brand(key) }}{{ label }}<span class="cnt" data-cnt="{{ key }}"></span></button>{% endfor %}<button id="fb-order" class="order" aria-label="切換排序">等最久的在上</button></div>
+{% if not can_review %}<p class="note">只有 Wayne 可以核准發送。你可以先看草稿、按「請 AI 重寫」寫指示。</p>{% endif %}
 <div id="fb-feedback" class="note" role="status" hidden></div>
 <div id="fb-list" class="cards"><p class="muted">讀取中…</p></div>
 <div class="actions"><button id="fb-prev">上一頁</button><button id="fb-next">下一頁</button></div>
 {% if can_review %}<details id="fb-rules" class="card"><summary>我記住的修改指示（{{ rules|length }} 條）</summary>
-<p class="muted">你按「修改」寫下的指示會記在這裡，之後每一則草稿（LINE、FB、IG）都會照做。不想再套用的可以停用。</p>
+<p class="muted">你按「請 AI 重寫」寫下的指示會記在這裡，之後每一則草稿（LINE、FB、IG）都會照做。不想再套用的可以停用。</p>
 {% for r in rules %}<div class="rule{{ '' if r.active else ' off' }}"><p>{{ r.instruction }}</p><small class="muted">{{ r.label }} · {{ r.time }}{% if r.said %} · {{ '復盤理由' if r.instruction.startswith('【每日復盤建議】') else '當時客人說' }}：{{ r.said }}{% endif %}</small><button data-rule-id="{{ r.id }}" data-active="{{ 'true' if r.active else 'false' }}">{{ '停用' if r.active else '重新啟用' }}</button></div>{% else %}<p class="muted none">目前還沒有。</p>{% endfor %}
 </details>{% endif %}
 <dialog id="fb-confirm"><h2 id="fb-recipient"></h2><p id="fb-public-warning" class="error" hidden>這是公開留言，所有人都看得到。</p><div id="fb-preview"></div><p id="fb-attach-note" class="note" hidden></p><div id="fb-links" class="note" hidden></div><label id="fb-public-label" class="check" hidden><input id="fb-public-check" type="checkbox">我確認要公開回覆這則留言</label><p id="fb-when" class="muted">按下確認後，下一輪排程會照這段文字送出（最慢約 60 分鐘）。</p><div class="actions"><button id="fb-confirm-cancel">返回</button><button id="fb-confirm-ok" class="primary">確認發送</button></div></dialog>
