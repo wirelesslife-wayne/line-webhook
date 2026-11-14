@@ -29,6 +29,8 @@ def register(bp,store):
             files=cur.fetchall()
             cur.execute("SELECT thread_id,taken_at FROM desk_fb_shots WHERE thread_id=ANY(%s) AND taken_at >= NOW()-INTERVAL '30 days'",(ids,))
             shots={s['thread_id']:local_time(s['taken_at'])[5:16] for s in cur.fetchall()}
+            cur.execute('SELECT thread_id,fetched_at FROM desk_fb_avatars WHERE thread_id=ANY(%s)',(ids,))
+            faces={a['thread_id']:a['fetched_at'].strftime('%m%d%H%M') for a in cur.fetchall()}
         out=[]
         for c in rows:
             attempts=[a for a in all_attempts if a['thread_id']==c['id']][:10]
@@ -38,7 +40,7 @@ def register(bp,store):
             out.append(dict(id=c['id'],name=c['name'],channel=c['channel'],label=fb.LABELS[c['channel']],key=c['key'],url=c['url'],
                 context=c['context'],status=c['status'],version=c['version'],note=c['note'],result=c['draft'] or {},
                 messages=fb.shape(e for e in events if e['thread_id']==c['id'])[-12:],is_public=c['channel'].endswith('_comment'),
-                media=[fb_media.describe(m) for m in media],shot=shots.get(c['id']),live=meta.live(c),
+                media=[fb_media.describe(m) for m in media],shot=shots.get(c['id']),avatar=faces.get(c['id']),live=meta.live(c),
                 attempts=[dict(status=a['status'],time=local_time(a['approved_at']),staff=a['username'],text=a['content'],reason=a['reason']) for a in attempts]))
         return out
 
@@ -163,6 +165,13 @@ def register(bp,store):
         data=request.get_json(silent=True)
         if not isinstance(data,dict): raise ActionError('請選擇圖片',400)
         return jsonify(media=library.attach(store,g.staff,data.get('thread_id'),data.get('library_id'))),201
+
+    @bp.get('/api/fb/avatar')
+    def fb_avatar():
+        from . import fb_avatars
+        row=fb_avatars.read(store,request.args.get('thread_id'))
+        if not row: raise ActionError('沒有大頭照',404)
+        return Response(bytes(row['data']),mimetype='image/jpeg',headers={'Content-Disposition':'inline','Cache-Control':'private, max-age=604800'})  # the page adds the fetch time to the URL
 
     @bp.get('/api/fb/shot')
     def fb_shot():

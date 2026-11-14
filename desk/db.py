@@ -79,6 +79,8 @@ from .cases import SCHEMA as CASE_SCHEMA
 SCHEMA += CASE_SCHEMA
 from .videos import SCHEMA as VIDEO_SCHEMA
 SCHEMA += VIDEO_SCHEMA
+from .fb_avatars import SCHEMA as AVATAR_SCHEMA
+SCHEMA += AVATAR_SCHEMA
 
 
 class Store:

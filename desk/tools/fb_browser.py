@@ -16,6 +16,7 @@ def main(argv=None, store_factory=None):
     sub=parser.add_subparsers(dest='command',required=True)
     sub.add_parser('push').add_argument('file')
     sub.add_parser('status')
+    sub.add_parser('faces').add_argument('--line',action='store_true',help='only the official LINE account')
     sub.add_parser('pending').add_argument('--line',action='store_true',help='only the official LINE account')
     sub.add_parser('open').add_argument('--line',action='store_true',help='only the official LINE account')
     result=sub.add_parser('result')
@@ -46,6 +47,11 @@ def main(argv=None, store_factory=None):
                     try: saved+=fb_shots.save(db,row['id'],Path(path).read_bytes())
                     except OSError: pass
             out['screenshots']=saved
+            from .. import fb_avatars
+            out['avatars']=fb_avatars.collect(db,fb.validate(data))  # optional "avatar": picture address or saved file
+        elif args.command=='faces':
+            from .. import fb_avatars
+            out=dict(have_picture=fb_avatars.have(db,args.line))
         elif args.command=='status':
             from .. import meta
             out=fb.status(db)

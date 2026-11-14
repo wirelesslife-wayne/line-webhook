@@ -12,18 +12,19 @@ const editKey=d=>d.id+':'+d.version;
 function when(t){const d=new Date(t);if(/^\d{4}-\d\d-\d\dT/.test(t||'')&&!isNaN(d))return d.toLocaleString('zh-TW',{timeZone:'Asia/Taipei',month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false});
   // Meta's own long form 「2026年11月12日 星期四上午7:23」 → 「11/12 上午7:23」 (phone review 11/13: it overlapped the status tag)
   const m=/\d{4}年(\d+)月(\d+)日\s*星期.\s*(上午|下午)?\s*(\d+:\d+)/.exec(t||'');return m?`${m[1]}/${m[2]} ${m[3]||''}${m[4]}`:(t||'')}
-const PHONE=matchMedia('(max-width:700px)');
+const PHONE=matchMedia('(max-width:700px)'),WIDE=matchMedia('(min-width:1100px)');
+WIDE.addEventListener('change',()=>{if(lastData&&!editing())draw(lastData)});
 const SPLIT='\n[[下一則]]\n',MAXPARTS=3;
 const partsOf=t=>String(t??'').split('[[下一則]]').map(x=>x.replace(/^\n+|\n+$/g,''));
 const joined=el=>[...el.querySelectorAll('[data-draft]')].map(t=>t.value.replace(/^\n+|\n+$/g,'')).filter((x,n,a)=>x.trim()||a.length===1).join(SPLIT);
 function grow(t){if(!t)return;t.style.height='auto';t.style.height=Math.max(t.scrollHeight+2,t.closest('.parts')&&t.closest('.parts').children.length>1?72:150)+'px'}
 function files(list,removable){return (list||[]).map(m=>`<figure>${m.type==='image'?`<img src="/desk/api/fb/media/${esc(m.id)}" alt="" loading="lazy">`:'<div class="vid">🎬</div>'}<span>${esc(m.name)}</span>${removable?`<button data-act="media-remove" data-media="${esc(m.id)}">移除</button>`:''}</figure>`).join('')}
-function card(d,i){
+function card(d,i,closed){
   const todo=TODO.includes(d.status),waiting=d.status==='waiting'||d.status==='drafting',r=d.result||{};
   const draft=edits[editKey(d)]??r.draft??'';
   const lastUser=[...d.messages].reverse().find(m=>m.role!=='assistant')||d.messages[d.messages.length-1]||{};
-  const [chip,tone]=CHIP[d.status]||[d.status,'off'],open=openId===d.id;
-  let h=`<article class="item${open?' open':''}" data-id="${esc(d.id)}"><button class="row" data-act="toggle" aria-expanded="${open}"><span class="avatar">${USER_ICON}${(BRAND[d.channel]||'').split('<svg class="ic"')[0]}</span><span class="sep"></span><span class="who-said"><b>${esc(d.name)}</b><span>${esc((lastUser.text||'').replace(/\s+/g,' '))}</span></span><span class="when">${esc(when(lastUser.time||''))}</span><span class="state-chip ${tone}">${esc(chip)}</span>${CHEV}</button>`;
+  const [chip,tone]=CHIP[d.status]||[d.status,'off'],open=openId===d.id&&!closed;
+  let h=`<article class="item${open?' open':''}${closed&&openId===d.id?' sel':''}" data-id="${esc(d.id)}"><button class="row" data-act="toggle" aria-expanded="${open}"><span class="avatar">${d.avatar?`<img src="/desk/api/fb/avatar?thread_id=${encodeURIComponent(d.id)}&t=${esc(d.avatar)}" alt="" decoding="async">`:USER_ICON}${(BRAND[d.channel]||'').split('<svg class="ic"')[0]}</span><span class="sep"></span><span class="who-said"><b>${esc(d.name)}</b><span>${esc((lastUser.text||'').replace(/\s+/g,' '))}</span></span><span class="when">${esc(when(lastUser.time||''))}</span><span class="state-chip ${tone}">${esc(chip)}</span>${CHEV}</button>`;
   if(!open)return h+'</article>';
   h+=`<div class="detail"><p class="muted">${esc(d.label)} · ${esc(STATUS[d.status]||d.status)}${d.note?' · '+esc(d.note):''}</p>`;
   if(d.context)h+=`<p class="context"><b>所屬貼文：</b>${esc(d.context.slice(0,200))}</p>`;
@@ -78,7 +79,11 @@ function draw(d){
   lastData=d;items=d.items;f('n-todo').textContent=d.todo||'';f('n-approved').textContent=d.approved||'';const per=d.per_channel||{},all=Object.values(per).reduce((a,b)=>a+b,0);document.querySelectorAll('[data-cnt]').forEach(x=>{const n=x.dataset.cnt?per[x.dataset.cnt]:all;x.textContent=n?` ${n}`:''});
   f('prev').disabled=page===0;f('next').disabled=!d.has_more;
   const empty={todo:'目前沒有等你決定的訊息。',approved:'目前沒有即將送出的回覆。',done:'還沒有結案的紀錄。'}[tab];
-  f('list').innerHTML=items.length?items.map(card).join(''):`<p class="muted">${empty}</p>`;
+  if(WIDE.matches&&items.length){
+    if(!items.some(x=>x.id===openId))openId=items[0].id;  // two columns always show one conversation
+    const n=items.findIndex(x=>x.id===openId);
+    f('list').innerHTML=`<div class="split"><div class="rows">${items.map((x,i)=>card(x,i,true)).join('')}</div><div class="pane">${card(items[n],n)}</div></div>`;
+  }else f('list').innerHTML=items.length?items.map((x,i)=>card(x,i)).join(''):`<p class="muted">${empty}</p>`;
   document.querySelectorAll('[data-draft]').forEach(grow);
 }
 async function load(force){
@@ -110,6 +115,7 @@ document.addEventListener('click',async event=>{
       await load(true);return}
     if(b.dataset.ruleId){const active=b.dataset.active!=='true';b.disabled=true;await api('rules/'+b.dataset.ruleId,{active});b.dataset.active=String(active);b.textContent=active?'停用':'重新啟用';b.closest('.rule').classList.toggle('off',!active);b.disabled=false;return}
     const act=b.dataset.act;if(!act)return;const p=pick(b);if(!p)return;const {d,el}=p;
+    if(act==='toggle'&&WIDE.matches){if(openId!==d.id){openId=d.id;if(lastData)draw(lastData);document.querySelector('.pane')?.scrollTo(0,0)}return}
     if(act==='toggle'){openId=openId===d.id?null:d.id;if(lastData)draw(lastData);if(openId)document.querySelector(`.item[data-id="${CSS.escape(openId)}"]`)?.scrollIntoView({block:'nearest'});return}
     if(act==='ver-more'){const pre=b.previousElementSibling,open=pre.classList.toggle('clamp');b.textContent=open?'展開全文':'收合';return}
     if(act==='version'){const r=d.result||{},vers=[{draft:r.draft},...(r.alternatives||[])],v=vers[Number(b.dataset.v)];if(!v)return;const cur=edits[editKey(d)];if(cur!==undefined&&!vers.some(x=>x.draft===cur)&&!confirm('框裡改過的字會被換掉，確定換版本嗎？'))return;edits[editKey(d)]=v.draft;draw(lastData);return}
