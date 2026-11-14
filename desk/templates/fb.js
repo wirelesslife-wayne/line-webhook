@@ -19,15 +19,23 @@ const partsOf=t=>String(t??'').split('[[下一則]]').map(x=>x.replace(/^\n+|\n+
 const joined=el=>[...el.querySelectorAll('[data-draft]')].map(t=>t.value.replace(/^\n+|\n+$/g,'')).filter((x,n,a)=>x.trim()||a.length===1).join(SPLIT);
 function grow(t){if(!t)return;t.style.height='auto';t.style.height=Math.max(t.scrollHeight+2,t.closest('.parts')&&t.closest('.parts').children.length>1?72:150)+'px'}
 function files(list,removable){return (list||[]).map(m=>`<figure>${m.type==='image'?`<img src="/desk/api/fb/media/${esc(m.id)}" alt="" loading="lazy">`:'<div class="vid">🎬</div>'}<span>${esc(m.name)}</span>${removable?`<button data-act="media-remove" data-media="${esc(m.id)}">移除</button>`:''}</figure>`).join('')}
+// Wayne 11/15: like 待處理 in the LINE back office, so a conversation he still has to check never gets lost.
+const HOLD={ours:'待我們確認',customer:'等客人回'};
+function holdBlock(d){
+  if(!canReview)return d.hold?`<p class="note">${d.hold==='ours'?'📌':'⏳'} ${HOLD[d.hold]}${d.hold_note?'：'+esc(d.hold_note):''}</p>`:'';
+  if(d.hold){const other=d.hold==='ours'?'customer':'ours';
+    return `<div class="note hold"><p>${d.hold==='ours'?'📌':'⏳'} <b>${HOLD[d.hold]}</b>${d.hold_note?'：'+esc(d.hold_note):''}${d.hold_at?` <small class="muted">（${esc(d.hold_at)} 起）</small>`:''}</p><p class="muted">${d.hold==='ours'?'會一直留在「待處理」，處理好了再按下面的按鈕。':'客人回訊息就會自動回到待審核。'}</p><div class="actions"><button data-act="hold" data-hold="">處理好了</button><button data-act="hold" data-hold="${other}">改成${HOLD[other]}</button></div></div>`}
+  return `<div class="actions holdacts"><button class="link" data-act="hold" data-hold="ours">📌 標「待我們確認」</button><button class="link" data-act="hold" data-hold="customer">⏳ 標「等客人回」</button></div>`}
 function card(d,i,closed){
   const todo=TODO.includes(d.status),waiting=d.status==='waiting'||d.status==='drafting',r=d.result||{};
   const draft=edits[editKey(d)]??r.draft??'';
   const lastUser=[...d.messages].reverse().find(m=>m.role!=='assistant')||d.messages[d.messages.length-1]||{};
   let [chip,tone]=CHIP[d.status]||[d.status,'off'];const open=openId===d.id&&!closed;
   if(TODO.includes(d.status)&&d.waited>=24){chip=`未回覆 ${Math.floor(d.waited/24)} 天`;tone='late'}
-  let h=`<article class="item${open?' open':''}${closed&&openId===d.id?' sel':''}" data-id="${esc(d.id)}"><button class="row" data-act="toggle" aria-expanded="${open}"><span class="avatar">${d.avatar?`<img src="/desk/api/fb/avatar?thread_id=${encodeURIComponent(d.id)}&t=${esc(d.avatar)}" alt="" decoding="async">`:USER_ICON}${(BRAND[d.channel]||'').split('<svg class="ic"')[0]}</span><span class="sep"></span><span class="who-said"><b>${esc(d.name)}</b><span>${esc((lastUser.text||'').replace(/\s+/g,' '))}</span></span><span class="when">${esc(when(lastUser.time||''))}</span><span class="state-chip ${tone}">${esc(chip)}</span>${CHEV}</button>`;
+  let h=`<article class="item${open?' open':''}${closed&&openId===d.id?' sel':''}" data-id="${esc(d.id)}"><button class="row" data-act="toggle" aria-expanded="${open}"><span class="avatar">${d.avatar?`<img src="/desk/api/fb/avatar?thread_id=${encodeURIComponent(d.id)}&t=${esc(d.avatar)}" alt="" decoding="async">`:USER_ICON}${(BRAND[d.channel]||'').split('<svg class="ic"')[0]}</span><span class="sep"></span><span class="who-said"><b>${d.hold?(d.hold==='ours'?'📌 ':'⏳ '):''}${esc(d.name)}</b><span>${esc((lastUser.text||'').replace(/\s+/g,' '))}</span></span><span class="when">${esc(when(lastUser.time||''))}</span><span class="state-chip ${tone}">${esc(chip)}</span>${CHEV}</button>`;
   if(!open)return h+'</article>';
   h+=`<div class="detail"><p class="muted">${esc(d.label)} · ${esc(STATUS[d.status]||d.status)}${d.note&&d.note!==STATUS[d.status]?' · '+esc(d.note):''}</p>`;
+  h+=holdBlock(d);
   if(d.context)h+=`<p class="context"><b>所屬貼文：</b>${esc(d.context.slice(0,200))}</p>`;
   h+=`<div class="messages">${d.messages.map(m=>`<div class="message ${m.role==='assistant'?'ours':''}"><small>${m.role==='assistant'?'我們':'客人'} · ${esc(when(m.time))}</small>${esc(m.text)}</div>`).join('')||'<p class="muted">沒有訊息內容</p>'}</div>`;
   if(d.shot)h+=`<details class="shot" ${PHONE.matches?'':'open'}><summary>原始畫面截圖 ${esc(d.shot.replace('-','/'))}</summary><a href="/desk/api/fb/shot?thread_id=${encodeURIComponent(d.id)}" target="_blank" rel="noopener"><img src="/desk/api/fb/shot?thread_id=${encodeURIComponent(d.id)}&t=${encodeURIComponent(d.shot)}" alt="Meta 收件匣這則對話的截圖" loading="lazy"></a></details>`;
@@ -94,6 +102,7 @@ async function fetchRefs(d){
   try{REFS[k]=await api('references?thread_id='+encodeURIComponent(d.id))}catch(e){REFS[k]={canned:[],history:[]}}
   const box=document.querySelector(`.item[data-id="${CSS.escape(d.id)}"] .detail .refs`);if(box)box.outerHTML=refsBlock(d)}
 async function useRef(d,el,x){
+  if(x.kind!=='paste'&&!confirm('用這筆參考資料請 AI 重寫草稿嗎？框裡現在的草稿會被換掉。'))return;  // Grok 11/15: one stray tap rewrote with the wrong reference
   const label=x.kind==='canned'?'制式回覆〈'+x.title+'〉':x.kind==='history'?'真人案例 '+(x.date||''):'你貼上的答案';
   const body=(x.question?'客人問：'+x.question+'\n':'')+(x.kind==='history'?'同事答：':'')+x.text;
   const instruction=('請依照這份參考資料重寫草稿（價格、連結仍以價格表和制式回覆為準；參考資料裡的舊價格、舊活動不要照抄'+(RISKY.test(body)?'；格式化、重置這類會清掉資料的步驟，不要叫客人直接做，要先請客人備份重要影片，客人還想保留影片時優先教他保存的方法':'')+'）：\n【'+label+'】\n'+body).slice(0,2000);
@@ -108,12 +117,12 @@ async function lkSearch(){const q=f('lk-q').value.trim(),box=f('lk-results');if(
   try{lkItems=(await api(`lookup?kind=${lkKind}&q=${encodeURIComponent(q)}`)).items;box.innerHTML=lkItems.length?lkItems.map((x,n)=>refCard(x,n,'panel')).join(''):'<p class="muted">沒找到。換個關鍵字（車款、產品名稱），或改用「貼上答案」。</p>'}
   catch(e){box.innerHTML=`<p class="error">${esc(e.message)}</p>`}}
 function draw(d){
-  lastData=d;items=d.items;f('n-todo').textContent=d.todo||'';f('n-approved').textContent=d.approved||'';const per=d.per_channel||{},all=Object.values(per).reduce((a,b)=>a+b,0);document.querySelectorAll('[data-cnt]').forEach(x=>{const n=x.dataset.cnt?per[x.dataset.cnt]:all;x.textContent=n?` ${n}`:''});
+  lastData=d;items=d.items;f('n-todo').textContent=d.todo||'';f('n-approved').textContent=d.approved||'';f('n-hold').textContent=d.hold||'';const per=d.per_channel||{},all=Object.values(per).reduce((a,b)=>a+b,0);document.querySelectorAll('[data-cnt]').forEach(x=>{const n=x.dataset.cnt?per[x.dataset.cnt]:all;x.textContent=n?` ${n}`:''});
   f('prev').disabled=page===0;f('next').disabled=!d.has_more;
   f('total').textContent=`共 ${d.total||0} 位`;f('alert').hidden=tab!=='todo'||!(d.overdue||d.manual||late);
   f('late').textContent=late?`只看超過 24 小時未回覆的 ${d.total||0} 則・顯示全部 ›`:d.overdue?`⚠ ${d.overdue} 則超過 24 小時未回覆 ›`:'';f('late').setAttribute('aria-pressed',String(late));
   f('manual').textContent=d.manual?`${d.manual} 則需人工回覆`:'';
-  const empty={todo:'目前沒有待審核的訊息。',approved:'目前沒有即將送出的回覆。',done:'還沒有結案的紀錄。'}[tab];
+  const empty={todo:'目前沒有待審核的訊息。',approved:'目前沒有即將送出的回覆。',hold:'目前沒有待處理的對話。',done:'還沒有結案的紀錄。'}[tab];
   if(WIDE.matches&&items.length){
     if(!items.some(x=>x.id===openId))openId=items[0].id;  // two columns always show one conversation
     const n=items.findIndex(x=>x.id===openId);
@@ -139,7 +148,7 @@ document.addEventListener('click',async event=>{
   try{
     if(b.id==='fb-order'){order=order==='old'?'new':'old';b.textContent=order==='old'?'排序：等最久優先 ⇅':'排序：最新優先 ⇅';page=0;await load(true);return}
     if(b.id==='fb-late'){late=!late;page=0;wipe();await load(true);return}
-    if(b.dataset.fbTab!==undefined){tab=b.dataset.fbTab;page=0;late=false;document.querySelectorAll('[data-fb-tab]').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));f('order').hidden=tab==='done';say('');wipe();await load(true);return}
+    if(b.dataset.fbTab!==undefined){tab=b.dataset.fbTab;page=0;late=false;document.querySelectorAll('[data-fb-tab]').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));f('order').hidden=tab==='done'||tab==='hold';say('');wipe();await load(true);return}
     if(b.dataset.fbChannel!==undefined){channel=b.dataset.fbChannel;page=0;document.querySelectorAll('[data-fb-channel]').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));wipe();await load(true);return}
     if(b.id==='fb-prev'||b.id==='fb-next'){page=Math.max(0,page+(b.id==='fb-prev'?-1:1));wipe();await load(true);window.scrollTo(0,0);return}
     if(b.dataset.lk){lkShow(b.dataset.lk);return}
@@ -153,7 +162,7 @@ document.addEventListener('click',async event=>{
       if(f('lk-submit').checked)say('已送交知識審核，AI 也正在依這個答案重寫，約 1 分鐘。');return}
     if(b.id==='fb-confirm-cancel'){f('confirm').close();confirmation=null;return}
     if(b.id==='fb-confirm-ok'&&confirmation){
-      const snap=confirmation;if(snap.is_public&&!f('public-check').checked)return;const lc=document.getElementById('fb-links-check');if(lc&&!lc.checked)return;
+      const snap=confirmation;if(linkGate.pending||linkGate.bad)return;if(snap.is_public&&!f('public-check').checked)return;const lc=document.getElementById('fb-links-check');if(lc&&!lc.checked)return;
       busy=true;b.disabled=true;
       try{const out=await api('send',{thread_id:snap.thread_id,version:snap.version,text:snap.text,retry_key:snap.retry_key,confirmed:true,public_confirmed:snap.is_public,links_confirmed:!!(lc&&lc.checked),media_ids:snap.media_ids});delete edits[snap.key];say(out.live?`給「${snap.name}」的回覆正在即時送出。`:`已核准給「${snap.name}」的回覆，下一輪排程送出。`)}
       catch(e){say(e.message,true)}
@@ -163,6 +172,7 @@ document.addEventListener('click',async event=>{
     const act=b.dataset.act;if(!act)return;const p=pick(b);if(!p)return;const {d,el}=p;
     if(act==='toggle'&&WIDE.matches){if(openId!==d.id){openId=d.id;if(lastData)draw(lastData);document.querySelector('.pane')?.scrollTo(0,0)}return}
     if(act==='toggle'){openId=openId===d.id?null:d.id;if(lastData)draw(lastData);if(openId)document.querySelector(`.item[data-id="${CSS.escape(openId)}"]`)?.scrollIntoView({block:'nearest'});return}
+    if(act==='hold'){busy=true;try{await api('hold',{thread_id:d.id,hold:b.dataset.hold,note:b.dataset.hold?d.hold_note||'':''});say(b.dataset.hold?`已標「${HOLD[b.dataset.hold]}」，會留在「待處理」直到你按處理好了。`:'已從「待處理」移除。')}catch(e){say(e.message,true)}finally{busy=false}await load(true);return}
     if(act==='refs-toggle'){refsShut.has(d.id)?refsShut.delete(d.id):refsShut.add(d.id);const box=el.querySelector('.refs');if(box)box.outerHTML=refsBlock(d);return}
     if(act==='ref-use'&&b.dataset.where==='auto'){const r=REFS[refKey(d)]||{},x=[...(r.canned||[]),...(r.history||[])][Number(b.dataset.n)];if(x){b.disabled=true;await useRef(d,el,x)}return}
     if(act==='lookup'){lookupFor=d;f('lk-q').value=((REFS[refKey(d)]||{}).query||'');f('lk-answer').value='';f('lk-submit').checked=false;f('lookup').showModal();lkShow(f('lk-q').value?'history':'canned');return}
@@ -175,15 +185,17 @@ document.addEventListener('click',async event=>{
       edits[editKey(d)]=ps.map(x=>x.replace(/^\n+|\n+$/g,'')).join(SPLIT);lastCaret={};draw(lastData);return}
     if(act==='send'){
       const text=joined(el);if(partsOf(text).some(x=>!x.trim())){say('有一則是空的，請填內容或按「併回上一則」。',true);return}if(!text.trim()){say('草稿是空的，請先寫內容或按「請 AI 重寫」。',true);return}
-      confirmation=Object.freeze({thread_id:d.id,version:d.version,text,name:d.name,is_public:d.is_public,key:editKey(d),retry_key:crypto.randomUUID(),media_ids:(d.media||[]).map(m=>m.id)});
-      f('links').hidden=true;f('links').innerHTML='';
-      api('links',{text}).then(out=>{if(!confirmation||confirmation.text!==text||!out.links.length)return;const bad=out.links.some(l=>l.state==='broken'),wrong=out.links.some(l=>l.verdict==='mismatch');
+      confirmation=Object.freeze({thread_id:d.id,version:d.version,text,name:d.name,is_public:d.is_public,live:!!d.live,key:editKey(d),retry_key:crypto.randomUUID(),media_ids:(d.media||[]).map(m=>m.id)});
+      f('links').hidden=true;f('links').innerHTML='';linkGate={pending:true,bad:false};
+      // Grok 11/15: the confirm button worked before the link check came back, so a wrong link could slip through
+      api('links',{text}).then(out=>{if(!confirmation||confirmation.text!==text)return;linkGate.pending=false;if(!out.links.length){gate();return}const bad=out.links.some(l=>l.state==='broken'),wrong=out.links.some(l=>l.verdict==='mismatch');
         f('links').innerHTML='<b>連結檢查：</b>'+out.links.map(l=>`<div class="${l.verdict==='mismatch'||l.state==='broken'?'error':''}">${l.state==='broken'?'❌ 打不開':l.verdict==='mismatch'?'❌ 不相符':l.state==='ok'?'✅':'⚠️ 沒查到'} ${l.label?'「'+esc(l.label)+'」':''} ${esc(l.url)}<br><small>實際開到：${esc(l.title||l.target||'（無法確認）')}${l.verdict==='mismatch'?'（這是'+esc(l.goes.join('、'))+'，前面寫的是'+esc(l.says.join('、'))+'）':''}</small></div>`).join('');
-        f('links').hidden=false;if(bad){f('confirm-ok').disabled=true;f('links').insertAdjacentHTML('beforeend','<p class="error">有連結打不開，請先返回改掉。</p>')}
-        else if(wrong){f('confirm-ok').disabled=true;f('links').insertAdjacentHTML('beforeend','<p class="error">有連結開到別的產品，請按「返回」改掉。</p><label class="check"><input id="fb-links-check" type="checkbox">連結我核對過了，沒有貼錯</label>');
-          document.getElementById('fb-links-check').addEventListener('change',e=>{f('confirm-ok').disabled=!e.target.checked||(confirmation&&confirmation.is_public&&!f('public-check').checked)})}}).catch(()=>{});
+        f('links').hidden=false;if(bad){linkGate.bad=true;f('links').insertAdjacentHTML('beforeend','<p class="error">有連結打不開，請先返回改掉。</p>')}
+        else if(wrong)f('links').insertAdjacentHTML('beforeend','<p class="error">有連結開到別的產品，請按「返回」改掉。</p><label class="check"><input id="fb-links-check" type="checkbox">連結我核對過了，沒有貼錯</label>');
+        gate()}).catch(()=>{if(!confirmation||confirmation.text!==text)return;linkGate.pending=false;
+        f('links').innerHTML='<p class="error">⚠️ 連結檢查沒跑完（網路或伺服器問題），請自己點開連結確認。</p><label class="check"><input id="fb-links-check" type="checkbox">連結我自己點開確認過了</label>';f('links').hidden=false;gate()});
       f('refs-used').hidden=!REFUSED[d.id];f('refs-used').textContent=REFUSED[d.id]?`本稿參考：${REFUSED[d.id]}（只有你看得到，不會發給客人）`:'';f('attach-note').hidden=!(d.media||[]).length;f('attach-note').textContent=(d.media||[]).length?`另附 ${d.media.length} 個檔案：${d.media.map(m=>m.name).join('、')}`:'';
-      f('recipient').textContent=`回覆「${d.name}」（${d.label}）`;f('when').textContent=d.live?'按下確認後，會用 Meta 官方 API 立刻送出。':'按下確認後，下一輪排程會照這段文字送出（最慢約 60 分鐘），送出前都可以在「即將送出」取消。';f('confirm-ok').textContent=d.live?'確認發送':'確認核准';const ps=partsOf(text);f('preview').textContent=ps.length>1?ps.map((x,n)=>`【第 ${n+1} 則】\n${x}`).join('\n\n'):text;f('public-warning').hidden=f('public-label').hidden=!d.is_public;f('public-check').checked=false;f('confirm-ok').disabled=d.is_public;f('confirm').showModal();return}
+      f('recipient').textContent=`回覆「${d.name}」（${d.label}）`;f('when').textContent=d.live?'按下確認後，會用 Meta 官方 API 立刻送出。':'按下確認後，下一輪排程會照這段文字送出（最慢約 60 分鐘），送出前都可以在「即將送出」取消。';f('confirm-ok').textContent=d.live?'確認發送':'確認核准';const ps=partsOf(text);f('preview').textContent=ps.length>1?ps.map((x,n)=>`【第 ${n+1} 則】\n${x}`).join('\n\n'):text;f('public-warning').hidden=f('public-label').hidden=!d.is_public;f('public-check').checked=false;gate();f('confirm').showModal();return}
     if(act==='lib-open'){const box=el.querySelector('.libgrid');box.hidden=!box.hidden;b.textContent=box.hidden?'從常用圖片挑':'收起常用圖片';if(!box.hidden&&!box.innerHTML){box.innerHTML='<p class="muted">讀取中…</p>';try{await libraryGrid(box)}catch(e){box.innerHTML='';say(e.message,true)}}return}
     if(act==='lib-attach'){busy=true;b.disabled=true;try{const out=await api('media/library',{thread_id:d.id,library_id:b.dataset.lib});say(`已附上「${out.media.name}」，會跟回覆一起送出。`)}catch(e){say(e.message,true);b.disabled=false}finally{busy=false}const box=el.querySelector('.libgrid');if(box)box.hidden=true;await load(true);return}
     if(act==='media-remove'){busy=true;b.disabled=true;try{await api('media/'+b.dataset.media+'/remove',{thread_id:d.id});say('已移除附件。')}catch(e){say(e.message,true)}finally{busy=false}await load(true);return}
@@ -207,6 +219,11 @@ document.addEventListener('click',async event=>{
   }catch(e){say(e.message,true);b.disabled=false}
 });
 f('lk-form').addEventListener('submit',e=>{e.preventDefault();void lkSearch()});
-f('public-check').addEventListener('change',()=>{const lc=document.getElementById('fb-links-check');f('confirm-ok').disabled=!f('public-check').checked||!!(lc&&!lc.checked)});
+let linkGate={pending:false,bad:false};
+function gate(){const ok=f('confirm-ok'),lc=document.getElementById('fb-links-check');
+  ok.disabled=linkGate.pending||linkGate.bad||!!(lc&&!lc.checked)||!!(confirmation&&confirmation.is_public&&!f('public-check').checked);
+  ok.textContent=linkGate.pending?'連結檢查中…':confirmation&&confirmation.live?'確認發送':'確認核准'}
+f('public-check').addEventListener('change',gate);
+document.addEventListener('change',e=>{if(e.target.id==='fb-links-check')gate()});
 f('confirm').addEventListener('cancel',e=>{if(busy)e.preventDefault();else confirmation=null});
 void load(true);setInterval(()=>load(false),8000);

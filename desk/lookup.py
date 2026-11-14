@@ -4,6 +4,7 @@ import math
 import re
 import time
 from collections import Counter
+from .catalog import kinds
 from .worker import local_time
 
 _QA = {}
@@ -89,16 +90,39 @@ def canned_rows(store):
     return out
 
 
-def search(store, query, kind, k):
+# Saved replies written for one car brand or model (Grok 11/15: a Tesla sunshade quote showed on 15 of 45
+# drafts because 「電動」 matched 電動尾門): only when the customer names that car.
+CAR_ONLY = [(r'tesla|特斯拉', r'tesla|特斯拉|model ?[3ysx]'), (r'carnival|嘉年華', r'carnival|嘉年華'),
+            (r'j ?space', r'j ?space'), (r'tucson', r'tucson'), (r'luxgen|納智捷', r'luxgen|納智捷|[mnu]7'),
+            (r'hszs|\bmg\b', r'\bmg\b|\bhs\b|\bzs\b'), (r'focus|kuga', r'focus|kuga'), (r'cr-?v ?6', r'cr-?v'),
+            (r'e60|bmw', r'bmw|寶馬|e60')]
+
+
+def same_product(about, text):
+    """A reference about another product is never shown (Grok 11/15: a 418 warranty question got the
+    power-tailgate warranty answer). Nothing is dropped when either side names no product."""
+    want, have = kinds(about), kinds(text)
+    return not want or not have or bool(want & have)
+
+
+def fits_car(about, title):
+    return all(re.search(car, about, re.I) for only, car in CAR_ONLY if re.search(only, title, re.I))
+
+
+def search(store, query, kind, k, about=None):
+    """about: everything known about what the customer wants (their words and the ad), used for the
+    product and car checks; the typed query alone in the 查資料 panel."""
     query = (query or '').strip()[:300]
     if not query:
         return []
+    about = query if about is None else about
     if kind == 'canned':
         rows = canned_rows(store)
-        order = Index([c['title'] + ' ' + c['text'][:300] for c in rows]).top(query)
+        order = [i for i in Index([c['title'] + ' ' + c['text'][:300] for c in rows]).top(query)
+                 if fits_car(about, rows[i]['title']) and same_product(about, rows[i]['title'])]
         return [dict(kind='canned', title=c['title'], text=c['text'][:1500]) for c in _pick(rows, order, k, lambda c: c['text'])]
     rows, index = history_rows(store)
-    order = index.top(query)
+    order = [i for i in index.top(query) if same_product(about, rows[i]['question'] + ' ' + rows[i]['answer'][:200])]
     return [dict(kind='history', title='同事回答', question=r['question'][:300], text=r['answer'][:1500], date=local_time(r['asked_at'])[:10].replace('-', '/'))
             for r in _pick(rows, order, k, lambda r: r['answer'])]
 
@@ -108,5 +132,6 @@ def for_thread(store, messages, context=''):
     Messages like 「好 謝謝」 are skipped so the last real question is used."""
     said = [m['text'] for m in messages if m['role'] == 'user' and len(grams(m.get('text'))) >= 3][-2:]
     query = ' '.join(said)
-    canned = search(store, query + ' ' + (context or '')[:100], 'canned', 2)
-    return dict(query=said[-1][:60] if said else '', canned=canned, history=search(store, query, 'history', 2))
+    about = query + ' ' + (context or '')[:300]
+    canned = search(store, query + ' ' + (context or '')[:100], 'canned', 2, about)
+    return dict(query=said[-1][:60] if said else '', canned=canned, history=search(store, query, 'history', 2, about))

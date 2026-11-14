@@ -21,10 +21,15 @@ async function review(form,action){
  try{await api(`knowledge/${form.dataset.id}/review`,payload);await load();el('feedback').textContent={approve:'已核准，之後新擬稿會使用。',reject:'已退回，不會提供給 AI。',withdraw:'已撤回，之後新擬稿不再使用。'}[action]}
  catch(e){el('feedback').textContent=e.message;form.querySelectorAll('button').forEach(b=>b.disabled=false)}finally{busy=false}
 }
-document.addEventListener('submit',e=>{if(e.target.matches('.knowledge-item')){e.preventDefault();void review(e.target,'approve')}});
+// Grok 11/15: Enter in a one-line box submitted the form, which approved the item. Only the button approves now,
+// and every review action asks first.
+const ASK={approve:'核准這條知識？之後新擬稿會使用。',reject:'退回這條知識？',withdraw:'撤回核准？之後新擬稿不再使用。'};
+document.addEventListener('submit',e=>{if(!e.target.matches('.knowledge-item'))return;e.preventDefault();
+  if(e.submitter&&e.submitter.type==='submit'&&confirm(ASK.approve))void review(e.target,'approve')});
+document.addEventListener('keydown',e=>{if(e.key==='Enter'&&e.target.matches('.knowledge-item input'))e.preventDefault()});
 document.addEventListener('click',e=>{const b=e.target.closest('button');if(!b||busy)return;
  if(b.dataset.status){status=b.dataset.status;page=0;document.querySelectorAll('[data-status]').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));void load()}
  else if(b.id==='prev'||b.id==='next'){page=Math.max(0,page+(b.id==='prev'?-1:1));void load()}
- else if(b.dataset.action)void review(b.closest('form'),b.dataset.action);
+ else if(b.dataset.action&&confirm(ASK[b.dataset.action]||'確定嗎？'))void review(b.closest('form'),b.dataset.action);
 });
 load();

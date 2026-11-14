@@ -51,6 +51,44 @@ BANNED = ['依車款年份配備', '現場確認為準', '依現場為準', '這
           # Wayne 11/10：這些保守句他每次都刪掉
           '依原廠認定', '原廠認定', '仍需確認', '仍須確認', '實際安裝', '實際仍', '不一定能', '無法保證', '不保證']
 
+# Wayne 11/15 (Grok found approved drafts that got these wrong; ChatGPT and Gemini reviewed the plan).
+# They outrank the price table, saved replies, past answers and examples.
+FACTS = ('\n\nWayne 11/15 確認的事實（最高優先，優先於價格表、制式回覆、歷史問答、核准範例和上面任何規則）：\n'
+         '- 暫停車款：KICKS、Sienta 的電動尾門目前不提供販售和安裝。客人問這兩款的尾門，直接告知並致歉，不報價、不列方案；這兩款的其他產品照常回答。\n'
+         '- 一般四門轎車通常沒有可以裝的電動尾門：不要說「轎車也可以」。先請客人提供車款和年份，說明確認後回覆；staff_note 寫「等客人回車款年份」。\n'
+         '- 360 環景價格看條件：客人買我們的安卓機、同時加裝環景 → 環景 $12,000；客人已經有自己的（外面裝的）安卓機或影音主機、只加環景 → $22,800，'
+         '並請客人提供主機品牌型號，確認能不能直接接；保留原廠螢幕 → $25,000–28,000（依車款）。看不出是哪一種就兩種都列並寫清楚條件。'
+         '環景介紹不要用 https://reurl.cc/epxjQR（那是週邊配件頁）。\n'
+         '- 付款：客人問到分期或刷卡才回答。板橋直營門市可以刷卡分期 3／6／12 期 0 利率，也可以辦無卡分期（另收 10% 手續費）。'
+         '外縣市經銷商沒有刷卡、也沒有刷卡分期，只能先線上辦無卡分期（另收 10% 手續費），申請通過後才能安排施工。'
+         '還不知道客人在哪個縣市就先問。不要寫無卡分期 0 利率或不收手續費，也不要主動提到府施工。\n'
+         '- 營業日：11/28（六）投票日門市公休（11 月營業月曆漏標）。客人問投票日、選舉、颱風、國定假日、連假有沒有營業，不要只照月曆回答，'
+         '寫「跟門市確認後馬上回覆您」，staff_note 寫「要確認營業日」。\n'
+         '- 訂金、匯款：客人明確說已經匯款、轉帳，或傳了轉帳截圖、帳號末五碼時，草稿第一句先回「收到您的轉帳通知，謝謝您」，'
+         '不能說已入帳，to_human 設 true，staff_note 寫「請對帳」。只是問怎麼付款不算。\n'
+         '- 客訴（客人抱怨、說多次沒處理好、要求退費）：只寫致歉和下一步，不辯解、不報價，to_human 設 true。\n'
+         '- WRM-418 四錄電子後視鏡施工約 4～6 小時。')
+
+SPECIAL_DAY = re.compile(r'投票|選舉|颱風|國定假日|連假')
+
+
+def fact_flags(draft, convo):
+    """Code checks for the 11/15 facts, so a slip shows on the review page even when the AI ignores them."""
+    flags = []
+    if re.search(r'kicks|sienta|シエンタ', convo, re.I) and re.search(r'尾門', convo) and re.search(r'\$?\d{1,2},?\d{3}', draft) \
+            and re.search(r'尾門', draft) and not re.search(r'不提供|暫停|沒有提供', draft):
+        flags.append('KICKS／Sienta 的電動尾門暫不提供，草稿卻有報價，請確認')
+    if 'reurl.cc/epxjQR' in draft:
+        flags.append('reurl.cc/epxjQR 是週邊配件頁，不是環景介紹')
+    if re.search(r'無卡分期[^。\n]{0,20}(0 ?利率|不收|免手續費|免收)', draft):
+        flags.append('無卡分期另收 10% 手續費，草稿寫成不收或 0 利率')
+    if SPECIAL_DAY.search(convo) and re.search(r'有營業|正常營業|照常營業', draft):
+        flags.append('客人問的是投票日／假日，不能只照月曆說有營業，請先跟門市確認')
+    if re.search(r'轎車', convo) and re.search(r'轎車[^。\n]{0,12}(也可以|也有可升級|可以升級|可以裝)', draft):
+        flags.append('一般轎車通常沒有可裝的電動尾門，請先問車款年份')
+    return flags
+
+
 def is_builtin(text):
     t = (text or '').strip()
     return t in LINE_BUILTIN or bool(re.match(r'^A[1-4]_\d', t)) or t in ('[sticker]',)
@@ -231,6 +269,7 @@ class Engine:
                   + ('官網安裝實例只能用參考資料 install_cases 裡同車款、實裝產品有客人問的產品的那一頁。' if SITE_CASES else
                      '官網的安裝實例頁（網址有 install-cases）先一律不要附：頁面還沒整理好，客人要點好幾層才看得到。')
                   + '產品介紹、適用車型這類不分車款的連結照常附。')
+        rules += FACTS
         comment = channel in ('fb_comment','ig_comment')
         if channel == 'line_message':
             rules += ('\n\n本次是 LINE 官方帳號的私訊（客人在 LINE 加了我們好友）。我方訊息標「自動回應」「自動（夜間AI）」的是系統自動送的，不算真人回過；'
@@ -243,9 +282,8 @@ class Engine:
                       '版本之間只差在內容詳略與強調的重點，不改結構（ChatGPT、Gemini、Claude 11/12 審稿共識）。報價、介紹產品時固定這三種：'
                       '①「完整功能」（推薦，放 draft）：完工價＋全部功能＋選配＋保固；'
                       '②「精簡重點」：條列只留完工價、選配、保固；'
-                      '③「分期到府」（Wayne 11/13 選；三家 AI 都建議第 3 版要處理付款或施工方式這類成交阻力）：條列同②（完工價、選配、保固），'
-                      '再加兩行「👉 可刷卡 0 利率分期 3／6／12 期，無卡分期只要身分證＋手機」「👉 苗栗以北可安排師傅到府施工（另收車馬費）」；'
-                      '已知客人在苗栗以南就不寫到府那行；不要報車馬費金額，也不要寫分期每月多少錢。'
+                      '③「貼心說明」：條列同②（完工價、選配、保固），再多一句最能讓客人放心的說明（例如無損安裝、原車功能保留）。'
+                      '任何版本都不要主動寫分期或到府施工（Wayne 11/15：外縣市經銷商沒有刷卡分期，固定寫會答錯；客人問到才照下面的付款規則回）。'
                       '還不知道客人在哪時，任何版本都不要提「新北」「板橋有展示車」，邀請只寫固定句「歡迎先到門市體驗參觀，滿意再安裝就可以囉！」'
                       '（Wayne 11/12：客人吃這套、沒壓力；人在屏東叫他來新北，他會直接說謝謝再聯絡）。'
                       '其他情境（售後、預約、問地址）給 2 個版本就好，例如一個直接回答、一個多一句貼心說明；不要為了湊版本拿掉必要資訊或編資料沒有的事。')
@@ -294,6 +332,7 @@ class Engine:
             v['draft'], removed = self.strip_other_cars(v['draft'], ex)
             out['flags'] += [tag + x for x in removed]
             out['flags'] += [tag + x for x in check(v['draft'], context)]
+            out['flags'] += [tag + x for x in fact_flags(v['draft'], convo + ' ' + post_context)]
             for url in re.findall(r'https?://[^\s<>"「」（）()，。、]+', v['draft']):
                 if url.rstrip('.,;:!?') not in known:
                     out['flags'].append(tag + '草稿用了資料裡沒有的連結，請確認：' + url)

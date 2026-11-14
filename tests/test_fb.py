@@ -51,7 +51,7 @@ def test_push_dedupes_and_counts(db):
     assert fb.push(db, [thread()]) == dict(threads=1, new_customer_messages=0, auto_closed=0)
     c = fb.conversation(db, tid())
     assert (c['status'], c['version']) == ('waiting', 1)
-    assert fb.status(db) == dict(waiting_draft=1, awaiting_review=0, draft_failed=0, approved_unsent=0, send_failed=0)
+    assert fb.status(db) == dict(waiting_draft=1, awaiting_review=0, draft_failed=0, approved_unsent=0, send_failed=0, hold_ours=[])
     ready(db)
     assert fb.status(db)['awaiting_review'] == 1
 

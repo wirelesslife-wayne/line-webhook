@@ -3,6 +3,7 @@ Send API) does the reading and sending; this module only keeps the state."""
 from datetime import datetime, timezone, timedelta
 import hashlib
 import json
+import re
 import threading
 import time
 import uuid
@@ -136,6 +137,7 @@ def push(store, payload):
             if users:
                 state, draft, drafted, note = 'waiting', None, None, ''
                 cur.execute("UPDATE desk_fb_threads SET pending_instruction='',pending_original='',pending_rule=NULL WHERE id=%s",(tid,))
+                cur.execute("UPDATE desk_fb_threads SET hold='',hold_note='',hold_at=NULL WHERE id=%s AND hold='customer'",(tid,))
                 cur.execute("""UPDATE desk_fb_attempts SET status='expired',reason='客人有新訊息，請重新擬稿',updated_at=NOW()
                   WHERE thread_id=%s AND status='approved'""",(tid,))
             if not c['context'] and row['context'] and state in ('ready','error','blocked'):
@@ -197,7 +199,12 @@ def status(store):
                 awaiting_review=counts.get('ready',0),
                 draft_failed=sum(counts.get(s,0) for s in ('blocked','error')),
                 approved_unsent=counts.get('approved',0),
-                send_failed=store.one("SELECT COUNT(*) AS n FROM desk_fb_threads WHERE note LIKE '送出失敗：%%'")['n'])
+                send_failed=store.one("SELECT COUNT(*) AS n FROM desk_fb_threads WHERE note LIKE '送出失敗：%%'")['n'],
+                # Wayne 11/15: what we still have to check, for the once-a-day reminder (oldest first)
+                hold_ours=[dict(name=r['name'],channel=LABELS.get(r['channel'],r['channel']),note=r['hold_note'],
+                                days=int(r['days'] or 0)) for r in store.all(
+                    """SELECT name,channel,hold_note,EXTRACT(DAY FROM NOW()-hold_at) AS days FROM desk_fb_threads
+                      WHERE hold='ours' ORDER BY hold_at LIMIT 20""")])
 
 
 def awaiting(store, line=False):
@@ -359,6 +366,31 @@ def record_result(store, attempt_id, outcome, reason='', via='browser'):
     return dict(ok=True,status=outcome)
 
 
+HOLDS = ('ours','customer')
+
+
+def hold_from(result):
+    """The AI marks what needs us (to_human, 請對帳, 要確認營業日) or the customer (等客人回車款年份)."""
+    note = str(result.get('staff_note') or '')
+    if result.get('to_human') is True or re.search(r'對帳|確認營業|要確認|請確認|待公司確認', note):
+        return 'ours'
+    return 'customer' if '等客人' in note else ''
+
+
+def set_hold(store, staff, data):
+    """Wayne marks or clears 待處理 by hand: 'ours', 'customer' or '' (處理好了)."""
+    from .knowledge import require_reviewer
+    require_reviewer(staff)
+    if not isinstance(data,dict) or data.get('hold') not in HOLDS+('',) or not isinstance(data.get('note',''),str):
+        raise ActionError('操作格式不正確',400)
+    with store.cursor() as cur:
+        cur.execute("""UPDATE desk_fb_threads SET hold=%s,hold_note=%s,hold_at=CASE WHEN %s='' THEN NULL ELSE NOW() END
+          WHERE id=%s RETURNING id""",(data['hold'],data.get('note','')[:200],data['hold'],str(data.get('thread_id',''))))
+        if not cur.fetchone():
+            raise ActionError('找不到對話',404)
+    return dict(ok=True)
+
+
 def draft_thread(store, c, engine_factory=None, instruction='', original='', rule_id=None):
     from .engine import Engine, ProviderPending
     from .provider import BudgetExceeded, Unavailable, month_key
@@ -380,6 +412,10 @@ def draft_thread(store, c, engine_factory=None, instruction='', original='', rul
           WHERE id=%s AND version=%s AND status='drafting' AND draft_token=%s RETURNING id""",
           (state,Json(result),c['version'],c['id'],c['version'],c['draft_token']))
         applied = bool(cur.fetchone())
+        kind = hold_from(result) if applied and state=='ready' else ''
+        if kind:
+            cur.execute("UPDATE desk_fb_threads SET hold=%s,hold_note=%s,hold_at=NOW() WHERE id=%s AND hold=''",
+                        (kind,str(result.get('staff_note') or '')[:200],c['id']))
         if rule_id and applied and state=='ready':
             cur.execute('UPDATE desk_edit_rules SET revised_draft=%s WHERE id=%s',(result['draft'],rule_id))
     return dict(ok=True,applied=applied,status=state,remembered=bool(rule_id))
