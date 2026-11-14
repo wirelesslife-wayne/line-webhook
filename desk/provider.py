@@ -158,7 +158,7 @@ class OpenAIProvider:
             except Exception:
                 # Keep reserved funds if billable usage is unknown; expose no body.
                 if refused:
-                    raise Unavailable('AI 服務拒絕了這次請求（常見原因：OpenAI 帳戶餘額用完），恢復後會自動重新擬稿') from None
+                    raise Unavailable('AI 服務拒絕了這次請求（可能是金鑰失效或餘額不足），恢復後會自動重新擬稿') from None
                 raise ProviderPending('AI 擬稿失敗，用量待核對，請手動回覆') from None
             try:
                 if body.get('status') != 'completed':
