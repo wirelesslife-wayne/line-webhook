@@ -49,11 +49,10 @@ def history_rows(store):
     # ~16k rows; read and index at most every 10 minutes instead of on every opened conversation
     hit = _QA.get('rows')
     if hit and time.monotonic() - hit[0] < 600:
-        return hit[1]
+        return hit[1], hit[2]
     rows = store.all('SELECT source_id,asked_at,question,answer FROM desk_qa WHERE length(answer) >= 8 ORDER BY asked_at DESC')
-    _QA['rows'] = (time.monotonic(), rows)
-    _QA['index'] = Index([r['question'] for r in rows])
-    return rows
+    hit = _QA['rows'] = (time.monotonic(), rows, Index([r['question'] for r in rows]))  # one assignment: other requests never see rows without their index
+    return rows, hit[2]
 
 
 AUTO_REPLY = re.compile(r'請先留言|請您先留言|請點選您感興趣|客服回覆時間|感謝您預約我們的服務|工作時間是週一')
@@ -88,8 +87,8 @@ def search(store, query, kind, k):
         rows = canned_rows(store)
         order = Index([c['title'] + ' ' + c['text'][:300] for c in rows]).top(query)
         return [dict(kind='canned', title=c['title'], text=c['text'][:1500]) for c in _pick(rows, order, k, lambda c: c['text'])]
-    rows = history_rows(store)
-    order = _QA['index'].top(query)
+    rows, index = history_rows(store)
+    order = index.top(query)
     return [dict(kind='history', title='同事回答', question=r['question'][:300], text=r['answer'][:1500], date=local_time(r['asked_at'])[:10].replace('-', '/'))
             for r in _pick(rows, order, k, lambda r: r['answer'])]
 
