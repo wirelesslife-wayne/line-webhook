@@ -31,7 +31,7 @@ def test_videos_for_this_car_with_the_asked_product_first(db):
     seed(db)
     assert db.one('SELECT COUNT(*) AS n FROM desk_videos')['n'] == 3  # bad id and empty title are not stored
     got = videos.for_car(db, dict(model='Corolla Cross', products=['電動尾門']), NAMES)
-    assert got[0] == dict(標題='TOYOTA Corolla cross【電動尾門】', 網址='https://reurl.test/cc')  # the short link Wayne already uses
+    assert got[0] == dict(標題='TOYOTA Corolla cross【電動尾門】', 網址='https://youtu.be/' + CC)  # never the short link: adverts on phones
     assert [g['網址'] for g in got[1:]] == ['https://youtu.be/Cj4SqlUwd8M']
     assert videos.for_car(db, dict(model='COROLLA', products=['電動尾門']), NAMES) == []  # an Altis is not a Corolla Cross
     assert videos.for_car(db, dict(model='CR-V'), NAMES) == [dict(標題='《電吸尾門+腳踢尾門🆙》本田-CRV5', 網址='https://youtu.be/' + CRV)]
@@ -58,13 +58,26 @@ def draft_for(db, model, text):
 def test_draft_gets_this_cars_videos_and_never_a_website_case_page(db):
     """Wayne 11/13: a customer asked about a 2024 CC tailgate; the draft had no video, earlier ones linked the case page."""
     seed(db)
-    text = ('您好～可以升級電動尾門。\n\n👉 完工價 $18,000\n產品介紹：https://reurl.cc/yW3vV6\n安裝影片：https://reurl.test/cc\n'
+    text = ('您好～可以升級電動尾門。\n\n👉 完工價 $18,000\n產品介紹：https://reurl.cc/yW3vV6\n安裝影片：https://youtu.be/' + CC + '\n'
             '安裝實例：https://site.test/toyota-corolla-cross-install-cases/\n安裝實例：\nhttps://carandroid.com.tw/x-install-cases/\n\n歡迎先到門市體驗參觀！')
     out, (system, user) = draft_for(db, 'COROLLA CROSS', text)
-    assert 'https://reurl.test/cc' in out['draft'] and 'install-cases' not in out['draft'] and '安裝實例' not in out['draft']
-    assert not [f for f in out['flags'] if 'reurl.test/cc' in f]  # a link the desk offered is not "unknown"
-    assert '"videos"' in user['content'] and 'https://reurl.test/cc' in user['content'] and 'install_cases' not in user['content']
+    assert 'https://youtu.be/' + CC in out['draft'] and 'install-cases' not in out['draft'] and '安裝實例' not in out['draft']
+    assert not [f for f in out['flags'] if CC in f]  # a link the desk offered is not "unknown"
+    assert '"videos"' in user['content'] and 'https://youtu.be/' + CC in user['content'] and 'install_cases' not in user['content']
     assert '安裝影片：網址' in system['content'] and '先一律不要附' in system['content']
     out, (_, user) = draft_for(db, 'RAV4', text)  # another car's video is still taken out
-    assert 'reurl.test/cc' not in out['draft'] and 'reurl.test/cc' not in user['content']
+    assert CC not in out['draft'] and CC not in user['content']
     assert any('COROLLA CROSS' in f for f in out['flags'])
+
+
+def test_short_links_to_our_videos_become_direct_youtube_links(db):
+    """Wayne 11/14: on a phone, reurl.cc shows a full-screen advert before a YouTube video."""
+    seed(db)
+    db.execute("INSERT INTO desk_links(url,target,title,state) VALUES('https://reurl.cc/site01','https://carandroid.com.tw/x/','電動尾門推薦','ok')")
+    db.execute("INSERT INTO desk_links(url,target,title,state) VALUES('https://reurl.cc/vid001',%s,'YouTube：TOYOTA Corolla cross【電動尾門】','ok')",
+               (f'https://youtube.com/shorts/{CC}?si=y',))
+    text, swapped = videos.direct(db, '產品介紹：https://reurl.cc/site01\n安裝影片：https://reurl.cc/vid001\n影片：https://reurl.cc/vid0012')
+    assert text == f'產品介紹：https://reurl.cc/site01\n安裝影片：https://youtu.be/{CC}\n影片：https://reurl.cc/vid0012' and swapped == ['https://youtu.be/' + CC]
+    out, _ = draft_for(db, 'COROLLA CROSS', '您好～\n產品介紹：https://reurl.cc/site01\n安裝影片：https://reurl.cc/vid001')
+    assert f'安裝影片：https://youtu.be/{CC}' in out['draft'] and 'vid001' not in out['draft']
+    assert not [f for f in out['flags'] if 'youtu.be' in f]

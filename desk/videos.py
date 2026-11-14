@@ -79,12 +79,6 @@ def for_car(store, ex, names):
         return []
     names = list(set(names) | {model})
     wanted = [squash(p) for p in (ex.get('products') or []) if isinstance(p, str) and len(squash(p)) >= 2]
-    # The short link Wayne already uses for a video, when there is one: the reply then looks like his own.
-    short = {}
-    for r in store.all("SELECT url,target FROM desk_links WHERE state='ok' AND target ~ 'youtu' ORDER BY checked_at"):
-        m = re.search(r'(?:youtu\.be/|shorts/|v=)(' + VIDEO_ID.pattern + ')', r['target'])
-        if m:
-            short[m.group(1)] = r['url']
     rows = [r for r in store.all('SELECT id,title FROM desk_videos ORDER BY added_at DESC,id')
             if any(squash(n) == squash(model) for n in cars_in(r['title'], names))]  # exact: a Corolla is not a Corolla Cross
 
@@ -92,7 +86,7 @@ def for_car(store, ex, names):
         t = squash(r['title'])
         return any(w in t or (w.endswith('尾門') and '尾門' in t) for w in wanted)
     rows.sort(key=lambda r: not about(r))
-    return [dict(標題=r['title'], 網址=short.get(r['id']) or link(r['id'])) for r in rows[:6]]
+    return [dict(標題=r['title'], 網址=link(r['id'])) for r in rows[:6]]  # never a short link: see direct()
 
 
 MAKES = {'TOYOTA': '豐田|TOYOTA', 'LEXUS': '凌志|雷克薩斯|LEXUS', 'HONDA': '本田|HONDA', 'NISSAN': '日產|NISSAN', 'MAZDA': '馬自達|MAZDA',
@@ -109,6 +103,23 @@ def other_make(title, brand):
         return ''
     found = [make for make, pattern in MAKES.items() if re.search(pattern, title or '', re.I)]
     return '' if not found or mine in found else found[0]
+
+
+def direct(store, text):
+    """Short links that lead to a YouTube video become the video's own youtu.be link (Wayne 11/14: on a phone,
+    reurl.cc shows a full-screen advert before a YouTube video; links to our website are not affected)."""
+    from .links import URL
+    found = {}
+    for url in dict.fromkeys(u.rstrip('.,;:!?') for u in URL.findall(text or '')):
+        if not re.match(r'https?://(www\.)?reurl\.cc/', url):
+            continue
+        row = store.one("SELECT target FROM desk_links WHERE url=%s AND state='ok'", (url,))
+        m = row and re.search(r'(?:youtu\.be/|shorts/|[?&]v=)(' + VIDEO_ID.pattern + ')', row['target'] or '')
+        if m:
+            found[url] = link(m.group(1))
+    for short, video in found.items():
+        text = re.sub(re.escape(short) + r'(?![A-Za-z0-9])', video, text)
+    return text, list(found.values())
 
 
 def titles(store):

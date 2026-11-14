@@ -288,6 +288,9 @@ class Engine:
                 v['draft'] = '\n\n'.join(p for p in pieces if p.strip())  # comments and LINE go out as one message
             else:
                 v['draft'] = '\n[[下一則]]\n'.join(pieces)
+            from .videos import direct
+            v['draft'], swapped = direct(self.store, v['draft'])  # no advert page before our videos on a phone
+            known += ' ' + ' '.join(swapped)
             v['draft'], removed = self.strip_other_cars(v['draft'], ex)
             out['flags'] += [tag + x for x in removed]
             out['flags'] += [tag + x for x in check(v['draft'], context)]
