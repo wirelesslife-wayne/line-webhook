@@ -1,17 +1,18 @@
 const el=id=>document.getElementById(id);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let status='pending',page=0,version=0,busy=false;
+const EMPTY={pending:'✓ 目前沒有待審核的知識。',approved:'還沒有核准過的知識。',rejected:'沒有退回的知識。',withdrawn:'沒有撤回的知識。'};
 async function api(url,body){
  const r=await fetch('/desk/api/'+url,{method:body?'POST':'GET',headers:body?{'Content-Type':'application/json','X-CSRF-Token':csrf}:{},body:body?JSON.stringify(body):undefined});
  const d=await r.json();if(r.status===401){location.href='/desk/login';throw Error('請重新登入')}
  if(!r.ok)throw Error(d.error||'讀取失敗，請稍後再試');return d;
 }
 async function load(){
- const v=++version;
+ const v=++version;el('knowledge-list').innerHTML='<p class="card muted empty">讀取中…</p>';
  try{const d=await api(`knowledge?status=${status}&page=${page}`);if(v!==version)return;
  el('prev').disabled=page===0;el('next').disabled=!d.has_more;
- el('knowledge-list').innerHTML=d.items.map(r=>`<form class="card knowledge-item" data-id="${r.id}" data-version="${r.version}"><h2>${esc(r.summary)}</h2><p class="muted">${esc(r.submitter)} 提交 · ${esc(r.created_at)}${r.reviewer?`<br>${esc(r.reviewer)} 審核 · ${esc(r.reviewed_at)}`:''}</p>${[['question','客人問的',5000],['answer','我們的回答',5000],['summary','一句話重點',300],['scope','適用車款／產品（選填）',200]].map(([key,label,max])=>`<label for="k-${r.id}-${key}">${label}</label>${['question','answer'].includes(key)?`<textarea id="k-${r.id}-${key}" name="${key}" maxlength="${max}" ${status==='pending'?'':'readonly'} required>${esc(r[key])}</textarea>`:`<input id="k-${r.id}-${key}" name="${key}" type="text" maxlength="${max}" ${key==='summary'?'required':''} ${status==='pending'?'':'readonly'} value="${esc(r[key])}">`}`).join('')}<div class="actions">${status==='pending'?'<button type="submit" class="primary">核准</button><button type="button" data-action="reject">退回</button>':status==='approved'?'<button type="button" data-action="withdraw">撤回核准</button>':''}</div></form>`).join('')||'<p class="card muted">目前沒有這類知識。</p>';
- }catch(e){if(v===version)el('feedback').textContent=e.message}
+ el('knowledge-list').innerHTML=d.items.map(r=>`<form class="card knowledge-item" data-id="${r.id}" data-version="${r.version}"><h2>${esc(r.summary)}</h2><p class="muted">${esc(r.submitter)} 提交 · ${esc(r.created_at)}${r.reviewer?`<br>${esc(r.reviewer)} 審核 · ${esc(r.reviewed_at)}`:''}</p>${[['question','客人問的',5000],['answer','我們的回答',5000],['summary','一句話重點',300],['scope','適用車款／產品（選填）',200]].map(([key,label,max])=>`<label for="k-${r.id}-${key}">${label}</label>${['question','answer'].includes(key)?`<textarea id="k-${r.id}-${key}" name="${key}" maxlength="${max}" ${status==='pending'?'':'readonly'} required>${esc(r[key])}</textarea>`:`<input id="k-${r.id}-${key}" name="${key}" type="text" maxlength="${max}" ${key==='summary'?'required':''} ${status==='pending'?'':'readonly'} value="${esc(r[key])}">`}`).join('')}<div class="actions">${status==='pending'?'<button type="submit" class="primary">核准</button><button type="button" data-action="reject">退回</button>':status==='approved'?'<button type="button" data-action="withdraw">撤回核准</button>':''}</div></form>`).join('')||`<p class="card muted empty">${EMPTY[status]}</p>`;
+ }catch(e){if(v===version){el('feedback').textContent=e.message;el('knowledge-list').innerHTML='<p class="card error empty">讀取失敗，請重新整理再試一次。</p>'}}
 }
 async function review(form,action){
  if(busy)return;busy=true;

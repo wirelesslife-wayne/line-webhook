@@ -13,7 +13,7 @@
 {% macro icon(name) %}<svg class="ic" viewBox="0 0 24 24" aria-hidden="true">{{ I[name]|safe }}</svg>{% endmacro %}
 {% macro brand(ch) %}{% if ch.startswith('line') %}<svg class="bi" viewBox="0 0 24 24" aria-hidden="true"><rect x="1.5" y="1.5" width="21" height="21" rx="6" fill="#06c755"/><path d="M19 11.2c0-3.2-3.1-5.7-7-5.7s-7 2.5-7 5.7c0 2.8 2.5 5.2 5.9 5.6.2 0 .5.2.6.4l.1 1c0 .3.3.5.6.3 2.4-1.4 6.8-4.1 6.8-7.3z" fill="#fff"/></svg>{% elif ch.startswith('fb') %}<svg class="bi" viewBox="0 0 24 24" aria-hidden="true">{% if ch=='fb_message' %}<circle cx="12" cy="12" r="11" fill="#0a7cff"/><path d="m6 14.5 4.2-4.4 3 3 4.8-5.1-4.1 6.6-3-3z" fill="#fff"/>{% else %}<circle cx="12" cy="12" r="11" fill="#1877f2"/><path d="M13.2 20v-6.3h2.1l.3-2.5h-2.4V9.7c0-.7.2-1.2 1.2-1.2h1.3V6.3c-.2 0-1-.1-1.9-.1-1.9 0-3.2 1.2-3.2 3.3v1.8H8.5v2.5h2.1V20z" fill="#fff"/>{% endif %}</svg>{% else %}<svg class="bi" viewBox="0 0 24 24" aria-hidden="true"><rect x="1.5" y="1.5" width="21" height="21" rx="6" fill="#d62976"/><rect x="6.5" y="6.5" width="11" height="11" rx="5.5" fill="none" stroke="#fff" stroke-width="2"/><circle cx="17.3" cy="6.7" r="1.3" fill="#fff"/></svg>{% endif %}{% if ch.endswith('comment') %}{{ icon('comment') }}{% endif %}{% endmacro %}
 {% block brand %}<div class="brandmark" aria-hidden="true"><span class="zh">無限科技</span><span class="en">WIRELESSLIFE</span></div>{% endblock %}
-{% block subtitle %}FB／IG 私訊與留言 · 核准後才送出{% endblock %}
+{% block subtitle %}FB／IG／LINE 客服審稿 · 核准後才送出{% endblock %}
 {% block user %}<form method="post" action="/desk/logout"><span class="who">{{ icon('user') }}{{ staff.username }}</span><input name="csrf" type="hidden" value="{{ staff.csrf }}"><button>{{ icon('logout') }}登出</button></form>{% endblock %}
 {% block body %}<main>
 <style nonce="{{ g.nonce }}">
@@ -75,7 +75,15 @@ header .title{border-left:1px solid #ffffff40;padding-left:18px}header form{marg
 .shot{margin:10px 0;background:var(--bg);border-radius:8px;padding:8px 12px}.shot summary{cursor:pointer;font-weight:600;color:var(--brand)}.shot img{display:block;max-width:100%;max-height:420px;margin-top:8px;border:1px solid var(--line);border-radius:8px;background:white}
 .versions{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin:6px 0 4px}.ver{border:1px solid var(--line);border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;background:white}.ver.on{border:2px solid var(--orange);background:var(--orange-soft)}.ver h3{margin:0 0 6px;font-size:15px}.ver h3 small{color:var(--muted);font-weight:normal}.ver pre{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;font-size:14px;margin:0 0 10px;flex:1;background:var(--bg);border-radius:8px;padding:8px 10px}.ver pre.clamp{max-height:13.5em;overflow:hidden;-webkit-mask-image:linear-gradient(#000 80%,transparent);mask-image:linear-gradient(#000 80%,transparent)}.ver .more{width:auto;min-height:32px;padding:0 4px;margin:-6px 0 8px;align-self:flex-start;border:0;background:none;color:var(--brand);font-weight:600}.detail textarea[data-draft]{overflow:hidden;resize:none}.ver button{width:100%}
 .meta-link{text-decoration:none;color:var(--brand);font-weight:600}
-.ainote{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}.ainote.full{white-space:normal}
+.ainote{white-space:pre-wrap;overflow-wrap:anywhere}.closed-by{color:var(--muted);font-size:14px}
+.refs{margin:10px 0;background:#f6f8fa;border:1px solid var(--line);border-radius:10px;padding:6px 12px 8px}.refs-head{font-size:15px;padding-left:0}
+.ref{background:white;border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin:6px 0;display:grid;gap:4px}.ref b{font-size:14px}
+.ref p{margin:0;font-size:13px;color:var(--muted);white-space:pre-wrap;overflow:hidden;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical}.ref p.q{-webkit-line-clamp:2;color:var(--ink)}
+.ref button,.lk-results .ref button{justify-self:end;min-height:34px;padding:2px 14px;border-color:var(--orange);color:var(--orange-ink);background:var(--orange-soft);font-weight:700;border-radius:20px}
+#fb-lookup{padding:16px 16px 12px}.lk-head{display:flex;justify-content:space-between;align-items:center}.lk-head h2{margin:0}
+.lk-tabs{display:flex;border-bottom:1px solid var(--line);margin:8px 0 10px}.lk-tabs button{flex:1;border:0;border-radius:0;background:none;font-weight:700;color:var(--muted);border-bottom:3px solid transparent}.lk-tabs button[aria-pressed=true]{color:var(--ink);border-bottom-color:var(--orange)}
+.lk-search{display:flex;gap:8px}.lk-search input{flex:1;min-width:0;border:1px solid #879da9;border-radius:8px;padding:8px 10px}.lk-results{max-height:55vh;overflow:auto}.lk-results .ref p{-webkit-line-clamp:6}.lk-foot{font-size:12px;text-align:center;margin:8px 0 0}
+.btnlink{display:inline-flex;align-items:center;min-height:44px;padding:8px 14px;border:1px solid var(--line);border-radius:8px;text-decoration:none;color:var(--ink);font-weight:600}#fb-lk-answer{min-height:150px}
 .parts{display:grid;gap:10px}.part-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;color:var(--orange-ink)}
 .link{border:0;background:none;color:var(--brand);font-weight:600;padding:4px 6px;min-height:36px}.part-tools{display:flex;gap:8px;flex-wrap:wrap;margin-top:4px}
 #fb-rules{margin-top:16px}#fb-rules summary{cursor:pointer;font-weight:700}#fb-feedback.bad{background:#fbe4e2;color:var(--bad)}
@@ -91,6 +99,7 @@ header{padding:10px 14px}header small{display:none}header form button{padding:4p
 .row{grid-template-columns:44px minmax(0,1fr) auto;row-gap:2px}.row .who-said{grid-column:2;grid-row:1}.row .state-chip{grid-column:3;grid-row:1;align-self:start;font-size:12px;padding:2px 10px}
 .row .when{grid-column:2/4;grid-row:2;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}.row .chev{display:none}
 textarea,input{font-size:16px}
+#fb-lookup{margin:auto 0 0;width:100%;max-width:100%;border-radius:16px 16px 0 0;max-height:88vh}
 .detail .mainacts{position:sticky;bottom:0;z-index:5;background:white;margin:12px -14px 0;padding:8px 14px calc(8px + env(safe-area-inset-bottom));box-shadow:0 -6px 12px #0f3d5c1a}
 .detail .mainacts button{flex:1 1 0;white-space:nowrap;padding:8px 6px}.detail .mainacts .primary{flex:1.4 1 0}
 .attach .suggest .files{display:grid;gap:8px}.attach .suggest figure{max-width:none;width:100%;display:grid;grid-template-columns:56px minmax(0,1fr) auto;align-items:center;justify-items:start;text-align:left;gap:10px}
@@ -111,7 +120,16 @@ textarea,input{font-size:16px}
 <p class="muted">你按「請 AI 重寫」寫下的指示會記在這裡，之後每一則草稿（LINE、FB、IG）都會照做。不想再套用的可以停用。</p>
 {% for r in rules %}<div class="rule{{ '' if r.active else ' off' }}"><p>{{ r.instruction }}</p><small class="muted">{{ r.label }} · {{ r.time }}{% if r.said %} · {{ '復盤理由' if r.instruction.startswith('【每日復盤建議】') else '當時客人說' }}：{{ r.said }}{% endif %}</small><button data-rule-id="{{ r.id }}" data-active="{{ 'true' if r.active else 'false' }}">{{ '停用' if r.active else '重新啟用' }}</button></div>{% else %}<p class="muted none">目前還沒有。</p>{% endfor %}
 </details>{% endif %}
-<dialog id="fb-confirm"><h2 id="fb-recipient"></h2><p id="fb-public-warning" class="error" hidden>這是公開留言，所有人都看得到。</p><div id="fb-preview"></div><p id="fb-attach-note" class="note" hidden></p><div id="fb-links" class="note" hidden></div><label id="fb-public-label" class="check" hidden><input id="fb-public-check" type="checkbox">我確認要公開回覆這則留言</label><p id="fb-when" class="muted">按下確認後，下一輪排程會照這段文字送出（最慢約 60 分鐘）。</p><div class="actions"><button id="fb-confirm-cancel">返回</button><button id="fb-confirm-ok" class="primary">確認發送</button></div></dialog>
+<dialog id="fb-confirm"><h2 id="fb-recipient"></h2><p id="fb-public-warning" class="error" hidden>這是公開留言，所有人都看得到。</p><div id="fb-preview"></div><p id="fb-attach-note" class="note" hidden></p><div id="fb-links" class="note" hidden></div><label id="fb-public-label" class="check" hidden><input id="fb-public-check" type="checkbox">我確認要公開回覆這則留言</label><p id="fb-refs-used" class="muted" hidden></p><p id="fb-when" class="muted">按下確認後，下一輪排程會照這段文字送出（最慢約 60 分鐘）。</p><div class="actions"><button id="fb-confirm-cancel">返回</button><button id="fb-confirm-ok" class="primary">確認核准</button></div></dialog>
+<dialog id="fb-lookup" aria-labelledby="fb-lookup-title"><div class="lk-head"><h2 id="fb-lookup-title">查資料</h2><button id="fb-lookup-close" class="link" aria-label="關閉">✕</button></div>
+<div class="lk-tabs" role="tablist"><button data-lk="canned" aria-pressed="false">制式回覆</button><button data-lk="history" aria-pressed="true">真人案例</button><button data-lk="paste" aria-pressed="false">貼上答案</button></div>
+<form id="fb-lk-form" class="lk-search"><input id="fb-lk-q" type="search" maxlength="300" placeholder="輸入車款或產品，例如 RAV4 電動尾門"><button class="primary">搜尋</button></form>
+<div id="fb-lk-results" class="lk-results"></div>
+<div id="fb-lk-paste" hidden><div class="actions"><button id="fb-lk-copy">複製客人問題</button><a class="btnlink" href="https://notebooklm.google.com/" target="_blank" rel="noopener noreferrer">開 NotebookLM ↗</a></div>
+<label for="fb-lk-answer">把查到的答案貼在這裡</label><textarea id="fb-lk-answer" maxlength="1500"></textarea>
+<label class="check"><input id="fb-lk-submit" type="checkbox">送交知識審核（核准後，下次遇到類似問題會自動參考）</label>
+<div class="actions"><button id="fb-lk-use-paste" class="primary">依此重寫</button></div></div>
+<p class="muted lk-foot">價格以現行價格表為準，舊案例只當參考。</p></dialog>
 <template id="fb-brands">{% for key in labels %}<span data-ch="{{ key }}">{{ brand(key) }}</span>{% endfor %}</template>
 </main><script nonce="{{ g.nonce }}">const csrf={{ staff.csrf|tojson }},canReview={{ can_review|tojson }};
 const USER_ICON={{ icon('user')|tojson }},CHEV={{ ('<svg class="ic chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>')|tojson }};

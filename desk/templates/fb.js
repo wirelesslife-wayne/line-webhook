@@ -27,14 +27,15 @@ function card(d,i,closed){
   if(TODO.includes(d.status)&&d.waited>=24){chip=`未回覆 ${Math.floor(d.waited/24)} 天`;tone='late'}
   let h=`<article class="item${open?' open':''}${closed&&openId===d.id?' sel':''}" data-id="${esc(d.id)}"><button class="row" data-act="toggle" aria-expanded="${open}"><span class="avatar">${d.avatar?`<img src="/desk/api/fb/avatar?thread_id=${encodeURIComponent(d.id)}&t=${esc(d.avatar)}" alt="" decoding="async">`:USER_ICON}${(BRAND[d.channel]||'').split('<svg class="ic"')[0]}</span><span class="sep"></span><span class="who-said"><b>${esc(d.name)}</b><span>${esc((lastUser.text||'').replace(/\s+/g,' '))}</span></span><span class="when">${esc(when(lastUser.time||''))}</span><span class="state-chip ${tone}">${esc(chip)}</span>${CHEV}</button>`;
   if(!open)return h+'</article>';
-  h+=`<div class="detail"><p class="muted">${esc(d.label)} · ${esc(STATUS[d.status]||d.status)}${d.note?' · '+esc(d.note):''}</p>`;
+  h+=`<div class="detail"><p class="muted">${esc(d.label)} · ${esc(STATUS[d.status]||d.status)}${d.note&&d.note!==STATUS[d.status]?' · '+esc(d.note):''}</p>`;
   if(d.context)h+=`<p class="context"><b>所屬貼文：</b>${esc(d.context.slice(0,200))}</p>`;
   h+=`<div class="messages">${d.messages.map(m=>`<div class="message ${m.role==='assistant'?'ours':''}"><small>${m.role==='assistant'?'我們':'客人'} · ${esc(when(m.time))}</small>${esc(m.text)}</div>`).join('')||'<p class="muted">沒有訊息內容</p>'}</div>`;
   if(d.shot)h+=`<details class="shot" ${PHONE.matches?'':'open'}><summary>原始畫面截圖 ${esc(d.shot.replace('-','/'))}</summary><a href="/desk/api/fb/shot?thread_id=${encodeURIComponent(d.id)}" target="_blank" rel="noopener"><img src="/desk/api/fb/shot?thread_id=${encodeURIComponent(d.id)}&t=${encodeURIComponent(d.shot)}" alt="Meta 收件匣這則對話的截圖" loading="lazy"></a></details>`;
   if(/^https:\/\//.test(d.url||''))h+=`<p><a class="meta-link" href="${esc(d.url)}" target="_blank" rel="noopener noreferrer">在 Meta 收件匣打開這則</a></p>`;
   if(todo){
-    if(r.staff_note)h+=`<p class="note ainote" title="點一下看全文">💡 ${esc(r.staff_note)}</p>`;
+    if(r.staff_note)h+=`<p class="note ainote">💡 ${esc(r.staff_note)}</p>`;
     h+=(r.flags||[]).map(x=>`<p class="error">${esc(x)}</p>`).join('');
+    if(!waiting&&open)h+=refsBlock(d);
     const vers=[{label:r.label,draft:r.draft},...(r.alternatives||[])].filter(v=>typeof v.draft==='string'&&v.draft);
     if(vers.length>1&&!waiting)h+=`<p class="muted">AI 寫了 ${vers.length} 個版本，按「用這版」會放進下面的框，可以再改字：</p><div class="versions">${vers.map((v,n)=>{const on=draft===v.draft;return `<section class="ver${on?' on':''}"><h3>版本${'ABC'[n]} <small>${esc(v.label||'')}${n===0?'（推薦）':''}</small></h3><pre class="${v.draft.split('\n').length>9||v.draft.length>260?'clamp':''}">${esc(v.draft)}</pre>${v.draft.split('\n').length>9||v.draft.length>260?'<button class="more" data-act="ver-more">展開全文</button>':''}<button data-act="version" data-v="${n}" aria-pressed="${on}" class="${on?'primary':''}">${on?'✓ 正在用這版':'用這版'}</button></section>`}).join('')}</div>`;
     const parts=partsOf(draft),many=parts.length>1;
@@ -50,9 +51,10 @@ function card(d,i,closed){
     h+=`<div class="editbox" hidden><label for="fb-ins-${i}">要改哪裡？</label><p class="muted">由原本擬稿的 AI 重寫：它讀過價格表、制式回覆、你核准過的回覆和你記住的指示，會照你這句話改。</p><textarea id="fb-ins-${i}" data-instruction maxlength="2000" placeholder="例如：不要問縣市、價格寫 18,000、語氣再輕鬆一點"></textarea>${canReview?'<label class="check"><input type="checkbox" data-remember>以後都照這樣寫（記住這條指示，會影響之後所有草稿）</label>':''}<div class="actions"><button class="primary" data-act="revise">照這樣重寫</button><button data-act="edit-cancel">取消</button></div></div>`;
   }else if(d.status==='approved'){
     const a=d.attempts.find(x=>x.status==='approved');
-    h+=`<label>已核准的內容</label><div class="preview">${esc(a?a.text:'')}</div>${(d.media||[]).length?`<div class="attach"><div class="files">${files(d.media,false)}</div></div>`:''}<p class="muted">${d.live?'正在用 Meta 官方 API 送出，幾秒內完成；送不出去會退回待審並寫原因。':'下一輪排程會照這段文字送出（最慢約 60 分鐘）。'}</p><div class="actions"><button data-act="cancel" ${canReview?'':'disabled'}>取消核准</button></div>`;
+    h+=`<p class="closed-by">${a?`${esc(a.staff)} 核准 · ${esc(a.time.slice(5,16))}・`:''}<b>尚未送出</b></p><label>已核准的內容</label><div class="preview">${esc(a?a.text:'')}</div>${(d.media||[]).length?`<div class="attach"><div class="files">${files(d.media,false)}</div></div>`:''}<p class="muted">${d.live?'正在用 Meta 官方 API 送出，幾秒內完成；送不出去會退回待審並寫原因。':'下一輪排程會照這段文字送出（最慢約 60 分鐘）。'}</p><div class="actions"><button data-act="cancel" ${canReview?'':'disabled'}>取消核准</button></div>`;
   }else{
     const a=d.attempts.find(x=>x.status==='sent');
+    h+=`<p class="closed-by">${d.status==='skip'?'不回覆':a?`已送出 · ${esc(a.staff)} 核准`:'已結案'} · ${esc(d.closed_at||'')}</p>`;
     if(a)h+=`<label>已送出的內容（${esc(a.time)}）</label><div class="preview">${esc(a.text)}</div>`;
   }
   return h+'</div></article>';
@@ -68,7 +70,7 @@ document.addEventListener('change',async e=>{
   catch(x){say(x.message,true)}
   finally{busy=false}
   await load(true)});
-function editing(){const a=document.activeElement;return busy||f('confirm').open||(a&&a.tagName==='TEXTAREA')||!!document.querySelector('.editbox:not([hidden]),.libgrid:not([hidden])')}
+function editing(){const a=document.activeElement;return busy||f('confirm').open||f('lookup').open||(a&&a.tagName==='TEXTAREA')||!!document.querySelector('.editbox:not([hidden]),.libgrid:not([hidden])')}
 let library=null;
 async function libraryGrid(box){
   if(!library)library=(await api('library')).cards;
@@ -76,6 +78,34 @@ async function libraryGrid(box){
   const groups={};library.forEach(c=>(groups[c.topic||'其他']??=[]).push(c));
   box.innerHTML=Object.entries(groups).map(([t,list])=>`<h3>${esc(t)}</h3><div class="files">${list.map(c=>`<figure title="${esc(c.use_when)}"><img src="/desk/api/fb/library/${esc(c.id)}" alt="" loading="lazy"><span>${esc(c.name)}</span><small class="muted">${esc(c.use_when)}</small><button data-act="lib-attach" data-lib="${esc(c.id)}">附上</button></figure>`).join('')}</div>`).join('');
 }
+// Wayne 11/14: what the draft could lean on, found automatically; 依此重寫 is one more tap
+const REFS={},REFUSED={};let refsShut=new Set(),lookupFor=null,lkKind='history';
+function refKey(d){return d.id+':'+d.version}
+function refCard(x,n,where){return `<div class="ref"><b>${x.kind==='canned'?'📘 制式回覆｜'+esc(x.title):'💬 真人案例｜'+esc(x.date||'')}</b>${x.question?`<p class="q">客人問：${esc(x.question)}</p>`:''}<p>${x.kind==='history'?'同事答：':''}${esc(x.text)}</p><button data-act="ref-use" data-where="${where}" data-n="${n}">依此重寫</button></div>`}
+function refsBlock(d){
+  const r=REFS[refKey(d)];
+  if(r===undefined){fetchRefs(d);return '<div class="refs"><p class="muted">參考資料：查詢中…</p></div>'}
+  const list=[...(r.canned||[]),...(r.history||[])],shut=refsShut.has(d.id);
+  if(!list.length)return '<div class="refs"><p class="muted">參考資料 ⚪ 沒找到相關資料</p><button class="link" data-act="lookup">查資料 ›</button></div>';
+  return `<div class="refs"><button class="link refs-head" data-act="refs-toggle">參考資料 ✅ 找到 ${list.length} 筆 ${shut?'▾':'▴'}</button>${shut?'':list.map((x,n)=>refCard(x,n,'auto')).join('')}<button class="link" data-act="lookup">找不到？查資料 ›</button></div>`}
+async function fetchRefs(d){
+  const k=refKey(d);if(REFS[k]===null)return;REFS[k]=null;
+  try{REFS[k]=await api('references?thread_id='+encodeURIComponent(d.id))}catch(e){REFS[k]={canned:[],history:[]}}
+  const box=document.querySelector(`.item[data-id="${CSS.escape(d.id)}"] .detail .refs`);if(box)box.outerHTML=refsBlock(d)}
+async function useRef(d,el,x){
+  const label=x.kind==='canned'?'制式回覆〈'+x.title+'〉':x.kind==='history'?'真人案例 '+(x.date||''):'你貼上的答案';
+  const body=(x.question?'客人問：'+x.question+'\n':'')+(x.kind==='history'?'同事答：':'')+x.text;
+  const instruction=('請依照這份參考資料重寫草稿（價格、連結仍以價格表和制式回覆為準；參考資料裡的舊價格、舊活動不要照抄）：\n【'+label+'】\n'+body).slice(0,2000);
+  busy=true;try{await api('redraft',{thread_id:d.id,version:d.version,instruction,original_draft:el?joined(el):'',remember:false});delete edits[editKey(d)];REFUSED[d.id]=label;say(`AI 正在依「${label}」重寫，約 1 分鐘。`)}
+  catch(e){say(e.message,true)}finally{busy=false}
+  await load(true)}
+function lkShow(kind){lkKind=kind;document.querySelectorAll('[data-lk]').forEach(x=>x.setAttribute('aria-pressed',String(x.dataset.lk===kind)));
+  f('lk-form').hidden=f('lk-results').hidden=kind==='paste';f('lk-paste').hidden=kind!=='paste';if(kind!=='paste')void lkSearch()}
+let lkItems=[];
+async function lkSearch(){const q=f('lk-q').value.trim(),box=f('lk-results');if(!q){box.innerHTML='<p class="muted">輸入車款或產品再按搜尋。</p>';return}
+  box.innerHTML='<p class="muted">搜尋中…</p>';
+  try{lkItems=(await api(`lookup?kind=${lkKind}&q=${encodeURIComponent(q)}`)).items;box.innerHTML=lkItems.length?lkItems.map((x,n)=>refCard(x,n,'panel')).join(''):'<p class="muted">沒找到。換個關鍵字（車款、產品名稱），或改用「貼上答案」。</p>'}
+  catch(e){box.innerHTML=`<p class="error">${esc(e.message)}</p>`}}
 function draw(d){
   lastData=d;items=d.items;f('n-todo').textContent=d.todo||'';f('n-approved').textContent=d.approved||'';const per=d.per_channel||{},all=Object.values(per).reduce((a,b)=>a+b,0);document.querySelectorAll('[data-cnt]').forEach(x=>{const n=x.dataset.cnt?per[x.dataset.cnt]:all;x.textContent=n?` ${n}`:''});
   f('prev').disabled=page===0;f('next').disabled=!d.has_more;
@@ -90,6 +120,7 @@ function draw(d){
   }else f('list').innerHTML=items.length?items.map((x,i)=>card(x,i)).join(''):`<p class="muted">${empty}</p>`;
   document.querySelectorAll('[data-draft]').forEach(grow);
 }
+function wipe(){items=[];shown='';openId=null;f('list').innerHTML='<p class="muted">讀取中…</p>'}
 async function load(force){
   if(!force&&polling)return; // a slow answer must not be discarded by the next timer tick
   const v=++listVersion;polling=true;
@@ -106,10 +137,19 @@ document.addEventListener('click',async event=>{
   const b=event.target.closest('button');if(!b||busy)return;
   try{
     if(b.id==='fb-order'){order=order==='old'?'new':'old';b.textContent=order==='old'?'排序：等最久優先 ⇅':'排序：最新優先 ⇅';page=0;await load(true);return}
-    if(b.id==='fb-late'){late=!late;page=0;await load(true);return}
-    if(b.dataset.fbTab!==undefined){tab=b.dataset.fbTab;page=0;late=false;document.querySelectorAll('[data-fb-tab]').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));say('');await load(true);return}
-    if(b.dataset.fbChannel!==undefined){channel=b.dataset.fbChannel;page=0;document.querySelectorAll('[data-fb-channel]').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));await load(true);return}
-    if(b.id==='fb-prev'||b.id==='fb-next'){page=Math.max(0,page+(b.id==='fb-prev'?-1:1));await load(true);window.scrollTo(0,0);return}
+    if(b.id==='fb-late'){late=!late;page=0;wipe();await load(true);return}
+    if(b.dataset.fbTab!==undefined){tab=b.dataset.fbTab;page=0;late=false;document.querySelectorAll('[data-fb-tab]').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));f('order').hidden=tab==='done';say('');wipe();await load(true);return}
+    if(b.dataset.fbChannel!==undefined){channel=b.dataset.fbChannel;page=0;document.querySelectorAll('[data-fb-channel]').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));wipe();await load(true);return}
+    if(b.id==='fb-prev'||b.id==='fb-next'){page=Math.max(0,page+(b.id==='fb-prev'?-1:1));wipe();await load(true);window.scrollTo(0,0);return}
+    if(b.dataset.lk){lkShow(b.dataset.lk);return}
+    if(b.id==='fb-lookup-close'){f('lookup').close();return}
+    if(b.dataset.act==='ref-use'&&b.dataset.where==='panel'&&lookupFor){const x=lkItems[Number(b.dataset.n)],d=lookupFor;if(!x)return;f('lookup').close();await useRef(d,document.querySelector(`.item[data-id="${CSS.escape(d.id)}"]`),x);return}
+    if(b.id==='fb-lk-copy'&&lookupFor){const last=[...lookupFor.messages].reverse().find(m=>m.role!=='assistant');try{await navigator.clipboard.writeText(last?last.text:'');say('已複製客人問題，可以貼到 NotebookLM。')}catch(e){say('手機不讓網頁複製，請長按客人訊息自己複製。',true)}return}
+    if(b.id==='fb-lk-use-paste'&&lookupFor){const text=f('lk-answer').value.trim(),d=lookupFor;if(!text){say('請先貼上查到的答案。',true);return}
+      if(f('lk-submit').checked){const last=[...d.messages].reverse().find(m=>m.role!=='assistant');
+        try{await api('knowledge',{user_id:d.id,question:(last?last.text:'').slice(0,5000)||'（客人問題）',answer:text,summary:text.split('\n')[0].slice(0,120),scope:''})}catch(e){say('送交知識審核失敗：'+e.message,true);return}}
+      f('lookup').close();await useRef(d,document.querySelector(`.item[data-id="${CSS.escape(d.id)}"]`),{kind:'paste',title:'貼上的答案',text});
+      if(f('lk-submit').checked)say('已送交知識審核，AI 也正在依這個答案重寫，約 1 分鐘。');return}
     if(b.id==='fb-confirm-cancel'){f('confirm').close();confirmation=null;return}
     if(b.id==='fb-confirm-ok'&&confirmation){
       const snap=confirmation;if(snap.is_public&&!f('public-check').checked)return;const lc=document.getElementById('fb-links-check');if(lc&&!lc.checked)return;
@@ -122,6 +162,9 @@ document.addEventListener('click',async event=>{
     const act=b.dataset.act;if(!act)return;const p=pick(b);if(!p)return;const {d,el}=p;
     if(act==='toggle'&&WIDE.matches){if(openId!==d.id){openId=d.id;if(lastData)draw(lastData);document.querySelector('.pane')?.scrollTo(0,0)}return}
     if(act==='toggle'){openId=openId===d.id?null:d.id;if(lastData)draw(lastData);if(openId)document.querySelector(`.item[data-id="${CSS.escape(openId)}"]`)?.scrollIntoView({block:'nearest'});return}
+    if(act==='refs-toggle'){refsShut.has(d.id)?refsShut.delete(d.id):refsShut.add(d.id);const box=el.querySelector('.refs');if(box)box.outerHTML=refsBlock(d);return}
+    if(act==='ref-use'&&b.dataset.where==='auto'){const r=REFS[refKey(d)]||{},x=[...(r.canned||[]),...(r.history||[])][Number(b.dataset.n)];if(x){b.disabled=true;await useRef(d,el,x)}return}
+    if(act==='lookup'){lookupFor=d;f('lk-q').value=((REFS[refKey(d)]||{}).query||'');f('lk-answer').value='';f('lk-submit').checked=false;f('lookup').showModal();lkShow(f('lk-q').value?'history':'canned');return}
     if(act==='ver-more'){const pre=b.previousElementSibling,open=pre.classList.toggle('clamp');b.textContent=open?'展開全文':'收合';return}
     if(act==='version'){const r=d.result||{},vers=[{draft:r.draft},...(r.alternatives||[])],v=vers[Number(b.dataset.v)];if(!v)return;const cur=edits[editKey(d)];if(cur!==undefined&&!vers.some(x=>x.draft===cur)&&!confirm('框裡改過的字會被換掉，確定換版本嗎？'))return;edits[editKey(d)]=v.draft;draw(lastData);return}
     if(act==='part-cut'||act==='part-add'||act==='part-merge'){const ps=[...el.querySelectorAll('[data-draft]')].map(t=>t.value);
@@ -138,8 +181,8 @@ document.addEventListener('click',async event=>{
         f('links').hidden=false;if(bad){f('confirm-ok').disabled=true;f('links').insertAdjacentHTML('beforeend','<p class="error">有連結打不開，請先返回改掉。</p>')}
         else if(wrong){f('confirm-ok').disabled=true;f('links').insertAdjacentHTML('beforeend','<p class="error">有連結開到別的產品，請按「返回」改掉。</p><label class="check"><input id="fb-links-check" type="checkbox">連結我核對過了，沒有貼錯</label>');
           document.getElementById('fb-links-check').addEventListener('change',e=>{f('confirm-ok').disabled=!e.target.checked||(confirmation&&confirmation.is_public&&!f('public-check').checked)})}}).catch(()=>{});
-      f('attach-note').hidden=!(d.media||[]).length;f('attach-note').textContent=(d.media||[]).length?`另附 ${d.media.length} 個檔案：${d.media.map(m=>m.name).join('、')}`:'';
-      f('recipient').textContent=`發送給「${d.name}」（${d.label}）`;f('when').textContent=d.live?'按下確認後，會用 Meta 官方 API 立刻送出。':'按下確認後，下一輪排程會照這段文字送出（最慢約 60 分鐘）。';const ps=partsOf(text);f('preview').textContent=ps.length>1?ps.map((x,n)=>`【第 ${n+1} 則】\n${x}`).join('\n\n'):text;f('public-warning').hidden=f('public-label').hidden=!d.is_public;f('public-check').checked=false;f('confirm-ok').disabled=d.is_public;f('confirm').showModal();return}
+      f('refs-used').hidden=!REFUSED[d.id];f('refs-used').textContent=REFUSED[d.id]?`本稿參考：${REFUSED[d.id]}（只有你看得到，不會發給客人）`:'';f('attach-note').hidden=!(d.media||[]).length;f('attach-note').textContent=(d.media||[]).length?`另附 ${d.media.length} 個檔案：${d.media.map(m=>m.name).join('、')}`:'';
+      f('recipient').textContent=`回覆「${d.name}」（${d.label}）`;f('when').textContent=d.live?'按下確認後，會用 Meta 官方 API 立刻送出。':'按下確認後，下一輪排程會照這段文字送出（最慢約 60 分鐘），送出前都可以在「即將送出」取消。';f('confirm-ok').textContent=d.live?'確認發送':'確認核准';const ps=partsOf(text);f('preview').textContent=ps.length>1?ps.map((x,n)=>`【第 ${n+1} 則】\n${x}`).join('\n\n'):text;f('public-warning').hidden=f('public-label').hidden=!d.is_public;f('public-check').checked=false;f('confirm-ok').disabled=d.is_public;f('confirm').showModal();return}
     if(act==='lib-open'){const box=el.querySelector('.libgrid');box.hidden=!box.hidden;b.textContent=box.hidden?'從常用圖片挑':'收起常用圖片';if(!box.hidden&&!box.innerHTML){box.innerHTML='<p class="muted">讀取中…</p>';try{await libraryGrid(box)}catch(e){box.innerHTML='';say(e.message,true)}}return}
     if(act==='lib-attach'){busy=true;b.disabled=true;try{const out=await api('media/library',{thread_id:d.id,library_id:b.dataset.lib});say(`已附上「${out.media.name}」，會跟回覆一起送出。`)}catch(e){say(e.message,true);b.disabled=false}finally{busy=false}const box=el.querySelector('.libgrid');if(box)box.hidden=true;await load(true);return}
     if(act==='media-remove'){busy=true;b.disabled=true;try{await api('media/'+b.dataset.media+'/remove',{thread_id:d.id});say('已移除附件。')}catch(e){say(e.message,true)}finally{busy=false}await load(true);return}
@@ -162,6 +205,7 @@ document.addEventListener('click',async event=>{
       await load(true);return}
   }catch(e){say(e.message,true);b.disabled=false}
 });
+f('lk-form').addEventListener('submit',e=>{e.preventDefault();void lkSearch()});
 f('public-check').addEventListener('change',()=>{const lc=document.getElementById('fb-links-check');f('confirm-ok').disabled=!f('public-check').checked||!!(lc&&!lc.checked)});
 f('confirm').addEventListener('cancel',e=>{if(busy)e.preventDefault();else confirmation=null});
 void load(true);setInterval(()=>load(false),8000);

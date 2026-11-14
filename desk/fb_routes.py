@@ -61,8 +61,9 @@ def register(bp,store):
         # by when the customer last wrote (the desk may read it an hour later), not when the desk picked it up
         said="COALESCE((SELECT MAX(e.event_at) FROM desk_fb_events e WHERE e.thread_id=t.id AND e.role='user'),t.last_at)"
         where=f"t.status=ANY(%s) AND (%s='' OR t.channel=%s){f' AND {said} < NOW()-INTERVAL {chr(39)}24 hours{chr(39)}' if late else ''}"
+        sort=f"{said} {'' if order=='old' else 'DESC'}" if tab!='done' else 't.updated_at DESC'  # Wayne 11/14: last closed first
         rows=store.all(f"""SELECT t.*,EXTRACT(EPOCH FROM NOW()-{said})/3600 AS waited FROM desk_fb_threads t WHERE {where}
-          ORDER BY {said} {'' if order=='old' else 'DESC'},t.id LIMIT 21 OFFSET %s""",(states,channel,channel,page*20))
+          ORDER BY {sort},t.id LIMIT 21 OFFSET %s""",(states,channel,channel,page*20))
         total=store.one(f'SELECT COUNT(*) AS n FROM desk_fb_threads t WHERE {where}',(states,channel,channel))['n']
         overdue=manual=0
         if tab=='todo':
@@ -74,6 +75,7 @@ def register(bp,store):
         items=details(rows[:20])
         for item,row in zip(items,rows):
             item['waited']=round(float(row['waited'] or 0),1)  # hours since the customer last wrote
+            item['closed_at']=local_time(row['updated_at'])[5:16]
         return dict(items=items,has_more=len(rows)>20,page=page,tab=tab,channel=channel,order=order,per_channel=per,
             total=total,overdue=overdue,manual=manual,late=late,
             todo=counts['waiting_draft']+counts['awaiting_review']+counts['draft_failed'],approved=counts['approved_unsent'])
@@ -208,6 +210,19 @@ def register(bp,store):
         if not store.execute('UPDATE desk_edit_rules SET active=%s WHERE id=%s',(data['active'],rule_id)):
             raise ActionError('找不到修改指示',404)
         return jsonify(ok=True)
+
+    @bp.get('/api/fb/references')
+    def fb_references():
+        from . import lookup
+        c=get_thread(request.args.get('thread_id'))
+        return jsonify(lookup.for_thread(store,fb.messages(store,c['id']),c['context']))
+
+    @bp.get('/api/fb/lookup')
+    def fb_lookup():
+        from . import lookup
+        kind=request.args.get('kind','history')
+        if kind not in ('canned','history'): raise ActionError('分類不正確',400)
+        return jsonify(items=lookup.search(store,request.args.get('q',''),kind,8))
 
     @bp.get('/api/fb/knowledge/prefill')
     def fb_prefill():

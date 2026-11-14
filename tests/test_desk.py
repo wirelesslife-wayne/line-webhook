@@ -398,5 +398,5 @@ def test_line_side_can_be_switched_off(db,logged,monkeypatch):
     assert home.status_code==302 and home.headers['Location'].endswith('/desk/fb')
     assert client.post('/desk/api/send',json=send_data(),headers={'X-CSRF-Token':staff['csrf']}).status_code==503
     page=client.get('/desk/fb').get_data(as_text=True)
-    assert 'FB／IG 審稿' in page and 'href="/desk/">LINE' not in page
+    assert '>客服審稿</a>' in page and 'href="/desk/">LINE' not in page  # tab renamed 11/14
     notifier.push.assert_not_called()

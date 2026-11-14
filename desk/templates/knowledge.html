@@ -1,11 +1,18 @@
 {% extends 'base.html' %}
-{% block user %}<span>{{ staff.username }}</span>{% endblock %}
+{% block subtitle %}FB／IG／LINE 客服審稿 · 核准後才送出{% endblock %}
+{% block user %}<form method="post" action="/desk/logout"><span>{{ staff.username }}</span><input name="csrf" type="hidden" value="{{ staff.csrf }}"><button>登出</button></form>{% endblock %}
 {% block body %}<main>
-<style nonce="{{ g.nonce }}">.knowledge-item{margin-bottom:16px}</style>
-<p><a href="/desk/">← 回對話工作台</a></p><h1>知識審核</h1>
+<style nonce="{{ g.nonce }}">.knowledge-item{margin-bottom:16px}
+/* Wayne 11/14: same top as the review page, not the retired LINE workbench */
+:root{--orange:#f08a24}header{background:linear-gradient(120deg,#0a2c46,#0f3d5c 55%,#14456b)}header form{margin-left:auto}
+.nav.main{display:flex;gap:22px;border-bottom:1px solid var(--line);margin:0 0 16px}.nav.main a{text-decoration:none;padding:10px 2px;min-height:44px;font-size:17px;font-weight:700;color:var(--muted);border-bottom:4px solid transparent}
+.nav.main a[aria-current=page]{color:var(--ink);border-bottom-color:var(--orange)}.empty{text-align:center;padding:28px 16px}
+@media(max-width:700px){header small{display:none}header{padding:10px 14px}.nav.main a{font-size:16px}}</style>
+<nav class="nav main" aria-label="客服管道"><a href="/desk/fb">客服審稿</a><a href="/desk/knowledge" aria-current="page">知識</a></nav>
+<h1>知識審核</h1>
 <p class="muted">核准後供新擬稿參考；價格仍以價格表／制式回覆為準。時間為台灣時間。</p>
 <div class="tabs"><button data-status="pending" aria-pressed="true">待審</button><button data-status="approved" aria-pressed="false">已核准</button><button data-status="rejected" aria-pressed="false">已退回</button><button data-status="withdrawn" aria-pressed="false">已撤回</button></div>
-<p id="feedback" role="status"></p><div id="knowledge-list"></div><div class="actions"><button id="prev">上一頁</button><button id="next">下一頁</button></div>
+<p id="feedback" role="status"></p><div id="knowledge-list"><p class="card muted empty">讀取中…</p></div><div class="actions"><button id="prev">上一頁</button><button id="next">下一頁</button></div>
 </main><script nonce="{{ g.nonce }}">
 const csrf={{ staff.csrf|tojson }};
 {% include 'knowledge.js' %}
