@@ -89,3 +89,14 @@ def test_line_review_2214_rules_reach_every_draft(db):
     _, rules = draft_with(db, '您好', '請問有營業嗎')
     assert '過期的約定' in rules and '各附自己的產品介紹連結' in rules and '小沈的店」採預約制' in rules
     assert '不附產品圖。\n' in rules
+
+
+def test_open_on_a_listed_open_day_is_not_a_voting_day_warning():
+    """蕭 (11/15 22:14): 「下一個有營業的週六是 11/21（六）」 got the voting-day red warning."""
+    from datetime import date
+    from desk.engine import says_open_on_odd_day
+    today = date(2026, 11, 15)
+    assert not says_open_on_odd_day('11/15（日）公休。下一個有營業的週六是 11/21（六），10:00–18:00', today)
+    assert says_open_on_odd_day('11/28（六）門市有營業', today)
+    assert says_open_on_odd_day('投票日當天有營業喔', today)
+    assert says_open_on_odd_day('門市有營業喔', today)
