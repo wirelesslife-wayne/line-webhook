@@ -100,3 +100,15 @@ def test_hold_tab_counts_both_kinds_and_search_finds_a_name_everywhere(db, logge
     assert [i['name'] for i in found['items']] == ['王大明'] and found['items'][0]['status'] == 'done'
     assert client.get('/desk/api/fb/list?tab=search&q=%25').get_json()['items'] == []  # a % is a letter, not a wildcard
     assert client.get('/desk/api/fb/list?tab=search&q=').status_code == 400
+
+
+def test_the_ai_s_do_not_reply_marker_can_never_be_sent(db, logged):
+    """Wayne 11/15 15:27: off-topic comments get no answer; the AI says so in the draft and approving it is refused."""
+    import pytest
+    _, _, staff, _ = logged
+    boss = wayne(db, staff)
+    fb.push(db, [thread(key='980001', messages=[dict(role='user', text='這支架哪裡買', at='2026-11-15T09:00:00+08:00')])])
+    ready(db)
+    with pytest.raises(fb.ActionError):
+        approve_and_send(db, boss, '980001', fb.NO_REPLY)
+    assert db.one("SELECT status FROM desk_fb_threads WHERE key='980001'")['status'] == 'ready'

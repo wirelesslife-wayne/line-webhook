@@ -16,6 +16,7 @@ from .worker import local_time, TAIPEI
 # Wayne 11/13: a long reply can go out as up to 3 separate messages; the approved text keeps them joined by this line.
 SPLIT_MARK = '[[下一則]]'
 MAX_PARTS = 3
+NO_REPLY = '（建議不回覆）'  # Wayne 11/15: off-topic comments get no answer; the draft says so instead
 
 
 def parts(text):
@@ -256,6 +257,8 @@ def approve(store, staff, data):
     pieces = parts(text)
     if len(pieces) > MAX_PARTS or any(not p.strip() for p in pieces):
         raise ActionError('最多分成 3 則，而且每一則都要有內容',400)
+    if NO_REPLY in text:  # the AI's "don't answer this" marker must never reach a customer
+        raise ActionError('這則 AI 建議不回覆，請按「不發送」；真的要回請改寫內容',400)
     from .links import audit, complaint
     found = audit(store, text)
     broken = [l['url'] for l in found if l['state'] == 'broken']
