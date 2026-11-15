@@ -109,17 +109,19 @@ def fits_car(about, title):
     return all(re.search(car, about, re.I) for only, car in CAR_ONLY if re.search(only, title, re.I))
 
 
-def search(store, query, kind, k, about=None):
+def search(store, query, kind, k, about=None, cars=None):
     """about: everything known about what the customer wants (their words and the ad), used for the
-    product and car checks; the typed query alone in the 查資料 panel."""
+    product and car checks; the typed query alone in the 查資料 panel. cars: where to look for the
+    customer's car (the whole conversation), defaults to about."""
     query = (query or '').strip()[:300]
     if not query:
         return []
     about = query if about is None else about
+    cars = about if cars is None else cars
     if kind == 'canned':
         rows = canned_rows(store)
         order = [i for i in Index([c['title'] + ' ' + c['text'][:300] for c in rows]).top(query)
-                 if fits_car(about, rows[i]['title']) and same_product(about, rows[i]['title'])]
+                 if fits_car(cars, rows[i]['title']) and same_product(about, rows[i]['title'])]
         return [dict(kind='canned', title=c['title'], text=c['text'][:1500]) for c in _pick(rows, order, k, lambda c: c['text'])]
     rows, index = history_rows(store)
     order = [i for i in index.top(query) if same_product(about, rows[i]['question'] + ' ' + rows[i]['answer'][:200])]
@@ -133,5 +135,7 @@ def for_thread(store, messages, context=''):
     said = [m['text'] for m in messages if m['role'] == 'user' and len(grams(m.get('text'))) >= 3][-2:]
     query = ' '.join(said)
     about = query + ' ' + (context or '')[:300]
-    canned = search(store, query + ' ' + (context or '')[:100], 'canned', 2, about)
+    # A car named earlier in the chat still counts (11/15: a Tesla owner who said so three messages ago).
+    cars = about + ' ' + ' '.join(m['text'] or '' for m in messages if m['role'] == 'user')
+    canned = search(store, query + ' ' + (context or '')[:100], 'canned', 2, about, cars)
     return dict(query=said[-1][:60] if said else '', canned=canned, history=search(store, query, 'history', 2, about))

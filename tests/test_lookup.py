@@ -41,6 +41,16 @@ def test_greetings_and_repeats_do_not_pick_the_references(db):
     assert lookup.for_thread(db, [dict(role='user', text='好 謝謝')])['history'] == []
 
 
+def test_a_car_named_earlier_in_the_chat_still_counts(db):
+    db.put_kb('canned_v2.json', [dict(topic='Tesla 電動遮陽簾報價', text='Tesla 電動遮陽簾完工價 $8,800')])
+    db.put_kb('line_saved_replies.json', [])
+    ask = dict(role='user', text='請問電動遮陽簾多少錢，安裝要多久')
+    assert lookup.for_thread(db, [ask])['canned'] == []
+    earlier = [dict(role='user', text='你好我開特斯拉 Model Y'), dict(role='user', text='想了解一些配件的價格'),
+               dict(role='user', text='還有保固怎麼算'), ask]
+    assert [c['title'] for c in lookup.for_thread(db, earlier)['canned']] == ['Tesla 電動遮陽簾報價']
+
+
 def test_lookup_routes(db, logged):
     seed(db)
     _, client, _, _ = logged
