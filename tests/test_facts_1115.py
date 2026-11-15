@@ -77,6 +77,8 @@ def test_a_reference_wayne_picked_beats_the_ad_button_ask_the_car_first_rule(db)
     assert '寫一則簡短的真人跟進' not in calls[1][0]['content']  # the ask-the-car-first rule is not given at all then
 
 
-def test_without_an_instruction_ad_button_leads_still_get_the_short_follow_up(db):
+def test_without_an_instruction_ad_button_leads_answered_by_the_auto_reply_get_no_reply(db):
+    """Wayne 11/15 21:40 (程塘輝): every button already answered by the auto-reply, which asked for the car -> no reply."""
     _, rules = draft_with(db, '您好', '安裝要多久？價格多少？')
-    assert '寫一則簡短的真人跟進' in rules
+    assert '等客人回，不用再追一則' in rules and '（建議不回覆）' in rules
+    assert '有任何一題自動回覆沒答到' in rules  # otherwise still a short follow-up
