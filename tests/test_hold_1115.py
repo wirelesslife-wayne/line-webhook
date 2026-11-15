@@ -124,3 +124,34 @@ def test_waiting_for_the_customer_closes_itself_after_three_days(db):
     got = {r['key']: (r['status'], r['hold']) for r in db.all("SELECT key,status,hold FROM desk_fb_threads WHERE key LIKE '9401%%'")}
     assert got == {'940101': ('done', ''), '940102': ('done', ''), '940103': ('approved', 'customer'), '940104': ('ready', 'customer')}
     assert db.one("SELECT COUNT(*) AS n FROM desk_fb_attempts WHERE thread_id IN (SELECT id FROM desk_fb_threads WHERE key LIKE '9401%%')")['n'] == 0
+
+
+def test_skip_asks_the_meta_run_to_remove_the_star(db, logged):
+    """Wayne 11/15 23:50: 不發送 -> the next Meta run removes 持續追蹤; LINE has no star and is left out."""
+    from desk.tools import fb_browser
+    import json
+    from test_fb import ready
+    _, client, staff, _ = logged
+    boss = wayne(db, staff)
+    fb.push(db, [thread(key='940201')])
+    ready(db)
+    t = db.one("SELECT id,version FROM desk_fb_threads WHERE key='940201'")
+    assert fb.action(db, boss, dict(thread_id=t['id'], version=t['version']), 'skip') == {'ok': True}
+    todo = fb.to_unstar(db)
+    assert [x['thread_id'] for x in todo] == [t['id']] and todo[0]['name'] == '合成測試客人'
+    assert fb.unstarred(db, t['id']) == {'ok': True}
+    assert fb.to_unstar(db) == []
+    db.execute("UPDATE desk_fb_threads SET channel='line_message', unstar='' WHERE id=%s", (t['id'],))
+    assert fb.to_unstar(db) == []
+
+
+def test_list_says_how_many_older_messages_and_history_returns_them_all(db, logged):
+    """Wayne 11/15 23:50: the list carries the last 12; 顯示更早的對話 loads every message."""
+    _, client, staff, _ = logged
+    msgs = [dict(role='user', text=f'第 {n} 則', at=f'2026-11-15T{9 + n // 60:02d}:{n % 60:02d}:00+08:00') for n in range(15)]
+    fb.push(db, [thread(key='940301', messages=msgs)])
+    t = db.one("SELECT id FROM desk_fb_threads WHERE key='940301'")['id']
+    item = next(i for i in client.get('/desk/api/fb/list?tab=todo').get_json()['items'] if i['id'] == t)
+    assert len(item['messages']) == 12 and item['older'] == 3
+    full = client.get('/desk/api/fb/history?thread_id=' + t).get_json()['messages']
+    assert len(full) == 15 and full[0]['text'].startswith('第 0 則')

@@ -37,10 +37,11 @@ def register(bp,store):
             mine=[m for m in files if m['thread_id']==c['id']]
             sent=next((a['retry_key'] for a in attempts if a['status'] in ('approved','sent')),None)
             media=[m for m in mine if m['free']] if c['status'] in fb.TODO else [m for m in mine if sent and m['attempt_key']==sent]
+            timeline=fb.shape(e for e in events if e['thread_id']==c['id'])
             out.append(dict(id=c['id'],name=c['name'],channel=c['channel'],label=fb.LABELS[c['channel']],key=c['key'],url=c['url'],
                 context=c['context'],status=c['status'],version=c['version'],note=c['note'],result=c['draft'] or {},
                 hold=c['hold'],hold_note=c['hold_note'],hold_at=local_time(c['hold_at'])[5:16] if c['hold_at'] else '',
-                messages=fb.shape(e for e in events if e['thread_id']==c['id'])[-12:],is_public=c['channel'].endswith('_comment'),
+                messages=timeline[-12:],older=max(0,len(timeline)-12),is_public=c['channel'].endswith('_comment'),
                 media=[fb_media.describe(m) for m in media],shot=shots.get(c['id']),avatar=faces.get(c['id']),live=meta.live(c),
                 attempts=[dict(status=a['status'],time=local_time(a['approved_at']),staff=a['username'],text=a['content'],reason=a['reason']) for a in attempts]))
         return out
@@ -232,6 +233,12 @@ def register(bp,store):
         if not store.execute('UPDATE desk_edit_rules SET active=%s WHERE id=%s',(data['active'],rule_id)):
             raise ActionError('找不到修改指示',404)
         return jsonify(ok=True)
+
+    @bp.get('/api/fb/history')
+    def fb_history():
+        # Wayne 11/15 23:50 (Liang Hong: the 11/26 booking was in the 15th message from the end)
+        c=get_thread(request.args.get('thread_id'))
+        return jsonify(dict(messages=fb.shape(store.all('SELECT * FROM desk_fb_events WHERE thread_id=%s ORDER BY id',(c['id'],)))))
 
     @bp.get('/api/fb/references')
     def fb_references():

@@ -21,6 +21,7 @@ function grow(t){if(!t)return;t.style.height='auto';t.style.height=Math.max(t.sc
 function files(list,removable){return (list||[]).map(m=>`<figure>${m.type==='image'?`<img src="/desk/api/fb/media/${esc(m.id)}" alt="" loading="lazy">`:'<div class="vid">🎬</div>'}<span>${esc(m.name)}</span>${removable?`<button data-act="media-remove" data-media="${esc(m.id)}">移除</button>`:''}</figure>`).join('')}
 // Wayne 11/15: like 待處理 in the LINE back office, so a conversation he still has to check never gets lost.
 const HOLD={ours:'待我們確認',customer:'等客人回'};let holdFor=null;
+const FULL={};const msgSig=d=>{const l=d.messages[d.messages.length-1]||{};return d.messages.length+'|'+(l.time||'')+'|'+(l.text||'')};
 function holdBlock(d){
   if(!canReview)return d.hold?`<p class="note">${d.hold==='ours'?'📌':'⏳'} ${HOLD[d.hold]}${d.hold_note?'：'+esc(d.hold_note):''}</p>`:'';
   if(d.hold){const other=d.hold==='ours'?'customer':'ours';
@@ -41,7 +42,9 @@ function card(d,i,closed){
   h+=`<div class="detail"><p class="muted">${esc(d.label)} · ${esc(STATUS[d.status]||d.status)}${d.note&&d.note!==STATUS[d.status]?' · '+esc(d.note):''}</p>`;
   h+=holdBlock(d);
   if(d.context)h+=`<p class="context"><b>所屬貼文：</b>${esc(d.context.slice(0,200))}</p>`;
-  h+=`<div class="messages">${d.messages.map(m=>`<div class="message ${m.role==='assistant'?'ours':''}"><small>${m.role==='assistant'?'我們':'客人'} · ${esc(when(m.time))}</small>${esc(m.text)}</div>`).join('')||'<p class="muted">沒有訊息內容</p>'}</div>`;
+  // Wayne 11/15 23:50: only the last 12 come with the list; 顯示更早的對話 loads the whole conversation (Liang Hong's 11/26 booking)
+  const full=FULL[d.id]&&FULL[d.id].sig===msgSig(d)?FULL[d.id].list:null,shown=full||d.messages;
+  h+=`<div class="messages">${!full&&d.older?`<button class="link older" data-act="older">▲ 顯示更早的 ${d.older} 則對話</button>`:''}${shown.map(m=>`<div class="message ${m.role==='assistant'?'ours':''}"><small>${m.role==='assistant'?'我們':'客人'} · ${esc(when(m.time))}</small>${esc(m.text)}</div>`).join('')||'<p class="muted">沒有訊息內容</p>'}</div>`;
   if(d.shot)h+=`<details class="shot"><summary>原始畫面截圖 ${esc(d.shot.replace('-','/'))}</summary><a href="/desk/api/fb/shot?thread_id=${encodeURIComponent(d.id)}" target="_blank" rel="noopener"><img src="/desk/api/fb/shot?thread_id=${encodeURIComponent(d.id)}&t=${encodeURIComponent(d.shot)}" alt="Meta 收件匣這則對話的截圖" loading="lazy"></a></details>`;
   if(/^https:\/\//.test(d.url||''))h+=`<p><a class="meta-link" href="${esc(d.url)}" target="_blank" rel="noopener noreferrer">在 Meta 收件匣打開這則</a></p>`;
   if(todo){
@@ -185,6 +188,7 @@ document.addEventListener('click',async event=>{
     if(act==='toggle'&&WIDE.matches){if(openId!==d.id){openId=d.id;if(lastData)draw(lastData);document.querySelector('.pane')?.scrollTo(0,0)}return}
     if(act==='toggle'){openId=openId===d.id?null:d.id;if(lastData)draw(lastData);if(openId)document.querySelector(`.item[data-id="${CSS.escape(openId)}"]`)?.scrollIntoView({block:'nearest'});return}
     if(act==='hold'){busy=true;try{await api('hold',{thread_id:d.id,hold:b.dataset.hold,note:b.dataset.hold?d.hold_note||'':''});say(b.dataset.hold?`已標「${HOLD[b.dataset.hold]}」，會留在「待處理」直到你按處理好了。`:'已從「待處理」移除。')}catch(e){say(e.message,true)}finally{busy=false}await load(true);return}
+    if(act==='older'){b.disabled=true;try{FULL[d.id]={sig:msgSig(d),list:(await api('history?thread_id='+encodeURIComponent(d.id))).messages};draw(lastData);const box=document.querySelector(`.item[data-id="${CSS.escape(d.id)}"] .messages`);if(box)box.scrollTop=0}catch(e){say(e.message,true);b.disabled=false}return}
     if(act==='hold-pick'){holdFor=d;f('hold').showModal();return}
     if(act==='refs-toggle'){refsOpen.has(d.id)?refsOpen.delete(d.id):refsOpen.add(d.id);const box=el.querySelector('.refs');if(box)box.outerHTML=refsBlock(d);return}
     if(act==='ref-use'&&b.dataset.where==='auto'){const r=REFS[refKey(d)]||{},x=[...(r.canned||[]),...(r.history||[])][Number(b.dataset.n)];if(x){b.disabled=true;await useRef(d,el,x)}return}

@@ -336,6 +336,21 @@ def action(store,staff,data,kind):
             raise ActionError('操作格式不正確',400)
         cur.execute("UPDATE desk_fb_attempts SET status='cancelled',reason='Wayne 取消核准',updated_at=NOW() WHERE thread_id=%s AND status='approved'",(c['id'],))
         cur.execute("UPDATE desk_fb_threads SET status=%s,note=%s,draft_token=NULL,updated_at=NOW() WHERE id=%s",('ready' if kind=='cancel' else 'skip','取消核准' if kind=='cancel' else '不回覆',c['id']))
+        if kind=='skip' and c['channel']!='line_message':  # Wayne 11/15 23:50: the next Meta run removes the 持續追蹤 star
+            cur.execute("UPDATE desk_fb_threads SET unstar='todo' WHERE id=%s",(c['id'],))
+    return dict(ok=True)
+
+
+def to_unstar(store):
+    """FB/IG conversations Wayne marked 不發送: the browser run removes Meta's 持續追蹤 star, then calls unstarred()."""
+    return [dict(thread_id=r['id'],channel=r['channel'],key=r['key'],name=r['name'],url=r['url'],is_public=r['channel'].endswith('_comment'))
+            for r in store.all("""SELECT id,channel,key,name,url FROM desk_fb_threads WHERE unstar='todo' AND channel<>'line_message'
+              ORDER BY updated_at LIMIT 40""")]
+
+
+def unstarred(store, thread_id):
+    if not store.execute("UPDATE desk_fb_threads SET unstar='done' WHERE id=%s AND unstar='todo'",(str(thread_id),)):
+        raise ActionError('找不到這則待取消持續追蹤的對話',404)
     return dict(ok=True)
 
 

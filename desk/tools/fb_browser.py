@@ -19,6 +19,8 @@ def main(argv=None, store_factory=None):
     sub.add_parser('faces').add_argument('--line',action='store_true',help='only the official LINE account')
     sub.add_parser('pending').add_argument('--line',action='store_true',help='only the official LINE account')
     sub.add_parser('open').add_argument('--line',action='store_true',help='only the official LINE account')
+    sub.add_parser('unstar',help='FB/IG conversations Wayne marked 不發送: remove their 持續追蹤 star')
+    sub.add_parser('unstarred').add_argument('thread_id')
     result=sub.add_parser('result')
     result.add_argument('attempt_id')
     result.add_argument('outcome',choices=('sent','failed'))
@@ -64,6 +66,8 @@ def main(argv=None, store_factory=None):
             for item in out:  # the browser attaches these local files together with the text
                 item['files']=fb_media.export(db,item['attempt_id'],WORKSPACE/'AI客服訓練'/'fb_media')
         elif args.command=='open': out=fb.awaiting(db,args.line)
+        elif args.command=='unstar': out=fb.to_unstar(db)
+        elif args.command=='unstarred': out=fb.unstarred(db,args.thread_id)
         else: out=fb.record_result(db,args.attempt_id,args.outcome,args.reason)
         print(json.dumps(out,ensure_ascii=False))
         return 0
