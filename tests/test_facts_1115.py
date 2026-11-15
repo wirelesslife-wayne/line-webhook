@@ -74,3 +74,9 @@ def test_a_reference_wayne_picked_beats_the_ad_button_ask_the_car_first_rule(db)
                                original_draft='請問您的車款、年份？')
     sent = ''.join(m['content'] for m in calls[1])
     assert '這次指示優先' in sent and '最後再請客人提供車款年份' in sent
+    assert '寫一則簡短的真人跟進' not in calls[1][0]['content']  # the ask-the-car-first rule is not given at all then
+
+
+def test_without_an_instruction_ad_button_leads_still_get_the_short_follow_up(db):
+    _, rules = draft_with(db, '您好', '安裝要多久？價格多少？')
+    assert '寫一則簡短的真人跟進' in rules
