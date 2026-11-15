@@ -82,3 +82,10 @@ def test_without_an_instruction_ad_button_leads_answered_by_the_auto_reply_get_n
     _, rules = draft_with(db, '您好', '安裝要多久？價格多少？')
     assert '等客人回，不用再追一則' in rules and '（建議不回覆）' in rules
     assert '有任何一題自動回覆沒答到' in rules  # otherwise still a short follow-up
+
+
+def test_line_review_2214_rules_reach_every_draft(db):
+    """Wayne 11/15 22:14: past appointments go to us, one link per quoted product, 小沈的店 is by appointment."""
+    _, rules = draft_with(db, '您好', '請問有營業嗎')
+    assert '過期的約定' in rules and '各附自己的產品介紹連結' in rules and '小沈的店」採預約制' in rules
+    assert '不附產品圖。\n' in rules
