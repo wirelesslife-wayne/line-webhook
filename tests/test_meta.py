@@ -181,9 +181,10 @@ def test_messages_append_and_follow_the_push_rules(db, api):
     assert len(fb.messages(db, tid())) == 5
 
 
-def test_first_contact_from_ad_buttons_only_is_skipped(db, api):
+def test_first_contact_from_ad_buttons_only_still_gets_a_draft(db, api):
+    """Wayne 11/15 13:19 replaced 11/12: a lead who only pressed the ad's buttons gets a person's follow-up too."""
     receive(db, incoming('多少錢？安裝要多久？', quick_reply={'payload': 'ad'}))
-    assert fb.conversation(db, tid())['status'] == 'skip'
+    assert fb.conversation(db, tid())['status'] == 'waiting'
 
 
 def test_webhook_conversations_wait_a_quiet_minute_before_drafting(db, api):

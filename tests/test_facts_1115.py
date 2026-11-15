@@ -62,3 +62,15 @@ def test_references_match_the_product_and_the_car(db):
     assert titles == ['電動尾門銷售回覆']  # no sunshade quote for a tailgate question on a Toyota
     assert lookup.for_thread(db, [dict(role='user', text='Model Y 電動遮陽簾 電動 多少錢')])['canned'][0]['title'].startswith('Tesla')
     assert lookup.for_thread(db, [dict(role='user', text='WRM-418 後視鏡保固多久')])['history'] == []  # not the tailgate warranty
+
+
+def test_a_reference_wayne_picked_beats_the_ad_button_ask_the_car_first_rule(db):
+    calls = []
+    def provider(messages):
+        calls.append(messages)
+        return {'brand': None, 'model': None, 'products': []} if len(calls) == 1 else {'draft': '您好'}
+    Engine(db, provider).draft([{'time': '2026-11-15 16:28:00', 'role': 'user', 'text': '安裝要多久？價格多少？', 'note': '廣告預設問題', 'new': True}],
+                               now(), channel='fb_message', instruction='請依照這份參考資料重寫草稿：【制式回覆〈電動尾門〉】國產 18,000／進口 20,000',
+                               original_draft='請問您的車款、年份？')
+    sent = ''.join(m['content'] for m in calls[1])
+    assert '這次指示優先' in sent and '最後再請客人提供車款年份' in sent

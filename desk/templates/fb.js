@@ -101,7 +101,7 @@ function refsBlock(d){
   if(r===undefined){fetchRefs(d);return '<div class="refs"><p class="muted">參考資料：查詢中…</p></div>'}
   const list=[...(r.canned||[]),...(r.history||[])],shut=!refsOpen.has(d.id);
   if(!list.length)return '<div class="refs"><p class="muted">參考資料 ⚪ 目前沒有合適的參考資料</p><button class="link" data-act="lookup">查資料 ›</button></div>';
-  return `<div class="refs"><button class="link refs-head" data-act="refs-toggle">參考資料 ✅ 找到 ${list.length} 筆 ${shut?'▾':'▴'}</button>${shut?'':list.map((x,n)=>refCard(x,n,'auto')).join('')}<button class="link" data-act="lookup">找不到？查資料 ›</button></div>`}
+  return `<div class="refs"><button class="link refs-head" data-act="refs-toggle" aria-expanded="${!shut}">${shut?'▶':'▼'} 參考資料 ✅ 找到 ${list.length} 筆</button>${shut?'':list.map((x,n)=>refCard(x,n,'auto')).join('')}<button class="link" data-act="lookup">找不到？查資料 ›</button></div>`}
 async function fetchRefs(d){
   const k=refKey(d);if(REFS[k]===null)return;REFS[k]=null;
   try{REFS[k]=await api('references?thread_id='+encodeURIComponent(d.id))}catch(e){REFS[k]={canned:[],history:[]}}
