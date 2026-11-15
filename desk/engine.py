@@ -51,6 +51,13 @@ BANNED = ['依車款年份配備', '現場確認為準', '依現場為準', '這
           # Wayne 11/10：這些保守句他每次都刪掉
           '依原廠認定', '原廠認定', '仍需確認', '仍須確認', '實際安裝', '實際仍', '不一定能', '無法保證', '不保證']
 
+# Short names customers type (Wayne 11/15: 「Yc2026」 is a Yaris Cross, not a reason to ask the car again).
+CAR_ALIASES = ('Yc／YC＝TOYOTA Yaris Cross、CC＝TOYOTA Corolla Cross、HRV＝HONDA HR-V、CRV＝HONDA CR-V、'
+               '神A＝TOYOTA Corolla Altis、CX5／CX30＝MAZDA CX-5／CX-30、'
+               'MK4／MK4.5＝FORD Focus 第 4／4.5 代（Kuga 是 MK3／MK3.5，看上下文）、GS300 三代＝LEXUS GS 第三代')
+ALIAS_CODES = frozenset({'YC', 'CC', 'HRV', 'CRV'})
+OPENING = re.compile(r'小編(幫您)?整理|小編提供(?!您各項報價)')
+
 # Wayne 11/15 (Grok found approved drafts that got these wrong; ChatGPT and Gemini reviewed the plan).
 # They outrank the price table, saved replies, past answers and examples.
 FACTS = ('\n\nWayne 11/15 確認的事實（最高優先，優先於價格表、制式回覆、歷史問答、核准範例和上面任何規則）：\n'
@@ -67,7 +74,11 @@ FACTS = ('\n\nWayne 11/15 確認的事實（最高優先，優先於價格表、
          '- 訂金、匯款：客人明確說已經匯款、轉帳，或傳了轉帳截圖、帳號末五碼時，草稿第一句先回「收到您的轉帳通知，謝謝您」，'
          '不能說已入帳，to_human 設 true，staff_note 寫「請對帳」。只是問怎麼付款不算。\n'
          '- 客訴（客人抱怨、說多次沒處理好、要求退費）：只寫致歉和下一步，不辯解、不報價，to_human 設 true。\n'
-         '- WRM-418 四錄電子後視鏡施工約 4～6 小時。')
+         '- WRM-418 四錄電子後視鏡施工約 4～6 小時。\n'
+         '- 車名簡寫：' + CAR_ALIASES + '。客人已經寫出車款（含簡寫、代數）就不要再問車款；也寫了年份就不要再問年份，'
+         '只問還缺的那一項（例如想裝哪一項產品）。品牌從車款就看得出來時（Yaris Cross＝TOYOTA、GS＝LEXUS）照品牌報價，不用再問品牌。\n'
+         '- 客人問地址、在哪裡、怎麼去，而且沒說自己在外縣市：第一句先給板橋直營門市地址和電話（新北市板橋區國慶路213巷3號（重慶國中旁），02-29525859），'
+         '再問客人在哪個縣市，可以介紹鄰近的經銷商門市。不要只給經銷商查詢網址。')
 
 SPECIAL_DAY = re.compile(r'投票|選舉|颱風|國定假日|連假')
 
@@ -84,6 +95,11 @@ def fact_flags(draft, convo):
         flags.append('無卡分期另收 10% 手續費，草稿寫成不收或 0 利率')
     if SPECIAL_DAY.search(convo) and re.search(r'有營業|正常營業|照常營業', draft):
         flags.append('客人問的是投票日／假日，不能只照月曆說有營業，請先跟門市確認')
+    last = ([l for l in convo.splitlines() if '客人：' in l] or [''])[-1]
+    if re.search(r'地址', last) and not re.search(r'國慶路|[路街道]\d*[段巷]?\d+號', draft):
+        flags.append('客人問地址，草稿沒給門市地址')
+    if OPENING.search(draft.split('\n', 1)[0]):
+        flags.append('開頭有「小編整理／小編提供…」，新規則要第一句直接回答')
     if re.search(r'轎車', convo) and re.search(r'轎車[^。\n]{0,12}(也可以|也有可升級|可以升級|可以裝)', draft):
         flags.append('一般轎車通常沒有可裝的電動尾門，請先問車款年份')
     return flags
@@ -167,8 +183,10 @@ class Engine:
         if hasattr(provider, 'public'):
             # Shop addresses and phones are published on our site; without this the privacy filter masks them.
             provider.public = [part.strip() for line in str(self.DEALERS).splitlines() for part in line.split('｜')[1:] if part.strip()]
-            provider.models = frozenset(code for _, model in self.MODELS for word in re.split(r'[\s/()（）]+', model)
-                                        for code in [re.sub(r'[-.]', '', word).upper()] if re.fullmatch(r'[A-Z]{2,3}', code))
+            # "GS300" also gives GS, so 「gs300三代」 is not masked as a plate (Wayne 11/15); ALIAS_CODES adds YC etc.
+            provider.models = frozenset(m.group(1) for _, model in self.MODELS for word in re.split(r'[\s/()（）]+', model)
+                                        for m in [re.fullmatch(r'([A-Z]{2,3})(?:\d{2,3}[A-Z]?)?', re.sub(r'[-.]', '', word).upper())]
+                                        if m) | ALIAS_CODES
 
     def history(self, q, before_local, k=3):
         rows = self.store.all('SELECT question,answer FROM desk_qa WHERE asked_at < %s', (before_local,))
@@ -208,7 +226,7 @@ class Engine:
             raise ProviderPending('等 Claude 回答：雲端 AI 擬稿方式尚未核准；可由同事填寫回覆')
         post_context = context
         convo = '\n'.join(f"{x['time']} {'我方' if x['role']=='assistant' else '客人'}：{x['text']}" for x in timeline)
-        ex = self.provider([{'role':'system','content':'從對話抽取 brand/model/year/products/series/location，回傳 JSON。products 是產品名稱陣列；series 是有明確提及的產品系列，未提及則為 null。車型清單：'+json.dumps(self.MODELS, ensure_ascii=False)},
+        ex = self.provider([{'role':'system','content':'從對話抽取 brand/model/year/products/series/location，回傳 JSON。products 是產品名稱陣列；series 是有明確提及的產品系列，未提及則為 null。車名簡寫：'+CAR_ALIASES+'。車型清單：'+json.dumps(self.MODELS, ensure_ascii=False)},
                             # Ad titles change all the time and may say nothing (「新的互動廣告」); the ad text names the product.
                             {'role':'user','content':convo+('\n客人點進來的廣告／貼文（產品以這裡為準，客人沒講產品時就用這個）：'+post_context if post_context else '')}])
         newtext = ' '.join(x['text'] for x in timeline if x['role']=='user' and x.get('new'))

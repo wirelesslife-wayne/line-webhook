@@ -39,6 +39,20 @@ def test_flags_catch_the_mistakes_grok_found(db):
     assert not fact_flags('11/28 是投票日，小編跟門市確認後馬上回覆您', '11/28 有開嗎 投票日')
 
 
+def test_car_short_names_address_and_xiaobian_opening(db):
+    """Wayne 11/15: Yc＝Yaris Cross, GS300 三代, a customer asking our address, 「小編整理…」 openings."""
+    engine_ = Engine(db, type('P', (), {'public': (), 'models': frozenset()})())
+    assert {'YC', 'CC'} <= engine_.provider.models
+    _, rules = draft_with(db, '您好', 'Yc2026 電動尾門')
+    assert 'Yaris Cross' in rules and '國慶路213巷3號' in rules and '不要再問車款' in rules
+    asked = '2026-11-15 10:00 客人：地址請示出？'
+    assert any('地址' in f for f in fact_flags('請問您在哪個縣市呢？全台經銷商門市查詢：https://reurl.cc/kpdGgK', asked))
+    assert not any('地址' in f for f in fact_flags('板橋門市：新北市板橋區國慶路213巷3號，電話 02-29525859', asked))
+    assert any('小編' in f for f in fact_flags('您好～完工價 $18,500，小編整理功能給您參考。\n👉 四鏡頭', ''))
+    assert not any('小編' in f for f in fact_flags('小編提供您各項報價：\n👉 電動尾門 $18,000', ''))
+    assert not any('小編' in f for f in fact_flags('您好～完工價 $18,500\n小編可以協助介紹鄰近門市', ''))
+
+
 def test_references_match_the_product_and_the_car(db):
     seed(db)
     db.put_kb('canned_v2.json', [dict(topic='Tesla 電動遮陽簾（一般款／星空款）報價', text='Tesla 電動遮陽簾 一般款 電動 完工價'),

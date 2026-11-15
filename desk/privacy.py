@@ -12,7 +12,10 @@ def plate(models):
         letters, digits = (m.group(1), m.group(2)) if m.group(1) else (m.group(4), m.group(3))
         year = 1990 <= int(digits) <= 2035
         engine = bool(m.group(1)) and len(digits) == 3 and digits.endswith('0')
-        if letters.upper() in models and (year or engine):
+        # "YC-2026" is written like a plate; with a hyphen only 「NX-2023年」 (a year word after it) is a car
+        # (ChatGPT and Gemini 11/15, when GS and YC joined the list).
+        dashed = '-' in m.group(0) and not re.match(r'\s*(年|款|式)', m.string[m.end():])
+        if letters.upper() in models and (year or engine) and not dashed:
             return m.group(0)
         return '[車牌]'
     return replace
