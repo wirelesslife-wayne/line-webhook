@@ -20,12 +20,14 @@ const joined=el=>[...el.querySelectorAll('[data-draft]')].map(t=>t.value.replace
 function grow(t){if(!t)return;t.style.height='auto';t.style.height=Math.max(t.scrollHeight+2,t.closest('.parts')&&t.closest('.parts').children.length>1?72:150)+'px'}
 function files(list,removable){return (list||[]).map(m=>`<figure>${m.type==='image'?`<img src="/desk/api/fb/media/${esc(m.id)}" alt="" loading="lazy">`:'<div class="vid">🎬</div>'}<span>${esc(m.name)}</span>${removable?`<button data-act="media-remove" data-media="${esc(m.id)}">移除</button>`:''}</figure>`).join('')}
 // Wayne 11/15: like 待處理 in the LINE back office, so a conversation he still has to check never gets lost.
-const HOLD={ours:'待我們確認',customer:'等客人回'};
+const HOLD={ours:'待我們確認',customer:'等客人回'};let holdFor=null;
 function holdBlock(d){
   if(!canReview)return d.hold?`<p class="note">${d.hold==='ours'?'📌':'⏳'} ${HOLD[d.hold]}${d.hold_note?'：'+esc(d.hold_note):''}</p>`:'';
   if(d.hold){const other=d.hold==='ours'?'customer':'ours';
     return `<div class="note hold"><p>${d.hold==='ours'?'📌':'⏳'} <b>${HOLD[d.hold]}</b>${d.hold_note?'：'+esc(d.hold_note):''}${d.hold_at?` <small class="muted">（${esc(d.hold_at)} 起）</small>`:''}</p><p class="muted">${d.hold==='ours'?'會一直留在「待處理」，處理好了再按下面的按鈕。':'客人回訊息就會自動回到待審核。'}</p><div class="actions"><button data-act="hold" data-hold="">處理好了</button><button data-act="hold" data-hold="${other}">改成${HOLD[other]}</button></div></div>`}
-  return `<div class="actions holdacts"><button class="link" data-act="hold" data-hold="ours">📌 標「待我們確認」</button><button class="link" data-act="hold" data-hold="customer">⏳ 標「等客人回」</button></div>`}
+  return ''}
+// Wayne 11/15 20:35 picked option A: one grey button under 發送, two choices in a bottom sheet, nothing is sent
+function holdPick(d){return canReview&&!d.hold?'<div class="holdpick"><button class="holdbtn" data-act="hold-pick" aria-haspopup="dialog">📌 標記待處理 ▾</button></div>':''}
 function card(d,i,closed){
   const todo=TODO.includes(d.status),waiting=d.status==='waiting'||d.status==='drafting',r=d.result||{};
   const draft=edits[editKey(d)]??r.draft??'';
@@ -40,7 +42,7 @@ function card(d,i,closed){
   h+=holdBlock(d);
   if(d.context)h+=`<p class="context"><b>所屬貼文：</b>${esc(d.context.slice(0,200))}</p>`;
   h+=`<div class="messages">${d.messages.map(m=>`<div class="message ${m.role==='assistant'?'ours':''}"><small>${m.role==='assistant'?'我們':'客人'} · ${esc(when(m.time))}</small>${esc(m.text)}</div>`).join('')||'<p class="muted">沒有訊息內容</p>'}</div>`;
-  if(d.shot)h+=`<details class="shot" ${PHONE.matches?'':'open'}><summary>原始畫面截圖 ${esc(d.shot.replace('-','/'))}</summary><a href="/desk/api/fb/shot?thread_id=${encodeURIComponent(d.id)}" target="_blank" rel="noopener"><img src="/desk/api/fb/shot?thread_id=${encodeURIComponent(d.id)}&t=${encodeURIComponent(d.shot)}" alt="Meta 收件匣這則對話的截圖" loading="lazy"></a></details>`;
+  if(d.shot)h+=`<details class="shot"><summary>原始畫面截圖 ${esc(d.shot.replace('-','/'))}</summary><a href="/desk/api/fb/shot?thread_id=${encodeURIComponent(d.id)}" target="_blank" rel="noopener"><img src="/desk/api/fb/shot?thread_id=${encodeURIComponent(d.id)}&t=${encodeURIComponent(d.shot)}" alt="Meta 收件匣這則對話的截圖" loading="lazy"></a></details>`;
   if(/^https:\/\//.test(d.url||''))h+=`<p><a class="meta-link" href="${esc(d.url)}" target="_blank" rel="noopener noreferrer">在 Meta 收件匣打開這則</a></p>`;
   if(todo){
     if(r.staff_note)h+=`<p class="note ainote">💡 ${esc(r.staff_note)}</p>`;
@@ -57,7 +59,7 @@ function card(d,i,closed){
       if(sug.length)h+=`<div class="suggest"><b>AI 建議附圖</b><div class="files">${sug.map(c=>`<figure><img src="/desk/api/fb/library/${esc(c.id)}" alt="" loading="lazy"><span>${esc(c.name)}</span><button data-act="lib-attach" data-lib="${esc(c.id)}">附上</button></figure>`).join('')}</div></div>`;
       h+=`<div class="actions"><label class="pick"><input type="file" data-file accept="image/jpeg,image/png,video/mp4" hidden>＋ 加圖片／影片</label><button data-act="lib-open">從常用圖片挑</button></div><div class="libgrid" hidden></div><small class="muted">${d.is_public?'會跟留言回覆一起送出，所有人都看得到。Facebook 留言只能附 1 個：JPEG／PNG 10MB 或 MP4 影片 25MB 以內。':'會跟文字一起送出（分成多則時，跟最後一則一起送）。JPEG／PNG 每張 10MB、MP4 影片 25MB 以內，最多 3 個。'}</small></div>`;
     }
-    h+=`<div class="actions mainacts"><button class="primary" data-act="send" ${canReview&&!waiting?'':'disabled'}>發送</button><button data-act="edit" ${waiting?'disabled':''}>請 AI 重寫</button><button data-act="skip" ${canReview?'':'disabled'}>不發送</button></div>`;
+    h+=`<div class="actions mainacts"><button class="primary" data-act="send" ${canReview&&!waiting?'':'disabled'}>發送</button><button data-act="edit" ${waiting?'disabled':''}>請 AI 重寫</button><button data-act="skip" ${canReview?'':'disabled'}>不發送</button></div>`+holdPick(d);
     h+=`<div class="editbox" hidden><label for="fb-ins-${i}">要改哪裡？</label><p class="muted">由原本擬稿的 AI 重寫：它讀過價格表、制式回覆、你核准過的回覆和你記住的指示，會照你這句話改。</p><textarea id="fb-ins-${i}" data-instruction maxlength="2000" placeholder="例如：不要問縣市、價格寫 18,000、語氣再輕鬆一點"></textarea>${canReview?'<label class="check"><input type="checkbox" data-remember>以後都照這樣寫（記住這條指示，會影響之後所有草稿）</label>':''}<div class="actions"><button class="primary" data-act="revise">照這樣重寫</button><button data-act="edit-cancel">取消</button></div></div>`;
   }else if(d.status==='approved'){
     const a=d.attempts.find(x=>x.status==='approved');
@@ -67,6 +69,7 @@ function card(d,i,closed){
     h+=`<p class="closed-by">${d.status==='skip'?'不回覆':a?`已送出 · ${esc(a.staff)} 核准`:'已結案'} · ${esc(d.closed_at||'')}</p>`;
     if(a)h+=`<label>已送出的內容（${esc(a.time)}）</label><div class="preview">${esc(a.text)}</div>`;
   }
+  if(!todo)h+=holdPick(d);
   return h+'</div></article>';
 }
 document.addEventListener('change',async e=>{
@@ -89,14 +92,14 @@ async function libraryGrid(box){
   box.innerHTML=Object.entries(groups).map(([t,list])=>`<h3>${esc(t)}</h3><div class="files">${list.map(c=>`<figure title="${esc(c.use_when)}"><img src="/desk/api/fb/library/${esc(c.id)}" alt="" loading="lazy"><span>${esc(c.name)}</span><small class="muted">${esc(c.use_when)}</small><button data-act="lib-attach" data-lib="${esc(c.id)}">附上</button></figure>`).join('')}</div>`).join('');
 }
 // Wayne 11/14: what the draft could lean on, found automatically; 依此重寫 is one more tap
-const REFS={},REFUSED={};let refsShut=new Set(),lookupFor=null,lkKind='history';
+const REFS={},REFUSED={};let refsOpen=new Set(),lookupFor=null,lkKind='history';
 function refKey(d){return d.id+':'+d.version}
 const RISKY=/格式化|恢復原廠|原廠設定|重置|reset|刪除/i;  // ChatGPT and Gemini 11/14: steps that wipe a customer's videos
 function refCard(x,n,where){return `<div class="ref"><b>${x.kind==='canned'?'📘 制式回覆｜'+esc(x.title):'💬 真人案例｜'+esc(x.date||'')}</b>${x.question?`<p class="q">客人問：${esc(x.question)}</p>`:''}<p>${x.kind==='history'?'同事答：':''}${esc(x.text)}</p>${RISKY.test(x.text)?'<p class="warn">⚠️ 含格式化／重置等會清掉資料的步驟，只能參考，不能依此重寫（11/15 兩家 AI：只靠警告擋不住）</p>':`<button data-act="ref-use" data-where="${where}" data-n="${n}">依此重寫</button>`}</div>`}
 function refsBlock(d){
   const r=REFS[refKey(d)];
   if(r===undefined){fetchRefs(d);return '<div class="refs"><p class="muted">參考資料：查詢中…</p></div>'}
-  const list=[...(r.canned||[]),...(r.history||[])],shut=refsShut.has(d.id);
+  const list=[...(r.canned||[]),...(r.history||[])],shut=!refsOpen.has(d.id);
   if(!list.length)return '<div class="refs"><p class="muted">參考資料 ⚪ 目前沒有合適的參考資料</p><button class="link" data-act="lookup">查資料 ›</button></div>';
   return `<div class="refs"><button class="link refs-head" data-act="refs-toggle">參考資料 ✅ 找到 ${list.length} 筆 ${shut?'▾':'▴'}</button>${shut?'':list.map((x,n)=>refCard(x,n,'auto')).join('')}<button class="link" data-act="lookup">找不到？查資料 ›</button></div>`}
 async function fetchRefs(d){
@@ -166,6 +169,9 @@ document.addEventListener('click',async event=>{
         try{await api('knowledge',{user_id:d.id,question:(last?last.text:'').slice(0,5000)||'（客人問題）',answer:text,summary:text.split('\n')[0].slice(0,120),scope:''})}catch(e){say('送交知識審核失敗：'+e.message,true);return}}
       f('lookup').close();await useRef(d,document.querySelector(`.item[data-id="${CSS.escape(d.id)}"]`),{kind:'paste',title:'貼上的答案',text});
       if(f('lk-submit').checked)say('已送交知識審核，AI 也正在依這個答案重寫，約 1 分鐘。');return}
+    if(b.id==='fb-hold-cancel'){f('hold').close();holdFor=null;return}
+    if(b.dataset.holdKind!==undefined&&holdFor){const d=holdFor,k=b.dataset.holdKind;f('hold').close();holdFor=null;busy=true;
+      try{await api('hold',{thread_id:d.id,hold:k,note:d.hold_note||''});say(`已標「${HOLD[k]}」，會留在「待處理」直到你按處理好了。`)}catch(e){say(e.message,true)}finally{busy=false}await load(true);return}
     if(b.id==='fb-confirm-cancel'){f('confirm').close();confirmation=null;return}
     if(b.id==='fb-confirm-ok'&&confirmation){
       const snap=confirmation;if(linkGate.pending||linkGate.bad)return;if(snap.is_public&&!f('public-check').checked)return;const lc=document.getElementById('fb-links-check');if(lc&&!lc.checked)return;
@@ -179,7 +185,8 @@ document.addEventListener('click',async event=>{
     if(act==='toggle'&&WIDE.matches){if(openId!==d.id){openId=d.id;if(lastData)draw(lastData);document.querySelector('.pane')?.scrollTo(0,0)}return}
     if(act==='toggle'){openId=openId===d.id?null:d.id;if(lastData)draw(lastData);if(openId)document.querySelector(`.item[data-id="${CSS.escape(openId)}"]`)?.scrollIntoView({block:'nearest'});return}
     if(act==='hold'){busy=true;try{await api('hold',{thread_id:d.id,hold:b.dataset.hold,note:b.dataset.hold?d.hold_note||'':''});say(b.dataset.hold?`已標「${HOLD[b.dataset.hold]}」，會留在「待處理」直到你按處理好了。`:'已從「待處理」移除。')}catch(e){say(e.message,true)}finally{busy=false}await load(true);return}
-    if(act==='refs-toggle'){refsShut.has(d.id)?refsShut.delete(d.id):refsShut.add(d.id);const box=el.querySelector('.refs');if(box)box.outerHTML=refsBlock(d);return}
+    if(act==='hold-pick'){holdFor=d;f('hold').showModal();return}
+    if(act==='refs-toggle'){refsOpen.has(d.id)?refsOpen.delete(d.id):refsOpen.add(d.id);const box=el.querySelector('.refs');if(box)box.outerHTML=refsBlock(d);return}
     if(act==='ref-use'&&b.dataset.where==='auto'){const r=REFS[refKey(d)]||{},x=[...(r.canned||[]),...(r.history||[])][Number(b.dataset.n)];if(x){b.disabled=true;await useRef(d,el,x)}return}
     if(act==='lookup'){lookupFor=d;f('lk-q').value=((REFS[refKey(d)]||{}).query||'');f('lk-answer').value='';f('lk-submit').checked=false;f('lookup').showModal();lkShow(f('lk-q').value?'history':'canned');return}
     if(act==='ver-more'){const pre=b.previousElementSibling,open=pre.classList.toggle('clamp');b.textContent=open?'展開全文':'收合';return}
@@ -238,3 +245,4 @@ f('public-check').addEventListener('change',gate);
 document.addEventListener('change',e=>{if(e.target.id==='fb-links-check')gate()});
 f('confirm').addEventListener('cancel',e=>{if(busy)e.preventDefault();else confirmation=null});
 void load(true);setInterval(()=>load(false),8000);
+f('hold').addEventListener('click',e=>{const r=f('hold').getBoundingClientRect();if(e.target===f('hold')&&(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)){f('hold').close();holdFor=null}});  // tap outside the sheet closes it
