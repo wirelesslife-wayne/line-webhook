@@ -494,13 +494,17 @@ def test_attachment_limits_and_bad_files(db, logged):
     assert fb_media.read(db, 'x' * 32) is None
 
 
-def test_customer_who_only_pressed_ad_buttons_is_not_waiting(db):
-    """Wayne 11/12 (王英寬): pressing the ad's preset questions is answered by the ad itself."""
+def test_customer_who_only_pressed_ad_buttons_still_gets_a_draft(db):
+    """Wayne 11/15 13:19 (勝哥, 陳天天) replaced 11/12 (王英寬): a lead who only pressed the ad's preset questions
+    gets a person's follow-up too; the auto reply is not the end of it."""
     pressed = [dict(role='user', text='多少錢？安裝要多久？', at='上午3:00', note='廣告預設問題'),
                dict(role='page', text='WRM-418 完工價 NT$18,500，施工時間約 4～5 小時。', at='上午3:00', note='自動回覆')]
     assert fb.push(db, [thread(messages=pressed)])['new_customer_messages'] == 0
     c = fb.conversation(db, tid())
-    assert c['status'] == 'skip' and '廣告預設問題' in c['note']
+    assert c['status'] == 'waiting' and '廣告預設問題' in c['note']
+    ready(db)
+    assert fb.push(db, [thread(messages=pressed)])['new_customer_messages'] == 0
+    assert fb.conversation(db, tid())['status'] == 'ready'  # re-reading the same thing changes nothing
     assert fb.push(db, [thread(messages=pressed + [dict(role='user', text='我的車是 2022 RAV4', at='上午9:10')])])['new_customer_messages'] == 1
     assert fb.conversation(db, tid())['status'] == 'waiting'
 

@@ -131,13 +131,17 @@ def push(store, payload):
                 return bool(now_said) and not said(old,role).endswith(now_said[-30:])
             users, changed = added('user'), added('user') or added('page')
             state, draft, drafted, note = c['status'], c['draft'], c['drafted_version'], c['note']
-            if not old and not users:
-                # First sight of a conversation in which the customer only pressed ad buttons.
-                state, note = 'skip', '客人只點了廣告預設問題，自動回覆已回答'
+            pressed = any('廣告預設問題' in (m.get('note') or '') for m in row['messages'] if m['role'] == 'user')
+            if not old and not users and pressed:
+                # Wayne 11/15 13:19 (勝哥, 陳天天): a lead who only pressed ad buttons still gets a person's follow-up,
+                # drafted like any other (it replaced the 11/12 rule that skipped them).
+                state, draft, drafted, note = 'waiting', None, None, '客人只點了廣告預設問題，請 AI 擬跟進'
+            elif not old and not users:
+                state, note = 'skip', '沒有客人自己打的字'
             if users:
                 state, draft, drafted, note = 'waiting', None, None, ''
                 cur.execute("UPDATE desk_fb_threads SET pending_instruction='',pending_original='',pending_rule=NULL WHERE id=%s",(tid,))
-                cur.execute("UPDATE desk_fb_threads SET hold='',hold_note='',hold_at=NULL WHERE id=%s AND hold='customer'",(tid,))
+                cur.execute("UPDATE desk_fb_threads SET hold='',hold_note='',hold_at=NULL,hold_by='' WHERE id=%s AND hold='customer'",(tid,))
                 cur.execute("""UPDATE desk_fb_attempts SET status='expired',reason='客人有新訊息，請重新擬稿',updated_at=NOW()
                   WHERE thread_id=%s AND status='approved'""",(tid,))
             if not c['context'] and row['context'] and state in ('ready','error','blocked'):
@@ -222,7 +226,9 @@ def pending(store, line=False):
     result = []
     with store.cursor() as cur:
         cur.execute("""SELECT t.* FROM desk_fb_threads t WHERE EXISTS(SELECT 1 FROM desk_fb_attempts a WHERE a.thread_id=t.id AND a.status='approved')
-          AND (t.channel='line_message')=%s AND NOT (t.key LIKE 'psid:%%' OR t.key LIKE 'igsid:%%') ORDER BY t.id FOR UPDATE""",(line,))
+          AND (t.channel='line_message')=%s AND NOT (t.key LIKE 'psid:%%' OR t.key LIKE 'igsid:%%')
+          ORDER BY (SELECT MIN(a.approved_at) FROM desk_fb_attempts a WHERE a.thread_id=t.id AND a.status='approved'),t.id
+          FOR UPDATE OF t""",(line,))
         for c in cur.fetchall():
             cur.execute("SELECT * FROM desk_fb_attempts WHERE thread_id=%s AND status='approved'",(c['id'],))
             a = cur.fetchone()
@@ -357,6 +363,12 @@ def record_result(store, attempt_id, outcome, reason='', via='browser'):
             cur.execute("""INSERT INTO desk_fb_events(thread_id,fingerprint,role,content,at,event_at,origin,source_version)
               VALUES(%s,%s,'page',%s,%s,%s,%s,%s) ON CONFLICT(thread_id,fingerprint) DO NOTHING""",
               (c['id'],'attempt:'+attempt_id,a['content'],stamp,event_time(stamp),via,a['source_version']))
+            # Wayne 11/15 13:22: what was actually sent decides the next step; a mark he set by hand stays.
+            if c['hold_by'] != 'wayne':
+                kind = hold_after_send(a['content'])
+                if kind != c['hold']:
+                    cur.execute("""UPDATE desk_fb_threads SET hold=%s,hold_note=%s,hold_at=CASE WHEN %s='' THEN NULL ELSE NOW() END,
+                      hold_by='' WHERE id=%s""",(kind,{'ours':'回覆說會確認後再回','customer':'已回覆，等客人回'}.get(kind,''),kind,c['id']))
         if c['version']==a['source_version'] and a['status']=='approved' and c['status']=='approved':
             # Wayne 11/12: a colleague had already answered in Meta; leaving it in review looked like a bad draft.
             answered = outcome=='failed' and '已經有人回覆' in reason
@@ -367,6 +379,19 @@ def record_result(store, attempt_id, outcome, reason='', via='browser'):
 
 
 HOLDS = ('ours','customer')
+# We told the customer we would come back to them (ChatGPT 11/15: when both sides owe something, keep it ours).
+WE_OWE = re.compile(r'(確認|查詢|查好|查看|問過|詢問)[^。！？!?\n]{0,8}(後|好)[^。！？!?\n]{0,10}(回覆|回報|通知|告訴)|'
+                    r'(稍後|晚點|盡快|馬上|再)(回覆|回報|通知)您')
+ASKS = re.compile(r'[？?]|請問|麻煩(您)?提供|方便(提供|告訴)|請(您)?提供|請告訴我們|再告訴我們')
+
+
+def hold_after_send(text):
+    """'ours' when the reply promises we will come back, 'customer' when it ends asking them something, else ''."""
+    text = str(text or '')
+    if WE_OWE.search(text):
+        return 'ours'
+    tail = text.replace('[[下一則]]', '\n').strip()[-120:]
+    return 'customer' if ASKS.search(tail) else ''
 
 
 def hold_from(result):
@@ -384,8 +409,9 @@ def set_hold(store, staff, data):
     if not isinstance(data,dict) or data.get('hold') not in HOLDS+('',) or not isinstance(data.get('note',''),str):
         raise ActionError('操作格式不正確',400)
     with store.cursor() as cur:
-        cur.execute("""UPDATE desk_fb_threads SET hold=%s,hold_note=%s,hold_at=CASE WHEN %s='' THEN NULL ELSE NOW() END
-          WHERE id=%s RETURNING id""",(data['hold'],data.get('note','')[:200],data['hold'],str(data.get('thread_id',''))))
+        cur.execute("""UPDATE desk_fb_threads SET hold=%s,hold_note=%s,hold_at=CASE WHEN %s='' THEN NULL ELSE NOW() END,
+          hold_by=CASE WHEN %s='' THEN '' ELSE 'wayne' END WHERE id=%s RETURNING id""",
+          (data['hold'],data.get('note','')[:200],data['hold'],data['hold'],str(data.get('thread_id',''))))
         if not cur.fetchone():
             raise ActionError('找不到對話',404)
     return dict(ok=True)

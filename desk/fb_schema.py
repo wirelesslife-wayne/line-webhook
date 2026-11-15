@@ -14,6 +14,7 @@ CREATE INDEX IF NOT EXISTS desk_fb_threads_wait ON desk_fb_threads(status,last_a
 ALTER TABLE desk_fb_threads ADD COLUMN IF NOT EXISTS hold TEXT NOT NULL DEFAULT '';
 ALTER TABLE desk_fb_threads ADD COLUMN IF NOT EXISTS hold_note TEXT NOT NULL DEFAULT '';
 ALTER TABLE desk_fb_threads ADD COLUMN IF NOT EXISTS hold_at TIMESTAMPTZ;
+ALTER TABLE desk_fb_threads ADD COLUMN IF NOT EXISTS hold_by TEXT NOT NULL DEFAULT '';
 ALTER TABLE desk_fb_threads DROP CONSTRAINT IF EXISTS desk_fb_threads_channel_check;
 ALTER TABLE desk_fb_threads ADD CONSTRAINT desk_fb_threads_channel_check
  CHECK(channel IN ('fb_message','ig_message','fb_comment','ig_comment','line_message'));

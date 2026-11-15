@@ -3,7 +3,9 @@ Synthetic data, TEMP tables, rollback."""
 from desk import fb
 from desk.fb import hold_from
 from test_desk import db, logged
-from test_fb import thread, wayne
+import uuid
+from desk.fb import hold_after_send
+from test_fb import thread, wayne, ready, tid
 
 
 def test_ai_note_sets_the_kind_of_hold():
@@ -37,3 +39,64 @@ def test_hold_tab_and_buttons(db, logged):
     assert client.get('/desk/api/fb/list?tab=todo').get_json()['hold'] == 1
     client.post('/desk/api/fb/hold', json=dict(thread_id=tid, hold=''), headers=headers)
     assert client.get('/desk/api/fb/list?tab=hold').get_json()['items'] == []
+
+
+def test_what_was_sent_decides_the_next_step():
+    assert hold_after_send('您好～完工價 $18,500。\n請問您在哪個縣市呢？') == 'customer'
+    assert hold_after_send('您好～完工價 $18,500。[[下一則]]請問您的車款和年份是？') == 'customer'
+    assert hold_after_send('收到，我們確認後再回覆您，謝謝') == 'ours'
+    assert hold_after_send('需要先確認車款是否支援，請問年份？門市確認後馬上回覆您') == 'ours'  # both owe: ours
+    assert hold_after_send('您好～完工價 $18,000（含安裝），有任何問題歡迎再詢問～') == ''
+
+
+def approve_and_send(db, boss, key, text):
+    t = db.one('SELECT id,version FROM desk_fb_threads WHERE key=%s', (key,))
+    out = fb.approve(db, boss, dict(thread_id=t['id'], text=text, version=t['version'], retry_key=str(uuid.uuid4()),
+                                    confirmed=True, public_confirmed=False))
+    return out['attempt_id']
+
+
+def test_sending_updates_the_hold_but_never_wayne_s_own_mark(db, logged):
+    _, _, staff, _ = logged
+    boss = wayne(db, staff)
+    for key in ('950001', '950002', '950003'):
+        fb.push(db, [thread(key=key, messages=[dict(role='user', text='電動尾門多少錢？', at='2026-11-15T09:00:00+08:00')])])
+    ready(db); ready(db); ready(db)
+    db.execute("UPDATE desk_fb_threads SET hold='ours',hold_note='AI：要轉真人' WHERE key IN ('950001','950002')")
+    fb.set_hold(db, boss, dict(thread_id=db.one("SELECT id FROM desk_fb_threads WHERE key='950003'")['id'], hold='ours', note='問廠商'))
+    a1 = approve_and_send(db, boss, '950001', '完工價 $18,000，請問您的車款年份？')
+    a2 = approve_and_send(db, boss, '950002', '完工價 $18,000（含安裝），歡迎來門市看實機。')
+    a3 = approve_and_send(db, boss, '950003', '完工價 $18,000（含安裝）。')
+    for a in (a1, a2, a3):
+        fb.record_result(db, a, 'sent')
+    got = {r['key']: r['hold'] for r in db.all("SELECT key,hold FROM desk_fb_threads WHERE key LIKE '95000%%'")}
+    assert got == {'950001': 'customer', '950002': '', '950003': 'ours'}
+
+
+def test_approved_replies_go_out_in_the_order_wayne_approved_them(db, logged):
+    _, _, staff, _ = logged
+    boss = wayne(db, staff)
+    keys = ['960009', '960001', '960005']  # thread ids sort differently from approval order
+    for key in keys:
+        fb.push(db, [thread(key=key, messages=[dict(role='user', text='價格？', at='2026-11-15T09:00:00+08:00')])])
+    for _ in keys:
+        ready(db)
+    for n, key in enumerate(keys):
+        approve_and_send(db, boss, key, '完工價 $18,000。')
+        db.execute("""UPDATE desk_fb_attempts SET approved_at=NOW()+%s*INTERVAL '1 minute'
+          WHERE thread_id=(SELECT id FROM desk_fb_threads WHERE key=%s)""", (n, key))
+    order = [p['key'] for p in fb.pending(db)]
+    assert order == keys
+
+
+def test_hold_tab_counts_both_kinds_and_search_finds_a_name_everywhere(db, logged):
+    _, client, staff, _ = logged
+    wayne(db, staff)
+    fb.push(db, [thread(key='970001', messages=[dict(role='user', text='價格？', at='2026-11-15T09:00:00+08:00')])])
+    db.execute("UPDATE desk_fb_threads SET hold='customer',hold_at=NOW(),status='done',name='王大明' WHERE key='970001'")
+    d = client.get('/desk/api/fb/list?tab=hold').get_json()
+    assert d['hold'] == 1 and d['hold_customer'] == 1 and d['hold_ours'] == 0
+    found = client.get('/desk/api/fb/list?tab=search&q=' + '大明').get_json()
+    assert [i['name'] for i in found['items']] == ['王大明'] and found['items'][0]['status'] == 'done'
+    assert client.get('/desk/api/fb/list?tab=search&q=%25').get_json()['items'] == []  # a % is a letter, not a wildcard
+    assert client.get('/desk/api/fb/list?tab=search&q=').status_code == 400

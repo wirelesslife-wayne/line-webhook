@@ -50,8 +50,11 @@ def register(bp,store):
 
     def listing():
         channel,tab=request.args.get('channel',''),request.args.get('tab','todo')
-        if channel and channel not in fb.CHANNELS or tab not in ('todo','approved','done','hold'):
+        if channel and channel not in fb.CHANNELS or tab not in ('todo','approved','done','hold','search'):
             raise ActionError('分類不正確',400)
+        q=request.args.get('q','').strip()[:50]
+        if tab=='search' and not q:
+            raise ActionError('請輸入客人名字',400)
         try: page=max(0,int(request.args.get('page','0')))
         except ValueError: raise ActionError('頁碼不正確',400)
         order=request.args.get('order','old')
@@ -64,26 +67,36 @@ def register(bp,store):
         where=f"t.status=ANY(%s) AND (%s='' OR t.channel=%s){f' AND {said} < NOW()-INTERVAL {chr(39)}24 hours{chr(39)}' if late else ''}"
         if tab=='hold':  # Wayne 11/15: whatever still needs checking, whether or not a reply went out
             states,where=list(fb.TODO)+['approved','done','skip'],"t.hold<>'' AND t.status=ANY(%s) AND (%s='' OR t.channel=%s)"
+        args=(states,channel,channel)
+        if tab=='search':  # Wayne 11/15: a customer's name, in every tab and every channel
+            states=list(fb.TODO)+['approved','done','skip']
+            where="t.status=ANY(%s) AND (%s='' OR t.channel=%s) AND t.name ILIKE %s"
+            args=(states,channel,channel,'%'+q.replace('\\','\\\\').replace('%','\\%').replace('_','\\_')+'%')
         sort=f"{said} {'' if order=='old' else 'DESC'}" if tab!='done' else 't.updated_at DESC'  # Wayne 11/14: last closed first
         if tab=='hold':
             sort="CASE t.hold WHEN 'ours' THEN 0 ELSE 1 END,t.hold_at"  # ours first, longest waiting first
-        rows=store.all(f"""SELECT t.*,EXTRACT(EPOCH FROM NOW()-{said})/3600 AS waited FROM desk_fb_threads t WHERE {where}
-          ORDER BY {sort},t.id LIMIT 21 OFFSET %s""",(states,channel,channel,page*20))
-        total=store.one(f'SELECT COUNT(*) AS n FROM desk_fb_threads t WHERE {where}',(states,channel,channel))['n']
+        if tab=='search':
+            sort=f"{said} DESC"
+        rows=store.all(f"""SELECT t.*,EXTRACT(EPOCH FROM NOW()-{said})/3600 AS waited,
+          EXTRACT(DAY FROM NOW()-t.hold_at) AS hold_days FROM desk_fb_threads t WHERE {where}
+          ORDER BY {sort},t.id LIMIT 21 OFFSET %s""",(*args,page*20))
+        total=store.one(f'SELECT COUNT(*) AS n FROM desk_fb_threads t WHERE {where}',args)['n']
         overdue=manual=0
         if tab=='todo':
             overdue=store.one(f"SELECT COUNT(*) AS n FROM desk_fb_threads t WHERE t.status=ANY(%s) AND {said} < NOW()-INTERVAL '24 hours'",(states,))['n']
             manual=store.one("SELECT COUNT(*) AS n FROM desk_fb_threads WHERE status='blocked'")['n']
         counts=fb.status(store)
         per=({r['channel']:r['n'] for r in store.all('SELECT channel,COUNT(*) AS n FROM desk_fb_threads WHERE status=ANY(%s) GROUP BY channel',(states,))}
-             if tab not in ('done','hold') else {})  # the finished tab only grows; a count there says nothing
+             if tab not in ('done','hold','search') else {})  # the finished tab only grows; a count there says nothing
         items=details(rows[:20])
         for item,row in zip(items,rows):
             item['waited']=round(float(row['waited'] or 0),1)  # hours since the customer last wrote
             item['closed_at']=local_time(row['updated_at'])[5:16]
+            item['hold_days']=int(row['hold_days'] or 0)
+        holds={r['hold']:r['n'] for r in store.all("SELECT hold,COUNT(*) AS n FROM desk_fb_threads WHERE hold<>'' GROUP BY hold")}
         return dict(items=items,has_more=len(rows)>20,page=page,tab=tab,channel=channel,order=order,per_channel=per,
-            total=total,overdue=overdue,manual=manual,late=late,
-            hold=store.one("SELECT COUNT(*) AS n FROM desk_fb_threads WHERE hold='ours'")['n'],
+            total=total,overdue=overdue,manual=manual,late=late,q=q,
+            hold=sum(holds.values()),hold_ours=holds.get('ours',0),hold_customer=holds.get('customer',0),  # Wayne 11/15: both kinds
             todo=counts['waiting_draft']+counts['awaiting_review']+counts['draft_failed'],approved=counts['approved_unsent'])
 
     @bp.get('/fb')
