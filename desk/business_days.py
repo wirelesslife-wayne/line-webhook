@@ -71,7 +71,8 @@ def date_flags(draft, now_local):
             continue   # 「11/9 安裝的主機」: talking about the past, fine
         if d < today:
             flags.append(f'草稿提到 {label(d)}，這天已經過了，請改成之後的日期')
-        elif status(d)[0] == 'closed' and not SAYS_CLOSED.search(draft[m.end():m.end() + 15]):
+        elif status(d)[0] == 'closed' and not SAYS_CLOSED.search(draft[m.end():m.end() + 15]) \
+                and not SAYS_CLOSED.search(draft[draft.rfind('\n', 0, m.start()) + 1:m.start()]):  # 「公休日：11/15（日）、11/29（日）」
             flags.append(f'草稿提到 {label(d)}，那天門市{status(d)[1]}')
     return list(dict.fromkeys(flags))
 

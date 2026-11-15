@@ -51,6 +51,7 @@ def for_customer(text, location, customer_words):
     if not rows:
         return text, county
     rows.sort(key=lambda s: want.index(s['county']))
-    head = (f'客人提到{county}。客人問門市、在哪裡裝，或這次需要介紹門市時，下面{county}和鄰近縣市的門市全部列給客人'
-            '（同縣市的放前面），不要只挑一家，也不要加清單以外的店；客人沒問門市就不用列：\n')
+    rows = rows[:3]  # Wayne 11/15 20:44: at most 3, own county first
+    head = (f'客人提到{county}。客人問門市、在哪裡裝，或這次需要介紹門市時，下面{county}和鄰近縣市的門市（已挑好，最多 3 間）全部列給客人'
+            '（同縣市的放前面），不要只挑一家，也不要加清單以外的店；一律稱「經銷商門市」，不要說「合作」；客人沒問門市就不用列：\n')
     return head + '\n'.join(f"{s['name']}｜{s['address']}｜{s['phone']}" for s in rows) + '\n安裝項目、報價與時間請先電話確認。', county
