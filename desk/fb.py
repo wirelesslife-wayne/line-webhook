@@ -99,6 +99,9 @@ def kind(role, note):
     the ad's own automatic reply, so on its own it is not a question waiting for us (Wayne 11/12)."""
     if role == 'user':
         # 「選單」: a LINE rich-menu tap (所有門市, 南部地區, 未購買_XX_客服) is written as a customer message but nobody typed it.
+        # Except 「選單電話」: tapping one store's phone number says which store they want (Wayne 11/15), so someone answers it.
+        if '選單電話' in (note or ''):
+            return 'user'
         return 'auto' if any(w in (note or '') for w in ('廣告預設問題', '選單')) else 'user'
     return 'page' if answers(role, note) else 'auto'
 
