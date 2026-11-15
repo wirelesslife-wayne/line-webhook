@@ -112,3 +112,15 @@ def test_the_ai_s_do_not_reply_marker_can_never_be_sent(db, logged):
     with pytest.raises(fb.ActionError):
         approve_and_send(db, boss, '980001', fb.NO_REPLY)
     assert db.one("SELECT status FROM desk_fb_threads WHERE key='980001'")['status'] == 'ready'
+
+
+def test_waiting_for_the_customer_closes_itself_after_three_days(db):
+    """Wayne 11/15 22:06: ⏳ with no answer for 3 days is closed; nothing is sent, a queued reply is left alone."""
+    for key, status in (('940101', 'ready'), ('940102', 'done'), ('940103', 'approved'), ('940104', 'ready')):
+        fb.push(db, [thread(key=key, messages=[dict(role='user', text='尾門多少', at='2026-11-10T09:00:00+08:00')])])
+        db.execute("UPDATE desk_fb_threads SET status=%s,hold='customer',hold_at=NOW()-INTERVAL '4 days' WHERE key=%s", (status, key))
+    db.execute("UPDATE desk_fb_threads SET hold_at=NOW()-INTERVAL '2 days' WHERE key='940104'")   # not yet 3 days
+    assert fb.close_stale_waits(db) == 2
+    got = {r['key']: (r['status'], r['hold']) for r in db.all("SELECT key,status,hold FROM desk_fb_threads WHERE key LIKE '9401%%'")}
+    assert got == {'940101': ('done', ''), '940102': ('done', ''), '940103': ('approved', 'customer'), '940104': ('ready', 'customer')}
+    assert db.one("SELECT COUNT(*) AS n FROM desk_fb_attempts WHERE thread_id IN (SELECT id FROM desk_fb_threads WHERE key LIKE '9401%%')")['n'] == 0

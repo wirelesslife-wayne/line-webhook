@@ -499,6 +499,15 @@ def draft_once(store,engine_factory=None):
                 draft_thread(store,c,engine_factory,c['pending_instruction'],c['pending_original'],c['pending_rule'])
 
 
+def close_stale_waits(store):
+    """Wayne 11/15 22:06: ⏳ 等客人回 with no answer for 3 days closes itself. Nothing is sent; a reply queued
+    to send (approved) or a draft being written is left alone. A customer who writes back clears the hold before this."""
+    return store.execute("""UPDATE desk_fb_threads SET hold='',hold_note='',hold_at=NULL,hold_by='',
+      status=CASE WHEN status IN ('ready','blocked','error') THEN 'done' ELSE status END,
+      note='等客人回 3 天沒回，自動結案',updated_at=NOW()
+      WHERE hold='customer' AND hold_at < NOW()-INTERVAL '3 days' AND status NOT IN ('approved','waiting','drafting')""")
+
+
 REDRAFT_AT = (9, 30)            # Taipei, Monday to Saturday, before the shop opens
 REDRAFT_RESERVE = Decimal('5')  # always leave this much of the month's AI budget for new customers
 REDRAFT_EACH = Decimal('0.04')  # generous cost of one redraft (three versions)
@@ -558,6 +567,10 @@ def start_worker(store):
                 pass
             try:
                 daily_redraft(store)  # 09:30 Mon-Sat; the drafter thread does the AI calls
+            except Exception:
+                pass
+            try:
+                close_stale_waits(store)  # ⏳ 等客人回 older than 3 days
             except Exception:
                 pass
             try:

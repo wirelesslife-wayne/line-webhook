@@ -24,7 +24,7 @@ const HOLD={ours:'待我們確認',customer:'等客人回'};let holdFor=null;
 function holdBlock(d){
   if(!canReview)return d.hold?`<p class="note">${d.hold==='ours'?'📌':'⏳'} ${HOLD[d.hold]}${d.hold_note?'：'+esc(d.hold_note):''}</p>`:'';
   if(d.hold){const other=d.hold==='ours'?'customer':'ours';
-    return `<div class="note hold"><p>${d.hold==='ours'?'📌':'⏳'} <b>${HOLD[d.hold]}</b>${d.hold_note?'：'+esc(d.hold_note):''}${d.hold_at?` <small class="muted">（${esc(d.hold_at)} 起）</small>`:''}</p><p class="muted">${d.hold==='ours'?'會一直留在「待處理」，處理好了再按下面的按鈕。':'客人回訊息就會自動回到待審核。'}</p><div class="actions"><button data-act="hold" data-hold="">處理好了</button><button data-act="hold" data-hold="${other}">改成${HOLD[other]}</button></div></div>`}
+    return `<div class="note hold"><p>${d.hold==='ours'?'📌':'⏳'} <b>${HOLD[d.hold]}</b>${d.hold_note?'：'+esc(d.hold_note):''}${d.hold_at?` <small class="muted">（${esc(d.hold_at)} 起）</small>`:''}</p><p class="muted">${d.hold==='ours'?'會一直留在「待處理」，處理好了再按下面的按鈕。':'客人回訊息就會自動回到待審核；3 天沒回會自動結案。'}</p><div class="actions"><button data-act="hold" data-hold="">處理好了</button><button data-act="hold" data-hold="${other}">改成${HOLD[other]}</button></div></div>`}
   return ''}
 // Wayne 11/15 20:35 picked option A: one grey button under 發送, two choices in a bottom sheet, nothing is sent
 function holdPick(d){return canReview&&!d.hold?'<div class="holdpick"><button class="holdbtn" data-act="hold-pick" aria-haspopup="dialog">📌 標記待處理 ▾</button></div>':''}
