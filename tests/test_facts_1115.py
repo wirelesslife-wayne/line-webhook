@@ -100,3 +100,15 @@ def test_open_on_a_listed_open_day_is_not_a_voting_day_warning():
     assert says_open_on_odd_day('11/28（六）門市有營業', today)
     assert says_open_on_odd_day('投票日當天有營業喔', today)
     assert says_open_on_odd_day('門市有營業喔', today)
+
+
+def test_line_menu_or_store_phone_only_is_not_answered(db):
+    """Wayne 11/15 22:54 (Aijia): only info menus or a store phone tapped -> 建議不回覆; 呼叫客服 still gets a person."""
+    calls = []
+    def provider(messages):
+        calls.append(messages)
+        return {'brand': None, 'model': None, 'products': []} if len(calls) == 1 else {'draft': '（建議不回覆）'}
+    Engine(db, provider).draft([{'time': '2026-11-15 10:00:00', 'role': 'user', 'text': '營業月曆 選單', 'new': True}], now(), channel='line_message')
+    rules = calls[1][0]['content']
+    assert '自動回應已經給了資料，不用再回' in rules and '不包括「呼叫客服」' in rules
+    assert '請問您想預約安裝、維修' not in rules
