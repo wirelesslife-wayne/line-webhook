@@ -438,12 +438,29 @@ def set_hold(store, staff, data):
     return dict(ok=True)
 
 
+def ad_buttons_all_answered(store, thread_id):
+    """Wayne 11/16 01:00: the customer only pressed the ad's preset questions and the ad's own automatic reply
+    answered every one of them -> no follow-up (the AI kept writing one anyway: 18 of 21)."""
+    rows = store.all('SELECT role,note FROM desk_fb_events WHERE thread_id=%s ORDER BY id', (thread_id,))
+    users = [i for i, r in enumerate(rows) if r['role'] == 'user']
+    if not users or any('廣告預設問題' not in (rows[i]['note'] or '') for i in users):
+        return False
+    for i in users:
+        nxt = next((r for r in rows[i + 1:] if r['role'] == 'page' or '廣告預設問題' not in (r['note'] or '')), None)
+        if not nxt or nxt['role'] != 'page' or '自動回覆' not in (nxt['note'] or ''):
+            return False
+    return True
+
+
 def draft_thread(store, c, engine_factory=None, instruction='', original='', rule_id=None):
     from .engine import Engine, ProviderPending
     from .provider import BudgetExceeded, Unavailable, month_key
     try:
-        result = (engine_factory or Engine)(store).draft(messages(store,c['id'],True),now().astimezone(TAIPEI),
-            channel=c['channel'],context=c['context'],instruction=instruction,original_draft=original)
+        if not instruction and c['channel'] in ('fb_message','ig_message') and ad_buttons_all_answered(store, c['id']):
+            result = dict(draft=NO_REPLY,flags=[],staff_note='客人只點廣告按鈕，自動回覆已答完，建議不回覆（Wayne 11/16）')
+        else:
+            result = (engine_factory or Engine)(store).draft(messages(store,c['id'],True),now().astimezone(TAIPEI),
+                channel=c['channel'],context=c['context'],instruction=instruction,original_draft=original)
         state = 'ready'
     except BudgetExceeded as e:
         result,state = dict(draft=original,staff_note=str(e),budget_month=month_key()),'blocked'

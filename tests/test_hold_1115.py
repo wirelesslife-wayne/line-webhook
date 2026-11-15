@@ -155,3 +155,24 @@ def test_list_says_how_many_older_messages_and_history_returns_them_all(db, logg
     assert len(item['messages']) == 12 and item['older'] == 3
     full = client.get('/desk/api/fb/history?thread_id=' + t).get_json()['messages']
     assert len(full) == 15 and full[0]['text'].startswith('第 0 則')
+
+
+def test_ad_buttons_all_answered_get_no_follow_up_without_asking_the_ai(db):
+    """Wayne 11/16 01:00: only ad preset questions, each answered by the ad's automatic reply -> 建議不回覆."""
+    from unittest.mock import Mock
+    msgs = [dict(role='page', text='您好，請告訴我們該如何為你提供協助。', at='下午7:00', note='自動回覆'),
+            dict(role='user', text='多少錢？安裝要多久？', at='下午7:01', note='廣告預設問題'),
+            dict(role='page', text='WRM-418 完工價 NT$18,500，施工時間約 4～5 小時。', at='下午7:01', note='自動回覆')]
+    fb.push(db, [thread(key='940401', messages=msgs)])
+    t = db.one("SELECT id FROM desk_fb_threads WHERE key='940401'")['id']
+    assert fb.ad_buttons_all_answered(db, t)
+    engine = Mock()
+    fb.draft_once(db, lambda store: engine)
+    assert not engine.draft.called
+    assert fb.conversation(db, t)['draft']['draft'] == fb.NO_REPLY
+    # one preset question without an automatic answer -> the AI writes a follow-up as before
+    fb.push(db, [thread(key='940402', messages=[dict(role='user', text='四顆鏡頭需要挖孔安裝嗎？', at='下午7:01', note='廣告預設問題')])])
+    assert not fb.ad_buttons_all_answered(db, db.one("SELECT id FROM desk_fb_threads WHERE key='940402'")['id'])
+    # the customer typed something -> normal customer
+    fb.push(db, [thread(key='940403', messages=msgs + [dict(role='user', text='卓蘭', at='下午7:33')])])
+    assert not fb.ad_buttons_all_answered(db, db.one("SELECT id FROM desk_fb_threads WHERE key='940403'")['id'])
