@@ -118,8 +118,12 @@ def price(wlf, q):
     words = norm(re.sub(r'(?:19|20)\d\d', '', q))
     if not words:
         return []
-    cars = [c for c in wlf.get('cars') or [] if norm(c['model']) and (norm(c['model']) in words or words in norm(c['model'])
-                                                                       or words == norm(c['b']) + norm(c['model']))]
+    all_cars = [c for c in wlf.get('cars') or [] if norm(c['model'])]
+    # exact model (or brand + model) first; then models that contain what he typed; a short model inside his words
+    # (「X3」 inside 「CX30」) only when nothing else matched
+    cars = ([c for c in all_cars if words in (norm(c['model']), norm(c['b']) + norm(c['model']))]
+            or [c for c in all_cars if words in norm(c['model']) or words in norm(c['b']) + norm(c['model'])]
+            or [c for c in all_cars if len(norm(c['model'])) >= 4 and norm(c['model']) in words])
     if year:
         cars = [c for c in cars if c['year'] == year] or cars
     agg = {}

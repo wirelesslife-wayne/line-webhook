@@ -28,7 +28,7 @@ function exCard(x){
 async function loadLearned(){
  const v=++lseq;const d=await api(`basis/learned?q=${encodeURIComponent(lq)}&page=${lpage}${loff?'&stopped=1':''}`);if(v!==lseq)return;
  LEARNED=d.items;el('n-learned').textContent=d.active;
- el('learned-sub').textContent=loff?`已停用 ${d.stopped} 筆，AI 不會參考這些`:`${d.active} 筆，來自你核准或改過的回覆。AI 拿來參考說法，不會照抄`;
+ el('learned-sub').textContent=lq?`找到 ${d.total} 筆含「${lq}」`:loff?`已停用 ${d.stopped} 筆，AI 不會參考這些`:`${d.active} 筆，來自你核准或改過的回覆。AI 拿來參考說法，不會照抄`;
  el('learned-list').innerHTML=LEARNED.map(exCard).join('')||`<p class="muted">${lq?'找不到符合的回覆。':loff?'沒有停用的回覆。':'還沒有。'}</p>`;
  el('learned-prev').disabled=lpage===0;el('learned-next').disabled=!d.has_more;
  el('learned-off').textContent=loff?'回到使用中的':`看已停用的（${d.stopped}）`;

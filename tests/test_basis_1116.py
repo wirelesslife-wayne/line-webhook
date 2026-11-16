@@ -56,3 +56,12 @@ def test_only_wayne_changes_the_basis(db, logged):
     with pytest.raises(ActionError):
         basis.add_rule(db, staff, dict(text='不准'))
     assert client.get('/desk/knowledge').status_code == 403
+
+
+def test_price_lookup_finds_the_car_typed():
+    wlf = {'cars': [dict(b='BMW', model='X3', year=2015, p=0), dict(b='MAZDA', model='CX-30', year=2021, p=0),
+                    dict(b='MAZDA', model='CX-3', year=2020, p=0)],
+           'plans': [{'DS': [dict(code='DSM4', price=22000)]}]}
+    assert [l.split('（')[0] for l in basis.price(wlf, 'CX-30')] == ['MAZDA CX-30']  # not BMW X3, not CX-3
+    assert [l.split('（')[0] for l in basis.price(wlf, 'mazda cx30 2021')] == ['MAZDA CX-30']
+    assert basis.price(wlf, '') == [] and basis.price(wlf, '2021') == []
