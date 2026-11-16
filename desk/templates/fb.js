@@ -235,7 +235,7 @@ document.addEventListener('click',async event=>{
       confirmation=Object.freeze({thread_id:d.id,version:d.version,text,name:d.name,is_public:d.is_public,live:!!d.live,key:editKey(d),retry_key:crypto.randomUUID(),media_ids:(d.media||[]).map(m=>m.id)});
       // Wayne 11/16 20:50: the AI no longer marks anything; when its note says something is still ours to do, ask once here
       const owe=!d.hold&&((d.result||{}).to_human===true||/對帳|確認營業|要確認|請確認|待公司確認/.test((d.result||{}).staff_note||''));
-      f('todo-note').hidden=!owe;f('todo-note').textContent=owe?`💡 這則送出後可能還有事要處理：${(d.result||{}).staff_note||'AI 判斷需要真人接手'}。要留在「📌 待處理」提醒自己，就按左邊那顆。`:'';f('confirm-pin').hidden=!owe;
+      f('todo-note').hidden=!owe;f('todo-note').textContent=owe?`💡 這則送出後可能還有事要處理：${(d.result||{}).staff_note||'AI 判斷需要真人接手'}。要留著提醒自己，就按「📌 標記待處理並核准」。`:'';f('confirm-pin').hidden=!owe;
       f('links').hidden=true;f('links').innerHTML='';linkGate={pending:true,bad:false};
       // Grok 11/15: the confirm button worked before the link check came back, so a wrong link could slip through
       api('links',{text}).then(out=>{if(!confirmation||confirmation.text!==text)return;linkGate.pending=false;if(!out.links.length){gate();return}const bad=out.links.some(l=>l.state==='broken'),wrong=out.links.some(l=>l.verdict==='mismatch');
