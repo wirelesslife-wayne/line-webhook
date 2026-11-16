@@ -125,7 +125,7 @@ textarea,input{font-size:16px}
 .morebtn{flex:0 0 auto;white-space:nowrap;font-size:14px}.detail .context.one{display:flex;gap:8px;align-items:baseline;white-space:nowrap}.detail .context.one span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}.detail .context b{flex:0 0 auto}
 .drafthead{display:flex;flex-wrap:wrap;gap:4px 12px;align-items:baseline;justify-content:space-between}
 .row .when.wait{font-size:14px;font-weight:700;color:var(--ink,#1f2a37);align-self:center}.row .when.wait.late{color:#c62828}.split .rows .when.wait{grid-row:1/3;font-size:14px}
-@media(max-width:700px){.nav.channel{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch}.nav.channel .all{flex-direction:row;gap:4px}.nav.channel button{flex:0 0 auto}.row .when.wait{grid-column:3;grid-row:1;justify-self:end;font-size:13px;max-width:none}}
+@media(max-width:700px){.nav.channel{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;gap:8px}.nav.channel::-webkit-scrollbar{display:none}.nav.channel .all{flex-direction:row;gap:4px}.nav.channel .group button,.nav.channel button.all{flex:0 0 auto;min-width:max-content;padding:6px 12px;gap:5px}.row .when.wait{grid-column:3;grid-row:1;justify-self:end;font-size:13px;max-width:none}}
 </style>
 <nav class="nav main" aria-label="客服管道">{% if line_on %}<a href="/desk/">LINE</a>{% endif %}<a href="/desk/fb" aria-current="page">客服審稿</a>{% if can_review %}<a href="/desk/knowledge">知識</a>{% endif %}{% if can_review %}<button id="fb-sync" class="syncbtn" type="button">🔄 立即同步</button>{% endif %}<button id="fb-search-open" class="searchbtn" type="button" aria-label="搜尋客人名字" aria-expanded="false">🔍</button></nav>
 <p id="fb-sync-note" class="muted syncnote" hidden></p>
