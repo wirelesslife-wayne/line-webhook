@@ -144,7 +144,14 @@ async function lkSearch(){const q=f('lk-q').value.trim(),box=f('lk-results');if(
   box.innerHTML='<p class="muted">搜尋中…</p>';
   try{lkItems=(await api(`lookup?kind=${lkKind}&q=${encodeURIComponent(q)}`)).items;box.innerHTML=lkItems.length?lkItems.map((x,n)=>refCard(x,n,'panel')).join(''):'<p class="muted">沒找到。換個關鍵字（車款、產品名稱），或改用「貼上答案」。</p>'}
   catch(e){box.innerHTML=`<p class="error">${esc(e.message)}</p>`}}
-function syncDraw(s){const b=f('sync');if(!b||!s)return;b.disabled=s.state!=='idle'||s.wait>0;b.textContent=s.state==='running'?'🔄 同步中…':s.state==='queued'?'🔄 已排入，約 1 分鐘內開始':'🔄 立即同步';const n=f('sync-note');n.hidden=!s.text;n.textContent=s.text?`上次同步 ${s.at}：${s.text}`:''}
+let syncMore=false;
+function syncDraw(s){const b=f('sync');if(!b||!s)return;const busy=s.state!=='idle';b.disabled=busy||s.wait>0;b.classList.toggle('busy',busy);
+  const lbl=b.querySelector('.lbl');if(lbl)lbl.textContent=s.state==='running'?'同步中…':s.state==='queued'?'已排入':'立即同步';
+  const n=f('sync-note');n.hidden=!s.text&&!busy;
+  if(busy){n.textContent=s.state==='running'?'同步中，跑完會用 LINE 通知你…':'已排入，約 1 分鐘內開始同步';return}
+  const bad=/失敗|沒送出|沒有正常|過期/.test(s.text||'');
+  n.innerHTML=s.text?`上次同步 ${esc((s.at||'').slice(-5))} ${bad?'⚠':'✓'}<button class="link" data-sync-more>${syncMore?'收合 ▴':'詳情 ›'}</button>${syncMore?`<span class="full">${esc(s.text)}</span>`:''}`:''}
+document.addEventListener('click',e=>{if(e.target.closest('[data-sync-more]')){syncMore=!syncMore;if(lastData)syncDraw(lastData.sync)}});
 f('sync')?.addEventListener('click',async()=>{f('sync').disabled=true;try{await api('sync',{});say('已排入，約 1 分鐘內開始：送出已核准的回覆、抓最新訊息，跑完會用 LINE 通知你')}catch(e){say(e.message,true)}void load(true)});
 function draw(d){syncDraw(d.sync);
   lastData=d;items=d.items;f('n-todo').textContent=d.todo||'';f('n-approved').textContent=d.approved||'';f('n-hold').textContent=d.hold||'';const per=d.per_channel||{},all=Object.values(per).reduce((a,b)=>a+b,0);document.querySelectorAll('[data-cnt]').forEach(x=>{const n=x.dataset.cnt?per[x.dataset.cnt]:all;x.textContent=n?` ${n}`:''});
