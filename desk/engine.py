@@ -263,7 +263,7 @@ class Engine:
         # Replies typed directly in FB/IG/LINE that the desk judged better than its examples (Wayne 11/12).
         from .learning import kept
         label = {'fb': 'FB', 'ig': 'IG', 'line': 'LINE'}
-        learned = [f"客人：{r['question'][:200]}\n直接在 {label.get(r['source'], r['source'])} 回的回覆（審過，比原本範本好）：\n{r['answer'][:900]}"
+        learned = [f"客人：{r['question'][:200]}\n直接在 {label.get(r['source'], r['source'])} 回的回覆（審過，比原本範本好；金額只當參考，價格以價格表／制式回覆為準）：\n{r['answer'][:900]}"
                    for r in topk(q, kept(self.store), lambda x: x['question']+' '+x['answer'][:300], 2)]
         return mine + [where(t) for t in learned]
 

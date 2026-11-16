@@ -1,0 +1,52 @@
+{% extends 'base.html' %}
+{% block brand %}<div class="brandmark" aria-hidden="true"><span class="zh">無限科技</span><span class="en">WIRELESSLIFE</span></div>{% endblock %}
+{% block subtitle %}FB／IG／LINE 客服審稿 · 核准後才送出{% endblock %}
+{% block user %}<form method="post" action="/desk/logout"><span>{{ staff.username }}</span><input name="csrf" type="hidden" value="{{ staff.csrf }}"><button>登出</button></form>{% endblock %}
+{% block body %}<main>
+<style nonce="{{ g.nonce }}">
+/* Wayne 11/16: 「AI 回覆依據」, the preview ChatGPT and Gemini reviewed and he approved */
+:root{--orange:#f08a24}header{background:linear-gradient(120deg,#0a2c46,#0f3d5c 55%,#14456b)}header form{margin-left:auto}main{max-width:1000px;margin:0 auto}
+.nav.main{display:flex;gap:22px;border-bottom:1px solid var(--line);margin:0 0 12px}.nav.main a{text-decoration:none;padding:10px 2px;min-height:44px;font-size:17px;font-weight:700;color:var(--muted);border-bottom:4px solid transparent}
+.nav.main a[aria-current=page]{color:var(--ink);border-bottom-color:var(--orange)}
+.kb h2{font-size:18px;margin:26px 0 2px;scroll-margin-top:12px}.kb .h2sub{color:var(--muted);font-size:14px;margin:0 0 8px}
+.kb .lead{background:#fff;border:1px solid var(--line);border-left:4px solid var(--brand);border-radius:10px;padding:10px 14px;margin:10px 0 4px;font-size:15px}
+.kb .jump{display:flex;gap:16px;flex-wrap:wrap;font-size:14px;margin:8px 0 0}
+.kb .item{background:#fff;border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin:8px 0;box-shadow:0 1px 2px #0f3d5c14}.kb .item p{margin:0;overflow-wrap:anywhere;white-space:pre-wrap}
+.kb .item.off{background:#f1f3f5;color:#6b7785}.kb .rowx{display:flex;gap:10px;align-items:flex-start;justify-content:space-between}.kb .rowx>div{min-width:0;flex:1}
+.kb .q{color:var(--muted);font-size:14px;margin-bottom:4px!important}.kb button{min-height:38px;padding:6px 12px;font-size:14px;white-space:nowrap;flex:0 0 auto}
+.kb button.warn{color:#8a4b00;border-color:#f5d9a0;background:#fff8e6}.kb .headrow{display:flex;justify-content:space-between;align-items:flex-end;gap:10px}
+.kb .tag{font-size:12px;border-radius:999px;padding:1px 8px;background:var(--soft);color:var(--brand);margin-left:6px;white-space:nowrap}
+.kb .confirm{border:1px dashed #c9d3dc;border-radius:10px;padding:10px 12px;margin:8px 0 0;font-size:14px;background:#fafbfc}.kb .confirm .actions{margin-top:8px}
+.kb .search{width:100%;border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:16px;margin:4px 0 6px;box-sizing:border-box}
+.kb .hint{color:var(--muted);font-size:14px;margin:6px 0 0}.kb .hint button{min-height:0;border:0;background:none;padding:0;color:#0b5cab;text-decoration:underline;font-size:14px}
+.kb .list{background:#fff;border:1px solid var(--line);border-radius:12px;padding:4px 14px}.kb .li{display:flex;align-items:center;gap:10px;padding:12px 0;border-bottom:1px solid var(--line)}
+.kb .li:last-of-type{border-bottom:0}.kb .li b{flex:1}.kb .li small{color:var(--muted);display:block;font-weight:400}
+.kb .doc{padding:0 0 12px;border-bottom:1px solid var(--line)}.kb table{width:100%;border-collapse:collapse;font-size:15px}.kb td,.kb th{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+.kb th{color:var(--muted);font-weight:600;font-size:13px}.kb .doc details{border-bottom:1px solid var(--line);padding:8px 0}.kb .doc summary{cursor:pointer;font-weight:600}.kb .doc pre{white-space:pre-wrap;font:inherit;margin:6px 0 0}
+.kb .newrule textarea{width:100%;min-height:72px;box-sizing:border-box;font-size:16px}.kb .pager{display:flex;gap:8px;margin-top:8px}
+#feedback:empty{display:none}#feedback{position:sticky;top:0;z-index:5;background:#e8f5ec;border-radius:8px;padding:8px 12px}#feedback.bad{background:#fbe4e2;color:var(--bad)}
+@media(max-width:700px){header small{display:none}header{padding:10px 14px}.nav.main a{font-size:16px}.kb .li{flex-wrap:wrap}.kb .li b{flex:1 1 100%}.kb .headrow{align-items:center}.kb td,.kb th{padding:6px 4px;font-size:14px}}
+</style>
+<nav class="nav main" aria-label="客服管道"><a href="/desk/fb">客服審稿</a><a href="/desk/knowledge" aria-current="page">AI 回覆依據</a></nav>
+<div class="kb">
+<p id="feedback" role="status"></p>
+<p class="lead">AI 擬稿時，價格、工時、門市一律以<b>公司正式資料</b>為準，再照<b>我的回覆規則</b>和<b>過往核准的回覆</b>來寫。舊範例不會蓋過最新的價格。</p>
+<p class="jump"><a href="#rules">我的回覆規則 <span id="n-rules"></span></a><a href="#learned">過往核准的回覆 <span id="n-learned"></span></a><a href="#docs">公司正式資料 <span id="n-docs"></span></a></p>
+
+<div class="headrow"><div><h2 id="rules">✍️ 我的回覆規則</h2><p class="h2sub" id="rules-sub">每一則草稿都會照做</p></div><button class="primary" id="rule-add-open">＋ 新增規則</button></div>
+<div class="item newrule" id="rule-add" hidden><label for="rule-text">寫一句規則，之後每一則草稿都會照做</label><textarea id="rule-text" maxlength="500" placeholder="例如：客人問保固，一律說產品保固一年，不要寫兩年"></textarea><div class="actions"><button class="primary" id="rule-add-save">加入</button><button id="rule-add-cancel">取消</button></div></div>
+<div id="rules-list"><p class="muted">讀取中…</p></div>
+<p class="hint"><button id="rules-all">顯示全部</button>　<button id="rules-off">已停用</button></p>
+
+<h2 id="learned">📚 過往核准的回覆</h2><p class="h2sub" id="learned-sub">來自你核准或改過的回覆。AI 拿來參考說法，不會照抄</p>
+<input class="search" id="learned-q" type="search" maxlength="40" placeholder="搜尋車款或關鍵字，如：尾門" aria-label="搜尋過往核准的回覆">
+<div id="learned-list"><p class="muted">讀取中…</p></div>
+<div class="pager"><button id="learned-prev">上一頁</button><button id="learned-next">下一頁</button><button id="learned-off">看已停用的</button></div>
+
+<h2 id="docs">📋 公司正式資料</h2><p class="h2sub">這裡只能看。內容有錯請直接跟 Claude 說，Claude 會修改並回報你</p>
+<div class="list" id="docs-list"><p class="muted">讀取中…</p></div>
+</div>
+</main><script nonce="{{ g.nonce }}">
+const csrf={{ staff.csrf|tojson }};
+{% include 'basis.js' %}
+</script>{% endblock %}

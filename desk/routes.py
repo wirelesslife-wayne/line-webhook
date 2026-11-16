@@ -10,6 +10,7 @@ from .notifier import LineNotifier
 from .service import send,mark_done,redraft,ActionError
 from .worker import local_time,utc_time,timeline,line_on
 from .knowledge import can_review,require_reviewer,submit,review
+from . import basis
 from werkzeug.wsgi import get_input_stream
 
 
@@ -120,7 +121,41 @@ def make_blueprint(store,notifier=None):
     @bp.get('/knowledge')
     def knowledge_page():
         require_reviewer(g.staff)
-        return render_template('knowledge.html',staff=g.staff)
+        return render_template('basis.html',staff=g.staff)  # Wayne 11/16: 「AI 回覆依據」 replaced the unused 知識審核
+
+    @bp.get('/api/basis/rules')
+    def basis_rules():
+        require_reviewer(g.staff)
+        return jsonify(items=basis.rules(store))
+
+    @bp.post('/api/basis/rules')
+    def basis_rule_add():
+        return jsonify(basis.add_rule(store,g.staff,request.get_json(silent=True))),201
+
+    @bp.get('/api/basis/learned')
+    def basis_learned():
+        require_reviewer(g.staff)
+        try:
+            page = max(0,int(request.args.get('page',0)))
+        except ValueError:
+            raise ActionError('頁碼不正確',400)
+        return jsonify(basis.learned(store,request.args.get('q',''),page,request.args.get('stopped')=='1'))
+
+    @bp.post('/api/basis/learned')
+    def basis_learned_set():
+        data = request.get_json(silent=True) or {}
+        return jsonify(basis.set_learned(store,g.staff,data.get('id') if isinstance(data,dict) else None,
+                                         data.get('active') if isinstance(data,dict) else None))
+
+    @bp.get('/api/basis/docs')
+    def basis_docs():
+        require_reviewer(g.staff)
+        return jsonify(items=basis.docs(store))
+
+    @bp.get('/api/basis/doc')
+    def basis_doc():
+        require_reviewer(g.staff)
+        return jsonify(basis.doc(store,request.args.get('key',''),request.args.get('q','')))
 
     @bp.get('/api/knowledge')
     def knowledge_list():
