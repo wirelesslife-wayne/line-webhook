@@ -611,6 +611,65 @@ def close_line(cur, c, why, draft=None, states=('drafting',), token=True):
     return closed
 
 
+# Wayne 11/16 18:30 (兩個都做): the 「立即同步」 button and send-right-after-approve. The office PC's one-minute job
+# (WL-DeskSync, scripts\win-jobs\desk_sync) starts a round; it and the scheduled rounds take the same lock per inbox,
+# so two rounds never send the same approved reply.
+LOCK_MINUTES = {'line': 9, 'fb': 25}  # a round that died frees itself after this long
+SYNC_GAP = 180  # seconds between two presses of the button
+
+
+def run_lock(store, what, owner):
+    if what not in LOCK_MINUTES or not re.fullmatch(r'[A-Za-z0-9_-]{1,40}', owner or ''):
+        raise ActionError('鎖的格式不正確', 400)
+    with store.cursor() as cur:
+        cur.execute("""INSERT INTO desk_marks(name,value,at) VALUES(%s,%s,NOW())
+          ON CONFLICT(name) DO UPDATE SET value=EXCLUDED.value,at=NOW()
+          WHERE desk_marks.value NOT LIKE 'run:%%' OR desk_marks.at < NOW()-make_interval(mins => %s) RETURNING name""",
+          ('run_lock_' + what, 'run:' + owner, LOCK_MINUTES[what]))
+        return dict(ok=bool(cur.fetchone()))
+
+
+def run_unlock(store, what, owner):
+    if what not in LOCK_MINUTES:
+        raise ActionError('鎖的格式不正確', 400)
+    return dict(ok=bool(store.execute("UPDATE desk_marks SET value=%s WHERE name=%s AND value=%s",
+                                      ('free:' + str(owner), 'run_lock_' + what, 'run:' + str(owner)))))
+
+
+def run_busy(store, what):
+    return bool(store.one("""SELECT 1 AS x FROM desk_marks WHERE name=%s AND value LIKE 'run:%%'
+      AND at > NOW()-make_interval(mins => %s)""", ('run_lock_' + what, LOCK_MINUTES[what])))
+
+
+def sync_state(store):
+    """What the page shows next to 「立即同步」: idle, queued (pressed, the PC has not started yet) or running."""
+    rows = {r['name']: r for r in store.all("""SELECT name,value,at,EXTRACT(EPOCH FROM NOW()-at) AS age FROM desk_marks
+      WHERE name IN ('sync_request','sync_state')""")}
+    try:
+        done = json.loads(rows['sync_state']['value']) if 'sync_state' in rows else {}
+    except ValueError:
+        done = {}
+    asked = rows.get('sync_request')
+    running = done.get('state') == 'running' and rows['sync_state']['age'] < 45 * 60
+    queued = bool(asked and asked['value'] and asked['value'] != done.get('request') and asked['age'] < 30 * 60)
+    return dict(state='running' if running else 'queued' if queued else 'idle', request=asked['value'] if queued else '',
+                wait=max(0, int(SYNC_GAP - asked['age'])) if asked else 0, text=str(done.get('text') or '')[:200],
+                at=local_time(rows['sync_state']['at'])[5:16] if 'sync_state' in rows else '')
+
+
+def request_sync(store, staff):
+    from .knowledge import require_reviewer
+    require_reviewer(staff)
+    s = sync_state(store)
+    if s['state'] != 'idle':
+        raise ActionError('已經在同步了，跑完會通知你', 409)
+    if s['wait']:
+        raise ActionError('剛同步過，%d 秒後才能再按' % s['wait'], 429)
+    store.execute("""INSERT INTO desk_marks(name,value,at) VALUES('sync_request',%s,NOW())
+      ON CONFLICT(name) DO UPDATE SET value=EXCLUDED.value,at=NOW()""", (str(uuid.uuid4()),))
+    return dict(ok=True)
+
+
 def reopen(store, staff, data):
     """Wayne's 「改回待審核」 on one we closed by itself: the AI writes a follow-up and it never closes by itself again."""
     from .knowledge import require_reviewer

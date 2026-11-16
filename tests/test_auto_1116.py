@@ -325,3 +325,38 @@ def test_line_thanks_closes_without_a_draft_unless_pinned(db):
     assert db.one("SELECT status FROM desk_fb_threads WHERE key='U950031'")['status'] == 'ready'  # 📌: Wayne still sees it
     assert db.one("SELECT status FROM desk_fb_threads WHERE key='950032'")['status'] == 'ready'
     assert engine.draft.call_count == 2
+
+
+# Wayne 11/16 18:30: 「立即同步」 and send-right-after-approve share one lock per inbox with the scheduled rounds.
+def test_run_lock_lets_one_round_in(db):
+    assert fb.run_lock(db, 'line', 'sched')['ok'] and not fb.run_lock(db, 'line', 'sync-1')['ok']
+    assert fb.run_busy(db, 'line') and not fb.run_busy(db, 'fb')
+    assert fb.run_lock(db, 'fb', 'sync-1')['ok']  # the other inbox is separate
+    assert not fb.run_unlock(db, 'line', 'sync-1')['ok']  # only the holder frees it
+    assert fb.run_unlock(db, 'line', 'sched')['ok'] and fb.run_lock(db, 'line', 'sync-1')['ok']
+    db.execute("UPDATE desk_marks SET at=NOW()-INTERVAL '10 minutes' WHERE name='run_lock_line'")
+    assert not fb.run_busy(db, 'line') and fb.run_lock(db, 'line', 'sched')['ok']  # a dead round frees itself
+
+
+def test_sync_button_queues_once_and_waits_between_presses(db, logged):
+    import json
+    import pytest
+    from desk.errors import ActionError
+    staff = wayne(db, logged[2])
+    assert fb.sync_state(db)['state'] == 'idle'
+    fb.request_sync(db, staff)
+    s = fb.sync_state(db)
+    assert s['state'] == 'queued' and s['request']
+    with pytest.raises(ActionError):
+        fb.request_sync(db, staff)  # already queued
+    # the PC picks it up, then finishes
+    db.execute("INSERT INTO desk_marks(name,value) VALUES('sync_state',%s)", (json.dumps(dict(state='running', request=s['request'])),))
+    assert fb.sync_state(db)['state'] == 'running'
+    db.execute("UPDATE desk_marks SET value=%s WHERE name='sync_state'", (json.dumps(dict(state='idle', request=s['request'], text='送出 2 則、新進 1 則')),))
+    done = fb.sync_state(db)
+    assert done['state'] == 'idle' and done['text'] == '送出 2 則、新進 1 則' and done['wait'] > 0
+    with pytest.raises(ActionError):
+        fb.request_sync(db, staff)  # pressed again too soon
+    db.execute("UPDATE desk_marks SET at=NOW()-INTERVAL '4 minutes' WHERE name='sync_request'")
+    fb.request_sync(db, staff)
+    assert fb.sync_state(db)['state'] == 'queued'

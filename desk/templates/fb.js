@@ -137,7 +137,9 @@ async function lkSearch(){const q=f('lk-q').value.trim(),box=f('lk-results');if(
   box.innerHTML='<p class="muted">搜尋中…</p>';
   try{lkItems=(await api(`lookup?kind=${lkKind}&q=${encodeURIComponent(q)}`)).items;box.innerHTML=lkItems.length?lkItems.map((x,n)=>refCard(x,n,'panel')).join(''):'<p class="muted">沒找到。換個關鍵字（車款、產品名稱），或改用「貼上答案」。</p>'}
   catch(e){box.innerHTML=`<p class="error">${esc(e.message)}</p>`}}
-function draw(d){
+function syncDraw(s){const b=f('sync');if(!b||!s)return;b.disabled=s.state!=='idle'||s.wait>0;b.textContent=s.state==='running'?'🔄 同步中…':s.state==='queued'?'🔄 已排入，約 1 分鐘內開始':'🔄 立即同步';const n=f('sync-note');n.hidden=!s.text;n.textContent=s.text?`上次同步 ${s.at}：${s.text}`:''}
+f('sync')?.addEventListener('click',async()=>{f('sync').disabled=true;try{await api('sync',{});say('已排入，約 1 分鐘內開始：送出已核准的回覆、抓最新訊息，跑完會用 LINE 通知你')}catch(e){say(e.message,true)}void load(true)});
+function draw(d){syncDraw(d.sync);
   lastData=d;items=d.items;f('n-todo').textContent=d.todo||'';f('n-approved').textContent=d.approved||'';f('n-hold').textContent=d.hold||'';const per=d.per_channel||{},all=Object.values(per).reduce((a,b)=>a+b,0);document.querySelectorAll('[data-cnt]').forEach(x=>{const n=x.dataset.cnt?per[x.dataset.cnt]:all;x.textContent=n?` ${n}`:''});
   f('prev').disabled=page===0;f('next').disabled=!d.has_more;
   f('total').textContent=`共 ${d.total||0} 位`;f('alert').hidden=tab!=='todo'||!(d.overdue||d.manual||late);

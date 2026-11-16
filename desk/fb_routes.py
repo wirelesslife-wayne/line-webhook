@@ -107,7 +107,8 @@ def register(bp,store):
         return dict(items=items,has_more=len(rows)>20,page=page,tab=tab,channel=channel,order=order,per_channel=per,
             total=total,overdue=overdue,manual=manual,late=late,q=q,auto=auto,auto_today=autos['today'],auto_total=autos['n'],
             hold=sum(holds.values()),hold_ours=holds.get('ours',0),hold_customer=holds.get('customer',0),  # Wayne 11/15: both kinds
-            todo=counts['waiting_draft']+counts['awaiting_review']+counts['draft_failed'],approved=counts['approved_unsent'])
+            todo=counts['waiting_draft']+counts['awaiting_review']+counts['draft_failed'],approved=counts['approved_unsent'],
+            sync=fb.sync_state(store))
 
     @bp.get('/fb')
     def fb_page():
@@ -172,6 +173,9 @@ def register(bp,store):
 
     @bp.post('/api/fb/hold')
     def fb_hold(): return jsonify(fb.set_hold(store,g.staff,request.get_json(silent=True)))
+
+    @bp.post('/api/fb/sync')
+    def fb_sync(): return jsonify(fb.request_sync(store,g.staff))
 
     @bp.post('/api/fb/reopen')
     def fb_reopen(): return jsonify(fb.reopen(store,g.staff,request.get_json(silent=True)))
