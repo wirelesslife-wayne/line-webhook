@@ -3,6 +3,7 @@ are closed by themselves (no draft, no review); 待我們確認 card buttons and
 Synthetic data, TEMP tables, rollback; the AI is a Mock, nothing is sent."""
 from unittest.mock import Mock
 from desk import fb
+from desk.db import now
 from test_desk import db, logged
 from test_fb import thread, wayne
 
@@ -175,3 +176,35 @@ def test_two_cars_in_one_question_still_get_a_draft():
     assert (ex['brand'], ex['model'], ex['year'], ex['series'], ex['products']) == ('Toyota', 'Granvia', None, 'B42 MAX', ['電子後視鏡'])
     assert one_car({'brand': 'Toyota', 'model': 'RAV4', 'products': ['電動尾門']}) == {'brand': 'Toyota', 'model': 'RAV4', 'products': ['電動尾門']}
     assert one_car(['not', 'a', 'dict']) == {}
+
+
+def test_voided_approval_is_not_treated_as_sent(db, logged):
+    """Wayne 11/16 13:47 (Alvis Kao): the approved quote was voided by a newer message and never sent;
+    the redraft must say it all again. FB/IG only."""
+    from test_fb import ready, approval, tid
+    from desk.engine import Engine
+    _, _, staff, _ = logged
+    boss = wayne(db, staff)
+    first = dict(role='user', text='2026年CC', at='2026-11-16T10:18:00+08:00')
+    fb.push(db, [thread(messages=[first])])
+    ready(db, text='您好～您的 2026 年 Toyota Corolla Cross 可以升級電動尾門。\n👉 完工價 $18,000（含安裝）')
+    fb.approve(db, boss, approval(db, text='您好～您的 2026 年 Toyota Corolla Cross 可以升級電動尾門。\n👉 完工價 $18,000（含安裝）'))
+    fb.push(db, [thread(messages=[first, dict(role='user', text='2026年Toyota Cc汽油版', at='2026-11-16T11:20:00+08:00')])])
+    c = fb.conversation(db, tid())
+    assert c['status'] == 'waiting' and '$18,000' in fb.voided_reply(db, c)
+    engine = Mock()
+    engine.draft.return_value = {'draft': '您好～', 'flags': []}
+    fb.draft_once(db, lambda store: engine)
+    assert '$18,000' in engine.draft.call_args.kwargs['unsent']
+    # the real prompt tells the AI the customer never got it
+    provider = Mock(side_effect=[{}, dict(draft='您好～')])
+    Engine(db, provider).draft(fb.messages(db, tid(), True), now(), channel='fb_message', unsent=fb.voided_reply(db, c))
+    prompt = provider.call_args.args[0][1]['content']
+    assert '客人從來沒有收到' in prompt and '$18,000' in prompt
+    # once a reply really goes out, the voided one is history
+    data = approval(db, text='您好～汽油版也可以裝，完工價 $18,000。')
+    fb.approve(db, boss, data)
+    fb.record_result(db, fb.pending(db)[0]['attempt_id'], 'sent')
+    assert fb.voided_reply(db, fb.conversation(db, tid())) == ''
+    # LINE is left exactly as it was
+    assert fb.voided_reply(db, dict(c, channel='line_message')) == ''

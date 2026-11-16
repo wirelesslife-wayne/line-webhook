@@ -556,14 +556,34 @@ def recheck(store):
     return out
 
 
+def voided_reply(store, c):
+    """The last reply Wayne approved that was voided before sending (a newer customer message arrived) and that nothing
+    we really sent has replaced since: the customer never saw it, so the next draft must say it all again.
+    FB/IG only (Wayne 11/16: LINE 不要動)."""
+    if c['channel'] == 'line_message':
+        return ''
+    a = store.one("""SELECT content,approved_at FROM desk_fb_attempts WHERE thread_id=%s AND status='expired'
+      ORDER BY approved_at DESC LIMIT 1""", (c['id'],))
+    if not a:
+        return ''
+    if store.one("SELECT 1 AS x FROM desk_fb_attempts WHERE thread_id=%s AND status='sent' AND approved_at>=%s", (c['id'], a['approved_at'])):
+        return ''
+    later = store.all('SELECT role,note FROM desk_fb_events WHERE thread_id=%s AND received_at>=%s', (c['id'], a['approved_at']))
+    if any(answers(e['role'], e['note']) for e in later):
+        return ''  # a colleague answered by hand afterwards
+    return a['content'].replace(SPLIT_MARK, '\n')
+
+
 def draft_thread(store, c, engine_factory=None, instruction='', original='', rule_id=None):
     from .engine import Engine, ProviderPending
     from .provider import BudgetExceeded, Unavailable, Transient, month_key
     if not instruction and close_ad_only(store, c):  # Wayne 11/16 11:03: no draft, no review
         return dict(ok=True,applied=True,status='skip',remembered=False)
     try:
+        unsent = voided_reply(store, c)
         result = (engine_factory or Engine)(store).draft(messages(store,c['id'],True),now().astimezone(TAIPEI),
-            channel=c['channel'],context=c['context'],instruction=instruction,original_draft=original)
+            channel=c['channel'],context=c['context'],instruction=instruction,original_draft=original,
+            **({'unsent': unsent} if unsent else {}))
         state = 'ready'
     except BudgetExceeded as e:
         result,state = dict(draft=original,staff_note=str(e),budget_month=month_key()),'blocked'

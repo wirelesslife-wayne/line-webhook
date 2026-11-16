@@ -271,7 +271,7 @@ class Engine:
         # Employee uploads replace automatic product suggestions.
         return []
 
-    def draft(self, timeline, now_local, channel='line', context='', instruction='', original_draft=''):
+    def draft(self, timeline, now_local, channel='line', context='', instruction='', original_draft='', unsent=''):
         if self.provider is None:
             raise ProviderPending('等 Claude 回答：雲端 AI 擬稿方式尚未核准；可由同事填寫回覆')
         post_context = context
@@ -328,6 +328,14 @@ class Engine:
                        '\n這次指示優先：跟上面一般寫法規則衝突時（例如客人只點廣告預設問題要先問車款、不重複自動回覆講過的事），照這次指示寫。'
                        '指示附了參考資料而且裡面有價格，就照參考資料報價（例如電動尾門國產 18,000、進口 20,000），最後再請客人提供車款年份。'
                        '暫停車款、禁用詞、不承諾預約這些照舊。')
+        if unsent:
+            # Wayne 11/16 13:47 (Alvis Kao): his approved $18,000 quote was voided by a newer customer message and never
+            # went out; the next draft said 「適用剛才提供的報價」 with no price and no link.
+            prompt += ('\n重要：下面這則回覆 Wayne 核准過，但還沒送出客人就又傳了新訊息，所以作廢了，客人從來沒有收到。'
+                       '只有上面對話裡看得到的我方訊息才算回覆過；這則裡的報價、功能、連結、門市資訊客人都還不知道。'
+                       '這次的草稿要把它原本要告訴客人的內容完整寫出來（價格和連結照寫），再一併回應客人後來的新訊息；'
+                       '不可以寫「剛才提供的報價」「如前面所說」「同上」這類話。'
+                       '這一點優先於修改指示裡「已經回過」「不用重講」的說法。\n作廢、客人沒收到的那則：\n' + unsent[:1500])
         from .library import catalog, suggestions
         # Not ig_comment: Instagram comments cannot carry a picture.
         numbered = catalog(self.store) if channel in ('fb_message', 'ig_message', 'line_message', 'fb_comment') else []
