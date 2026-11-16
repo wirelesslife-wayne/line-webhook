@@ -32,6 +32,11 @@ class Unavailable(ProviderPending):
     """The API refused the request before doing any work (e.g. the account is out of credit); retried later."""
 
 
+class Transient(ProviderPending):
+    """No usable answer (time-out, server error): whether it was billed is unknown. LINE treats it as before;
+    FB/IG retry it a few times (Wayne 11/16 12:31, Alvis Kao stuck with no draft)."""
+
+
 class Busy(Unavailable):
     """Another draft holds the budget lock; nothing was sent."""
 
@@ -159,7 +164,7 @@ class OpenAIProvider:
                 # Keep reserved funds if billable usage is unknown; expose no body.
                 if refused:
                     raise Unavailable('AI 服務拒絕了這次請求（可能是金鑰失效或餘額不足），恢復後會自動重新擬稿') from None
-                raise ProviderPending('AI 擬稿失敗，用量待核對，請手動回覆') from None
+                raise Transient('AI 擬稿失敗，用量待核對，請手動回覆') from None
             try:
                 if body.get('status') != 'completed':
                     raise ValueError()

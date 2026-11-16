@@ -470,6 +470,7 @@ THUMBS = ('[貼圖] 👍', '[貼圖] 讚')  # Wayne 11/16 11:03 (Sunny Chung): a
 AWAY = re.compile(r'不在線上|無法回覆您的問題')  # the Page's after-hours message is not an answer to the button
 PROMISE = re.compile(r'專人|稍後|客服人員|(會|將)(盡快|儘快|再|主動)?(與您)?(聯繫|聯絡|回電)|為您安排')
 AUTO_NOTE = '🤖 自動處理：只點廣告按鈕，自動回覆已答完'
+TRANSIENT_TRIES = 3
 
 
 def ad_only(rows):
@@ -553,7 +554,7 @@ def recheck(store):
 
 def draft_thread(store, c, engine_factory=None, instruction='', original='', rule_id=None):
     from .engine import Engine, ProviderPending
-    from .provider import BudgetExceeded, Unavailable, month_key
+    from .provider import BudgetExceeded, Unavailable, Transient, month_key
     if not instruction and close_ad_only(store, c):  # Wayne 11/16 11:03: no draft, no review
         return dict(ok=True,applied=True,status='skip',remembered=False)
     try:
@@ -564,6 +565,13 @@ def draft_thread(store, c, engine_factory=None, instruction='', original='', rul
         result,state = dict(draft=original,staff_note=str(e),budget_month=month_key()),'blocked'
     except Unavailable as e:
         result,state = dict(draft=original,staff_note=str(e),retry=True),'blocked'
+    except Transient:
+        # OpenAI timed out or failed on its side: try again in 30 minutes, at most 3 times in a row
+        tries = int((c.get('draft') or {}).get('tries') or 0) + 1
+        result = dict(draft=original,tries=tries,retry=tries < TRANSIENT_TRIES,
+                      staff_note='AI 這次沒有回應（OpenAI 逾時或暫時故障），30 分鐘內會自動重擬' if tries < TRANSIENT_TRIES
+                      else 'AI 連續 3 次沒有回應，請手動回覆或按「請 AI 重寫」')
+        state = 'blocked'
     except ProviderPending as e:
         result,state = dict(draft=original,staff_note=str(e)),'blocked'
     except Exception:

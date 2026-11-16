@@ -131,3 +131,26 @@ def test_close_and_undo_the_hold(db, logged):
     db.execute("UPDATE desk_fb_threads SET status='approved' WHERE id=%s", (t,))
     client.post('/desk/api/fb/hold', json=dict(thread_id=t, hold=''), headers=h)
     assert fb.conversation(db, t)['status'] == 'approved'
+
+
+def test_ai_time_out_is_retried_three_times_on_fb_only(db):
+    """Wayne 11/16 12:31 (Alvis Kao): one OpenAI time-out left the customer with no draft for good."""
+    from desk.provider import Transient
+    fb.push(db, [thread(key='950007', messages=[dict(role='user', text='2026年Toyota Cc汽油版', at='上午11:20')])])
+    t = db.one("SELECT id FROM desk_fb_threads WHERE key='950007'")['id']
+    engine = Mock()
+    engine.draft.side_effect = Transient('AI 擬稿失敗，用量待核對，請手動回覆')
+    for n in (1, 2, 3):
+        fb.draft_once(db, lambda store: engine)
+        c = fb.conversation(db, t)
+        assert c['status'] == 'blocked' and c['draft']['tries'] == n and c['draft']['retry'] is (n < 3)
+        db.execute("UPDATE desk_fb_threads SET updated_at=NOW()-INTERVAL '31 minutes' WHERE id=%s", (t,))
+    fb.draft_once(db, lambda store: engine)
+    assert engine.draft.call_count == 3  # the third failure is not retried again
+    assert '連續 3 次' in fb.conversation(db, t)['draft']['staff_note']
+    # OpenAI answers on a retry -> a normal draft
+    db.execute("UPDATE desk_fb_threads SET status='waiting',draft=%s WHERE id=%s", ('{"tries": 1}', t))
+    engine.draft.side_effect = None
+    engine.draft.return_value = {'draft': '您好～', 'flags': []}
+    fb.draft_once(db, lambda store: engine)
+    assert fb.conversation(db, t)['status'] == 'ready'
