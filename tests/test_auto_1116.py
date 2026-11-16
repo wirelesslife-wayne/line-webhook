@@ -292,3 +292,36 @@ def test_ai_hold_clears_when_a_colleague_answers_but_wayne_hold_stays(db):
     db.execute("UPDATE desk_fb_threads SET hold='ours',hold_note='請售後確認' WHERE key='U950022'")
     fb.push(db, [thread(channel='line_message', key='U950022', messages=ask + [dict(role='page', text='[貼圖]', at='下午3:10', note='暫回')])])
     assert db.one("SELECT hold FROM desk_fb_threads WHERE key='U950022'")['hold'] == 'ours'
+
+
+# Wayne 11/16 17:50: a colleague answered and the customer only said thanks -> closed by itself, nothing sent.
+def test_line_thanks_only_rule():
+    q, ans = ev('user', '安裝要多久'), ev('page', '安裝約 90 分鐘，門市有休息室可以等候。')
+    assert fb.thanks_only([q, ans, ev('user', '好的 謝謝')])
+    assert fb.thanks_only([q, ans, ev('user', '[貼圖]')]) and fb.thanks_only([q, ans, ev('user', '謝謝您🙏')])
+    assert not fb.thanks_only([q, ans, ev('user', '好的'), ev('user', '那價格呢')])  # a question follows
+    assert not fb.thanks_only([q, ev('page', '明天 13:00 方便嗎？'), ev('user', '好的')])  # 「好的」 answers our question
+    assert not fb.thanks_only([q, ev('page', '這邊確認後再回覆您'), ev('user', '謝謝')])  # we promised to come back
+    assert not fb.thanks_only([q, ans, ev('page', '稍等，幫您查庫存', '暫回'), ev('user', '好的')])
+    assert not fb.thanks_only([q, ans, ev('user', '可以')])  # agrees to something: someone books it
+    assert not fb.thanks_only([q, ans, ev('user', '謝謝 再找時間現場去詳談')])  # more than a thank-you
+    assert not fb.thanks_only([q, ans, ev('user', '[圖片]')]) and not fb.thanks_only([ev('user', '好的')])
+    assert not fb.thanks_only([q, ans, ev('user', '未購買_客服', '選單')])  # a menu tap asks for service
+
+
+def test_line_thanks_closes_without_a_draft_unless_pinned(db):
+    talk = [dict(role='user', text='安裝要多久', at='下午3:00'),
+            dict(role='page', text='安裝約 90 分鐘，門市有休息室可以等候。', at='下午3:05'),
+            dict(role='user', text='好的 謝謝', at='下午3:06')]
+    fb.push(db, [thread(channel='line_message', key='U950030', messages=talk)])
+    fb.push(db, [thread(channel='line_message', key='U950031', messages=talk)])
+    db.execute("UPDATE desk_fb_threads SET hold='ours',hold_note='請售後確認' WHERE key='U950031'")
+    fb.push(db, [thread(channel='fb_message', key='950032', messages=talk)])  # FB/IG: not this rule
+    engine = Mock()
+    engine.draft.return_value = {'draft': '不客氣～', 'flags': []}
+    fb.draft_once(db, lambda store: engine)
+    a = db.one("SELECT status,draft FROM desk_fb_threads WHERE key='U950030'")
+    assert a['status'] == 'skip' and a['draft']['auto'] == 'thanks'
+    assert db.one("SELECT status FROM desk_fb_threads WHERE key='U950031'")['status'] == 'ready'  # 📌: Wayne still sees it
+    assert db.one("SELECT status FROM desk_fb_threads WHERE key='950032'")['status'] == 'ready'
+    assert engine.draft.call_count == 2

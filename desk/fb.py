@@ -550,7 +550,40 @@ def close_ad_only(store, c):
 # often after a sticker): the next move is the customer's. Nothing is sent; a new customer message reopens it (push).
 ASK_BACK = re.compile(r'請問有什麼(地方)?(需要|可以)|有什麼(地方)?需要(為您|幫您|我們)?(服務|協助|幫忙)|需要什麼(協助|服務|幫忙)')
 COLLEAGUE = ('', '暫回', '自動回覆')  # LINE notes for what a colleague sent (自動回覆 = a saved reply, 暫回 = a sticker)
-LINE_AUTO = {'noreply': '🤖 自動處理：AI 判斷不用回覆', 'asked': '🤖 自動處理：同事已問客人需求，等客人回'}
+LINE_AUTO = {'noreply': '🤖 自動處理：AI 判斷不用回覆', 'asked': '🤖 自動處理：同事已問客人需求，等客人回',
+             'thanks': '🤖 自動處理：客人道謝收尾，不用回覆'}
+# 'thanks' (Wayne 11/16 17:50, 自動結案不傳訊息): a colleague answered and the customer only said 好的／謝謝／a sticker.
+# Of 41 such turns in the LINE history a third still had business afterwards (deposit, booking), so nothing is sent
+# and it only applies when our last messages asked nothing and promised nothing, and no 📌 is on the conversation.
+THANKS = re.compile(r'^(?:謝謝|感謝|感恩|多謝|辛苦了|thanks?|thx|ok+|okay|好的?|好[喔唷啊哦]|嗯+|了解|收到|知道了|沒問題'
+                    r'|[您你喔囉了啦唷]|[\s~～!！。.，,、]|[👍🙏😊☺🙂😄❤️])+$', re.I)
+OPEN_END = re.compile(r'[?？]|嗎|呢|稍後|稍等|確認後|確認一下|再回覆|再跟您|幫您(?:查|確認|詢問|問)|回覆您|通知您|聯[繫絡]您')
+
+
+def is_thanks(row):
+    text, note = (row['content'] or '').strip(), row['note'] or ''
+    if text in ('', '[貼圖]'):
+        return '貼圖' in text + note
+    return not note and len(text) <= 12 and bool(THANKS.match(text))
+
+
+def thanks_only(rows):
+    rows = list(rows)
+    kinds = [kind(r['role'], r['note']) for r in rows]
+    i, said = len(rows) - 1, []
+    while i >= 0 and kinds[i] != 'page':
+        if rows[i]['role'] == 'user':
+            said.append(rows[i])  # a menu tap counts too: it is not a thank-you
+        elif '暫回' in (rows[i]['note'] or '') and (rows[i]['content'] or '').strip() != '[貼圖]':
+            return False  # 「稍等，幫您查」: we still owe the answer
+        i -= 1
+    if i < 0 or not said or not all(is_thanks(r) for r in said):
+        return False
+    while i >= 0 and rows[i]['role'] == 'page':  # everything we said in that turn
+        if kinds[i] == 'page' and OPEN_END.search(rows[i]['content'] or ''):
+            return False  # we asked something (「明天 13:00 方便嗎？」→「好的」is an answer) or promised to come back
+        i -= 1
+    return True
 
 
 def asked_back(rows):
@@ -626,10 +659,11 @@ def draft_thread(store, c, engine_factory=None, instruction='', original='', rul
     from .provider import BudgetExceeded, Unavailable, Transient, month_key
     if not instruction and close_ad_only(store, c):  # Wayne 11/16 11:03: no draft, no review
         return dict(ok=True,applied=True,status='skip',remembered=False)
-    if not instruction and line_closable(c) and asked_back(
-            store.all('SELECT role,note,content FROM desk_fb_events WHERE thread_id=%s ORDER BY id', (c['id'],))):
+    if not instruction and line_closable(c):
+        rows = store.all('SELECT role,note,content FROM desk_fb_events WHERE thread_id=%s ORDER BY id', (c['id'],))
+        why = 'asked' if asked_back(rows) else 'thanks' if not c.get('hold') and thanks_only(rows) else ''
         with store.cursor() as cur:
-            if close_line(cur, c, 'asked'):
+            if why and close_line(cur, c, why):
                 return dict(ok=True,applied=True,status='skip',remembered=False)
     try:
         unsent = voided_reply(store, c)
