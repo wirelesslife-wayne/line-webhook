@@ -360,3 +360,15 @@ def test_sync_button_queues_once_and_waits_between_presses(db, logged):
     db.execute("UPDATE desk_marks SET at=NOW()-INTERVAL '4 minutes' WHERE name='sync_request'")
     fb.request_sync(db, staff)
     assert fb.sync_state(db)['state'] == 'queued'
+
+
+def test_closed_by_a_colleague_queues_the_star_removal(db):
+    ask = [dict(role='user', text='尾門多少錢', at='下午3:00')]
+    fb.push(db, [thread(key='950040', messages=ask)])
+    fb.push(db, [thread(key='950040', messages=ask + [dict(role='page', text='您好，國產車完工價 18,000', at='下午3:10')])])
+    c = db.one("SELECT status,unstar FROM desk_fb_threads WHERE key='950040'")
+    assert c == {'status': 'done', 'unstar': 'todo'}
+    assert [x['auto'] for x in fb.to_unstar(db) if x['key'] == '950040'] == [False]
+    fb.push(db, [thread(channel='line_message', key='U950041', messages=ask)])
+    fb.push(db, [thread(channel='line_message', key='U950041', messages=ask + [dict(role='page', text='您好，國產車完工價 18,000', at='下午3:10')])])
+    assert db.one("SELECT unstar FROM desk_fb_threads WHERE key='U950041'")['unstar'] == ''  # LINE has no star

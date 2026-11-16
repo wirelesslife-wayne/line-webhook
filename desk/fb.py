@@ -160,6 +160,7 @@ def push(store, payload):
                 cur.execute("""UPDATE desk_fb_attempts SET status='cancelled',reason='同事已回覆',updated_at=NOW()
                   WHERE thread_id=%s AND status='approved'""",(tid,))
                 clear_ai_hold(cur, tid)
+                unstar_later(cur, tid)
             if old and len(seen)>len(old) and seen[:len(old)]==old:
                 # Exactly what we had plus newer messages (always so for the webhook): add only the new ones.
                 for i,msg in enumerate(row['messages'][len(old):],len(old)):
@@ -185,6 +186,13 @@ def push(store, payload):
             counts['new_customer_messages'] += int(users)
         counts['threads'] = len({r['id'] for r in rows})
     return counts
+
+
+def unstar_later(cur, tid):
+    """Wayne 11/16 20:20: Meta's 持續追蹤 list kept conversations the desk had already closed (a colleague answered,
+    結案 pressed, 3 days without an answer); only 不發送 and the ad-button ones were queued. The next FB/IG round
+    removes the star (step 1.5 of the schedule). LINE has no star."""
+    cur.execute("UPDATE desk_fb_threads SET unstar='todo' WHERE id=%s AND channel<>'line_message'", (tid,))
 
 
 def clear_ai_hold(cur, tid):
@@ -478,6 +486,7 @@ def set_hold(store, staff, data):
                         status=c['status'],was_note=c['note'])
             if c['status'] in ('ready','blocked','error'):
                 cur.execute("UPDATE desk_fb_threads SET status='done',note=%s,draft_token=NULL,updated_at=NOW() WHERE id=%s",(CLOSED_NOTE,tid))
+                unstar_later(cur, tid)
     return dict(ok=True,undo=undo)
 
 
@@ -813,6 +822,7 @@ def close_stale_waits(store):
     """Wayne 11/15 22:06: ⏳ 等客人回 with no answer for 3 days closes itself. Nothing is sent; a reply queued
     to send (approved) or a draft being written is left alone. A customer who writes back clears the hold before this."""
     return store.execute("""UPDATE desk_fb_threads SET hold='',hold_note='',hold_at=NULL,hold_by='',
+      unstar=CASE WHEN channel<>'line_message' THEN 'todo' ELSE unstar END,
       status=CASE WHEN status IN ('ready','blocked','error') THEN 'done' ELSE status END,
       note='等客人回 3 天沒回，自動結案',updated_at=NOW()
       WHERE hold='customer' AND hold_at < NOW()-INTERVAL '3 days' AND status NOT IN ('approved','waiting','drafting')""")
