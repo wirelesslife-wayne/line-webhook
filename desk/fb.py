@@ -159,6 +159,7 @@ def push(store, payload):
                 state, note = 'done', '同事已回覆'
                 cur.execute("""UPDATE desk_fb_attempts SET status='cancelled',reason='同事已回覆',updated_at=NOW()
                   WHERE thread_id=%s AND status='approved'""",(tid,))
+                clear_ai_hold(cur, tid)
             if old and len(seen)>len(old) and seen[:len(old)]==old:
                 # Exactly what we had plus newer messages (always so for the webhook): add only the new ones.
                 for i,msg in enumerate(row['messages'][len(old):],len(old)):
@@ -184,6 +185,12 @@ def push(store, payload):
             counts['new_customer_messages'] += int(users)
         counts['threads'] = len({r['id'] for r in rows})
     return counts
+
+
+def clear_ai_hold(cur, tid):
+    """Wayne 11/16: a 📌 the AI raised goes away once a colleague answers the customer (LINE colleagues answer in
+    the LINE inbox, never press ✅ here); one Wayne marked himself stays until he clears it."""
+    cur.execute("UPDATE desk_fb_threads SET hold='',hold_note='',hold_at=NULL WHERE id=%s AND hold='ours' AND hold_by<>'wayne'",(tid,))
 
 
 def conversation(store, tid):
@@ -565,7 +572,10 @@ def close_line(cur, c, why, draft=None, states=('drafting',), token=True):
       auto_at=NOW(),updated_at=NOW() WHERE id=%s AND version=%s AND status=ANY(%s)"""
                 + (" AND draft_token=%s" if token else '') + " RETURNING id",
                 (LINE_AUTO[why], Json(shown), c['version'], c['id'], c['version'], list(states)) + ((c['draft_token'],) if token else ()))
-    return bool(cur.fetchone())
+    closed = bool(cur.fetchone())
+    if closed and why == 'asked':
+        clear_ai_hold(cur, c['id'])  # a colleague answered (asked what they need)
+    return closed
 
 
 def reopen(store, staff, data):

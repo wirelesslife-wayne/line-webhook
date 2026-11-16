@@ -273,3 +273,22 @@ def test_line_kept_when_wayne_marked_it(db):
     engine.draft.return_value = {'draft': fb.NO_REPLY, 'flags': []}
     fb.draft_once(db, lambda store: engine)
     assert db.one("SELECT status FROM desk_fb_threads WHERE key='U950013'")['status'] == 'ready'
+
+
+def test_ai_hold_clears_when_a_colleague_answers_but_wayne_hold_stays(db):
+    ask = [dict(role='user', text='尾門打不開', at='下午3:00')]
+    for key in ('U950020', 'U950021'):
+        fb.push(db, [thread(channel='line_message', key=key, messages=ask)])
+    db.execute("UPDATE desk_fb_threads SET hold='ours',hold_note='請售後確認' WHERE key='U950020'")
+    db.execute("UPDATE desk_fb_threads SET hold='ours',hold_note='Wayne 要看',hold_by='wayne' WHERE key='U950021'")
+    for key in ('U950020', 'U950021'):
+        fb.push(db, [thread(channel='line_message', key=key, messages=ask + [
+            dict(role='page', text='您好，請先拍一段操作影片給我們看看', at='下午3:10')])])
+    a = db.one("SELECT status,hold FROM desk_fb_threads WHERE key='U950020'")
+    b = db.one("SELECT status,hold FROM desk_fb_threads WHERE key='U950021'")
+    assert a == {'status': 'done', 'hold': ''} and b == {'status': 'done', 'hold': 'ours'}
+    # a sticker alone is not an answer: the 📌 stays
+    fb.push(db, [thread(channel='line_message', key='U950022', messages=ask)])
+    db.execute("UPDATE desk_fb_threads SET hold='ours',hold_note='請售後確認' WHERE key='U950022'")
+    fb.push(db, [thread(channel='line_message', key='U950022', messages=ask + [dict(role='page', text='[貼圖]', at='下午3:10', note='暫回')])])
+    assert db.one("SELECT hold FROM desk_fb_threads WHERE key='U950022'")['hold'] == 'ours'
