@@ -95,7 +95,8 @@ header .title{border-left:1px solid #ffffff40;padding-left:18px}header form{marg
 .autof{border:1px solid var(--line);background:white;border-radius:20px;padding:6px 14px;min-height:40px;font-weight:700}.autof[aria-pressed=true]{background:var(--soft);border-color:#9db4c6;color:var(--brand)}
 .autobox{background:var(--bg);border-radius:8px;padding:6px 12px;margin:10px 0}.autobox .closed-by{margin:6px 0 0}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(16px + env(safe-area-inset-bottom));z-index:50;background:#1f2a33;color:white;border-radius:12px;padding:10px 12px 10px 16px;display:flex;gap:14px;align-items:center;box-shadow:0 6px 20px #0004;max-width:calc(100% - 24px)}
-.toast[hidden]{display:none}.toast button{border:0;background:none;color:#FFB45E;font-weight:700;min-height:40px;padding:0 6px;font-size:16px}
+.toast{width:min(360px,calc(100% - 24px));box-sizing:border-box}.toast span{flex:1 1 auto}
+.toast[hidden]{display:none}.toast button{flex:0 0 auto;white-space:nowrap;border:0;background:none;color:#FFB45E;font-weight:700;min-height:40px;padding:0 6px;font-size:16px}
 #fb-rules{margin-top:16px}#fb-rules summary{cursor:pointer;font-weight:700}#fb-feedback.bad{background:#fbe4e2;color:var(--bad)}
 @media(max-width:700px){.brandmark{display:none}header .title{border:0;padding:0}header::after{display:none}
 .nav{gap:6px;padding:8px 0}.nav a,.nav button{flex:1;min-width:0;padding:8px 6px;font-size:14px}.nav.main a{font-size:15px;padding:8px}.nav.state button,.nav.channel button{min-width:0;font-size:13px}.nav.channel .ic{display:none}
