@@ -1,5 +1,4 @@
 {% extends 'base.html' %}
-{% block brand %}<div class="brandmark" aria-hidden="true"><span class="zh">無限科技</span><span class="en">WIRELESSLIFE</span></div>{% endblock %}
 {% block subtitle %}FB／IG／LINE 客服審稿 · 核准後才送出{% endblock %}
 {% block user %}<form method="post" action="/desk/logout"><span>{{ staff.username }}</span><input name="csrf" type="hidden" value="{{ staff.csrf }}"><button>登出</button></form>{% endblock %}
 {% block body %}<main>
@@ -25,7 +24,8 @@
 .kb th{color:var(--muted);font-weight:600;font-size:13px}.kb .doc details{border-bottom:1px solid var(--line);padding:8px 0}.kb .doc summary{cursor:pointer;font-weight:600}.kb .doc pre{white-space:pre-wrap;font:inherit;margin:6px 0 0}
 .kb .newrule textarea{width:100%;min-height:72px;box-sizing:border-box;font-size:16px}.kb .pager{display:flex;gap:8px;margin-top:8px}
 #feedback:empty{display:none}#feedback{position:sticky;top:0;z-index:5;background:#e8f5ec;border-radius:8px;padding:8px 12px}#feedback.bad{background:#fbe4e2;color:var(--bad)}
-@media(max-width:700px){header small{display:none}header{padding:10px 14px}.nav.main a{font-size:16px}.kb .li{flex-wrap:wrap}.kb .li b{flex:1 1 100%}.kb .headrow{align-items:center}.kb td,.kb th{padding:6px 4px;font-size:14px}}
+header form button{white-space:nowrap}header form span{white-space:nowrap}
+@media(max-width:700px){header small{display:none}header{padding:10px 14px}header h1,header .title{font-size:17px}header form span{display:none}.nav.main a{font-size:16px}.kb .li{flex-wrap:wrap}.kb .li b{flex:1 1 100%}.kb .headrow{align-items:center}.kb td,.kb th{padding:6px 4px;font-size:14px}}
 </style>
 <nav class="nav main" aria-label="客服管道"><a href="/desk/fb">客服審稿</a><a href="/desk/knowledge" aria-current="page">AI 回覆依據</a></nav>
 <div class="kb">
