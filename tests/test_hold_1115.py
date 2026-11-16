@@ -4,6 +4,7 @@ from desk import fb
 from desk.fb import hold_from
 from test_desk import db, logged
 import uuid
+from unittest.mock import Mock
 from desk.fb import hold_after_send
 from test_fb import thread, wayne, ready, tid
 
@@ -56,21 +57,26 @@ def approve_and_send(db, boss, key, text):
     return out['attempt_id']
 
 
-def test_sending_updates_the_hold_but_never_wayne_s_own_mark(db, logged):
+def test_nothing_is_marked_by_itself_and_approving_can_mark(db, logged):
+    """Wayne 11/16 20:50: no automatic 等客人回／待確認; 「📌 標記待處理並核准」 marks it as his own."""
     _, _, staff, _ = logged
     boss = wayne(db, staff)
     for key in ('950001', '950002', '950003'):
         fb.push(db, [thread(key=key, messages=[dict(role='user', text='電動尾門多少錢？', at='2026-11-15T09:00:00+08:00')])])
-    ready(db); ready(db); ready(db)
-    db.execute("UPDATE desk_fb_threads SET hold='ours',hold_note='AI：要轉真人' WHERE key IN ('950001','950002')")
+    engine = Mock()
+    engine.draft.return_value = {'draft': '您好～完工價 $18,000，請問車款年份？', 'flags': [], 'to_human': True, 'staff_note': '請對帳末三碼並建單'}
+    fb.draft_once(db, lambda store: engine)
+    assert {r['hold'] for r in db.all("SELECT hold FROM desk_fb_threads WHERE key LIKE '95000%%'")} == {''}  # the AI marks nothing
     fb.set_hold(db, boss, dict(thread_id=db.one("SELECT id FROM desk_fb_threads WHERE key='950003'")['id'], hold='ours', note='問廠商'))
     a1 = approve_and_send(db, boss, '950001', '完工價 $18,000，請問您的車款年份？')
-    a2 = approve_and_send(db, boss, '950002', '完工價 $18,000（含安裝），歡迎來門市看實機。')
+    t = db.one("SELECT id,version FROM desk_fb_threads WHERE key='950002'")
+    a2 = fb.approve(db, boss, dict(thread_id=t['id'], text='完工價 $18,000，匯款後幫您建單。', version=t['version'],
+                                   retry_key=str(uuid.uuid4()), confirmed=True, public_confirmed=False, hold=True))['attempt_id']
     a3 = approve_and_send(db, boss, '950003', '完工價 $18,000（含安裝）。')
     for a in (a1, a2, a3):
         fb.record_result(db, a, 'sent')
-    got = {r['key']: r['hold'] for r in db.all("SELECT key,hold FROM desk_fb_threads WHERE key LIKE '95000%%'")}
-    assert got == {'950001': 'customer', '950002': '', '950003': 'ours'}
+    got = {r['key']: (r['hold'], r['hold_by'], r['hold_note']) for r in db.all("SELECT key,hold,hold_by,hold_note FROM desk_fb_threads WHERE key LIKE '95000%%'")}
+    assert got == {'950001': ('', '', ''), '950002': ('ours', 'wayne', '請對帳末三碼並建單'), '950003': ('ours', 'wayne', '問廠商')}
 
 
 def test_approved_replies_go_out_in_the_order_wayne_approved_them(db, logged):

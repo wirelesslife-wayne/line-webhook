@@ -325,6 +325,9 @@ def approve(store, staff, data):
         from .fb_media import bind
         bind(cur,tid,key,data.get('media_ids'),c['channel'])
         cur.execute("UPDATE desk_fb_threads SET status='approved',note='',draft_token=NULL,updated_at=NOW() WHERE id=%s",(tid,))
+        if data.get('hold') is True:  # 「📌 標記待處理並核准」: the reply goes out, the thing we still owe stays in 待處理
+            cur.execute("""UPDATE desk_fb_threads SET hold='ours',hold_by='wayne',hold_at=NOW(),hold_note=%s WHERE id=%s AND hold=''""",
+                        (str((c['draft'] or {}).get('staff_note') or '回覆送出後還有事要處理')[:200],tid))
     return dict(ok=True,attempt_id=key,status='approved')
 
 
@@ -410,12 +413,10 @@ def record_result(store, attempt_id, outcome, reason='', via='browser'):
             cur.execute("""INSERT INTO desk_fb_events(thread_id,fingerprint,role,content,at,event_at,origin,source_version)
               VALUES(%s,%s,'page',%s,%s,%s,%s,%s) ON CONFLICT(thread_id,fingerprint) DO NOTHING""",
               (c['id'],'attempt:'+attempt_id,a['content'],stamp,event_time(stamp),via,a['source_version']))
-            # Wayne 11/15 13:22: what was actually sent decides the next step; a mark he set by hand stays.
-            if c['hold_by'] != 'wayne':
-                kind = hold_after_send(a['content'])
-                if kind != c['hold']:
-                    cur.execute("""UPDATE desk_fb_threads SET hold=%s,hold_note=%s,hold_at=CASE WHEN %s='' THEN NULL ELSE NOW() END,
-                      hold_by='' WHERE id=%s""",(kind,{'ours':'回覆說會確認後再回','customer':'已回覆，等客人回'}.get(kind,''),kind,c['id']))
+            # Wayne 11/16 20:50 (ChatGPT, Gemini, Claude agreed): nothing is marked by itself any more. 「等客人回」 only
+            # made the list long (a customer who writes back returns to 待審核 anyway), and he reads the AI's note on
+            # every draft. 📌 待處理 holds only what he marked; the confirm box offers the mark when the AI's note
+            # says something is still ours to do (see approve).
         if c['version']==a['source_version'] and a['status']=='approved' and c['status']=='approved':
             # Wayne 11/12: a colleague had already answered in Meta; leaving it in review looked like a bad draft.
             answered = outcome=='failed' and '已經有人回覆' in reason
@@ -760,10 +761,6 @@ def draft_thread(store, c, engine_factory=None, instruction='', original='', rul
           WHERE id=%s AND version=%s AND status='drafting' AND draft_token=%s RETURNING id""",
           (state,Json(result),c['version'],c['id'],c['version'],c['draft_token']))
         applied = bool(cur.fetchone())
-        kind = hold_from(result) if applied and state=='ready' else ''
-        if kind:
-            cur.execute("UPDATE desk_fb_threads SET hold=%s,hold_note=%s,hold_at=NOW() WHERE id=%s AND hold=''",
-                        (kind,str(result.get('staff_note') or '')[:200],c['id']))
         if rule_id and applied and state=='ready':
             cur.execute('UPDATE desk_edit_rules SET revised_draft=%s WHERE id=%s',(result['draft'],rule_id))
         if (applied and state=='ready' and not instruction and line_closable(c)

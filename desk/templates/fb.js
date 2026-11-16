@@ -203,10 +203,10 @@ document.addEventListener('click',async event=>{
     if(b.dataset.holdKind!==undefined&&holdFor){const d=holdFor,k=b.dataset.holdKind;f('hold').close();holdFor=null;busy=true;
       try{await api('hold',{thread_id:d.id,hold:k,note:d.hold_note||''});say(`已標「${HOLD[k]}」，會留在「待處理」，沒有傳訊息給客人。`)}catch(e){say(e.message,true)}finally{busy=false}await load(true);return}
     if(b.id==='fb-confirm-cancel'){f('confirm').close();confirmation=null;return}
-    if(b.id==='fb-confirm-ok'&&confirmation){
+    if((b.id==='fb-confirm-ok'||b.id==='fb-confirm-pin')&&confirmation){
       const snap=confirmation;if(linkGate.pending||linkGate.bad)return;if(snap.is_public&&!f('public-check').checked)return;const lc=document.getElementById('fb-links-check');if(lc&&!lc.checked)return;
       busy=true;b.disabled=true;
-      try{const out=await api('send',{thread_id:snap.thread_id,version:snap.version,text:snap.text,retry_key:snap.retry_key,confirmed:true,public_confirmed:snap.is_public,links_confirmed:!!(lc&&lc.checked),media_ids:snap.media_ids});delete edits[snap.key];say(out.live?`給「${snap.name}」的回覆正在即時送出。`:`已核准給「${snap.name}」的回覆，下一輪排程送出。`)}
+      try{const out=await api('send',{thread_id:snap.thread_id,version:snap.version,text:snap.text,retry_key:snap.retry_key,confirmed:true,hold:b.id==='fb-confirm-pin',public_confirmed:snap.is_public,links_confirmed:!!(lc&&lc.checked),media_ids:snap.media_ids});delete edits[snap.key];say(out.live?`給「${snap.name}」的回覆正在即時送出。`:`已核准給「${snap.name}」的回覆，下一輪排程送出。`)}
       catch(e){say(e.message,true)}
       finally{busy=false;b.disabled=false;f('confirm').close();confirmation=null}
       await load(true);return}
@@ -233,6 +233,9 @@ document.addEventListener('click',async event=>{
     if(act==='send'){
       const text=joined(el);if(partsOf(text).some(x=>!x.trim())){say('有一則是空的，請填內容或按「併回上一則」。',true);return}if(!text.trim()){say('草稿是空的，請先寫內容或按「請 AI 重寫」。',true);return}
       confirmation=Object.freeze({thread_id:d.id,version:d.version,text,name:d.name,is_public:d.is_public,live:!!d.live,key:editKey(d),retry_key:crypto.randomUUID(),media_ids:(d.media||[]).map(m=>m.id)});
+      // Wayne 11/16 20:50: the AI no longer marks anything; when its note says something is still ours to do, ask once here
+      const owe=!d.hold&&((d.result||{}).to_human===true||/對帳|確認營業|要確認|請確認|待公司確認/.test((d.result||{}).staff_note||''));
+      f('todo-note').hidden=!owe;f('todo-note').textContent=owe?`💡 這則送出後可能還有事要處理：${(d.result||{}).staff_note||'AI 判斷需要真人接手'}。要留在「📌 待處理」提醒自己，就按左邊那顆。`:'';f('confirm-pin').hidden=!owe;
       f('links').hidden=true;f('links').innerHTML='';linkGate={pending:true,bad:false};
       // Grok 11/15: the confirm button worked before the link check came back, so a wrong link could slip through
       api('links',{text}).then(out=>{if(!confirmation||confirmation.text!==text)return;linkGate.pending=false;if(!out.links.length){gate();return}const bad=out.links.some(l=>l.state==='broken'),wrong=out.links.some(l=>l.verdict==='mismatch');
@@ -273,7 +276,7 @@ async function endSearch(){q='';f('q').value='';tab=beforeSearch;page=0;document
   f('order').hidden=tab==='done'||tab==='hold';wipe();await load(true)}
 let linkGate={pending:false,bad:false};
 function gate(){const ok=f('confirm-ok'),lc=document.getElementById('fb-links-check');
-  ok.disabled=linkGate.pending||linkGate.bad||!!(lc&&!lc.checked)||!!(confirmation&&confirmation.is_public&&!f('public-check').checked);
+  ok.disabled=linkGate.pending||linkGate.bad||!!(lc&&!lc.checked)||!!(confirmation&&confirmation.is_public&&!f('public-check').checked);f('confirm-pin').disabled=ok.disabled;
   ok.textContent=linkGate.pending?'連結檢查中…':confirmation&&confirmation.live?'確認發送':'確認核准'}
 f('public-check').addEventListener('change',gate);
 document.addEventListener('change',e=>{if(e.target.id==='fb-links-check')gate()});
