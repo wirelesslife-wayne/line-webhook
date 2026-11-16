@@ -200,6 +200,21 @@ def images_in(value):
     return sorted({u.rstrip('.,;') for u in re.findall(r'https://[^\s<>"\\]+', text) if image_url(u.rstrip('.,;'))})
 
 
+def one_car(ex):
+    """The extraction asks for one car. A customer asking about two (Toyota Granvia and VW T6.1, 王柏昇 11/16) got
+    lists back and every lookup crashed, so there was never a draft. Lookups use the first one named; the draft
+    itself still reads the whole conversation."""
+    if not isinstance(ex, dict):
+        return {}
+    out = dict(ex)
+    for key in ('brand', 'model', 'year', 'series', 'location'):
+        if isinstance(out.get(key), (list, tuple)):
+            out[key] = next((v for v in out[key] if isinstance(v, (str, int)) and str(v).strip()), None)
+    if not isinstance(out.get('products'), (list, tuple)):
+        out['products'] = [out['products']] if isinstance(out.get('products'), str) and out['products'].strip() else []
+    return out
+
+
 class Engine:
     def __init__(self, store, provider=None):
         self.store = store
@@ -271,6 +286,7 @@ class Engine:
         ex = self.provider([{'role':'system','content':'從對話抽取 brand/model/year/products/series/location，回傳 JSON。products 是產品名稱陣列；series 是有明確提及的產品系列，未提及則為 null。車名簡寫：'+CAR_ALIASES+'。車型清單：'+json.dumps(self.MODELS, ensure_ascii=False)},
                             # Ad titles change all the time and may say nothing (「新的互動廣告」); the ad text names the product.
                             {'role':'user','content':convo+('\n客人點進來的廣告／貼文（產品以這裡為準，客人沒講產品時就用這個）：'+post_context if post_context else '')}])
+        ex = one_car(ex)
         newtext = ' '.join(x['text'] for x in timeline if x['role']=='user' and x.get('new'))
         prices = self.price_lookup(ex)
         # Ad leads often never name the product themselves ("cc 2026"); the ad's own replies and the post do.

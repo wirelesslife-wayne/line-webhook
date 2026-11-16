@@ -209,6 +209,10 @@ def status(store):
                 draft_failed=sum(counts.get(s,0) for s in ('blocked','error')),
                 approved_unsent=counts.get('approved',0),
                 send_failed=store.one("SELECT COUNT(*) AS n FROM desk_fb_threads WHERE note LIKE '送出失敗：%%'")['n'],
+                # Wayne 11/16: the 「擬不出草稿」 notice guessed 「OpenAI 餘額用完」; it now says what the desk recorded
+                draft_failed_list=[dict(name=r['name'],channel=LABELS.get(r['channel'],r['channel']),reason=r['reason'] or '')
+                                   for r in store.all("""SELECT name,channel,draft->>'staff_note' AS reason FROM desk_fb_threads
+                                     WHERE status IN ('blocked','error') ORDER BY updated_at LIMIT 10""")],
                 # Wayne 11/15: what we still have to check, for the once-a-day reminder (oldest first)
                 hold_ours=[dict(name=r['name'],channel=LABELS.get(r['channel'],r['channel']),note=r['hold_note'],
                                 days=int(r['days'] or 0)) for r in store.all(

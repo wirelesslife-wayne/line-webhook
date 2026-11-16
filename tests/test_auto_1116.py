@@ -154,3 +154,24 @@ def test_ai_time_out_is_retried_three_times_on_fb_only(db):
     engine.draft.return_value = {'draft': '您好～', 'flags': []}
     fb.draft_once(db, lambda store: engine)
     assert fb.conversation(db, t)['status'] == 'ready'
+
+
+def test_tools_apply_the_schema_only_when_it_changed(db, monkeypatch):
+    """Wayne 11/16: every tool start ran ALTER TABLE on the live tables; a long read made it freeze the desk."""
+    from desk.tools import common
+    assert common.ensure_schema(db) is True
+    assert db.one("SELECT value FROM desk_marks WHERE name='schema'")['value']
+    assert common.ensure_schema(db) is False  # unchanged: nothing is run, no lock is asked for
+    import desk.db
+    monkeypatch.setattr(desk.db, 'SCHEMA', desk.db.SCHEMA + ' -- changed')
+    assert common.ensure_schema(db) is True
+
+
+def test_two_cars_in_one_question_still_get_a_draft():
+    """王柏昇 11/16: 「Toyota Granvia 跟 Volkswagen T6.1」 came back as lists and drafting crashed."""
+    from desk.engine import one_car
+    ex = one_car({'brand': ['Toyota', 'Volkswagen'], 'model': ['Granvia', 'T6.1'], 'year': [], 'series': ['B42 MAX', 'S14'],
+                  'location': None, 'products': '電子後視鏡'})
+    assert (ex['brand'], ex['model'], ex['year'], ex['series'], ex['products']) == ('Toyota', 'Granvia', None, 'B42 MAX', ['電子後視鏡'])
+    assert one_car({'brand': 'Toyota', 'model': 'RAV4', 'products': ['電動尾門']}) == {'brand': 'Toyota', 'model': 'RAV4', 'products': ['電動尾門']}
+    assert one_car(['not', 'a', 'dict']) == {}
