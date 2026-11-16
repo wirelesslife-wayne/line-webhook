@@ -177,6 +177,10 @@ def push(store, payload):
               draft_token=CASE WHEN %s THEN NULL ELSE draft_token END,updated_at=NOW() WHERE id=%s""",
               (row['name'],row['url'],c['context'] or row['context'],c['version']+int(users),state,
                Json(draft) if draft is not None else None,drafted,note,changed,changed,tid))
+            if state in ('waiting','ready','blocked','error') and line_closable(dict(c, pending_instruction='' if users else c['pending_instruction'])):
+                cur.execute('SELECT role,note,content FROM desk_fb_events WHERE thread_id=%s ORDER BY id',(tid,))
+                if asked_back(cur.fetchall()):  # Wayne 11/16: a colleague asked what they need; the customer is next
+                    close_line(cur, dict(c, version=c['version']+int(users)), 'asked', None, (state,), False)
             counts['new_customer_messages'] += int(users)
         counts['threads'] = len({r['id'] for r in rows})
     return counts
@@ -533,6 +537,37 @@ def close_ad_only(store, c):
       (note, Json(dict(draft=NO_REPLY, flags=[], staff_note=note, auto=why)), c['version'], c['id'], c['version'], c['draft_token'])))
 
 
+# Wayne 11/16 16:30 (LINE 24 vs the LINE inbox): two kinds of LINE conversation leave 待審核 by themselves.
+# 'noreply': the AI says nothing needs saying (a store's phone number tapped, "I'll be late"); a 📌 it raised stays in 待處理.
+# 'asked': after the customer's last message a colleague asked what they need (「請問有什麼地方需要為您服務的嗎？」,
+# often after a sticker): the next move is the customer's. Nothing is sent; a new customer message reopens it (push).
+ASK_BACK = re.compile(r'請問有什麼(地方)?(需要|可以)|有什麼(地方)?需要(為您|幫您|我們)?(服務|協助|幫忙)|需要什麼(協助|服務|幫忙)')
+COLLEAGUE = ('', '暫回', '自動回覆')  # LINE notes for what a colleague sent (自動回覆 = a saved reply, 暫回 = a sticker)
+LINE_AUTO = {'noreply': '🤖 自動處理：AI 判斷不用回覆', 'asked': '🤖 自動處理：同事已問客人需求，等客人回'}
+
+
+def asked_back(rows):
+    rows = list(rows)
+    last = max((i for i, r in enumerate(rows) if kind(r['role'], r['note']) == 'user'), default=-1)
+    return last >= 0 and any(r['role'] == 'page' and (r['note'] or '') in COLLEAGUE and ASK_BACK.search(r['content'] or '')
+                             for r in rows[last + 1:])
+
+
+def line_closable(c):
+    return (c['channel'] == 'line_message' and not c.get('no_auto') and not c.get('pending_instruction')
+            and c.get('hold_by') != 'wayne')
+
+
+def close_line(cur, c, why, draft=None, states=('drafting',), token=True):
+    """Closes one LINE conversation by itself (see LINE_AUTO); the version check lets a message arriving now win."""
+    shown = dict(draft or dict(draft=NO_REPLY, flags=[]), auto=why, staff_note=(draft or {}).get('staff_note') or LINE_AUTO[why])
+    cur.execute("""UPDATE desk_fb_threads SET status='skip',note=%s,draft=%s,drafted_version=%s,draft_token=NULL,
+      auto_at=NOW(),updated_at=NOW() WHERE id=%s AND version=%s AND status=ANY(%s)"""
+                + (" AND draft_token=%s" if token else '') + " RETURNING id",
+                (LINE_AUTO[why], Json(shown), c['version'], c['id'], c['version'], list(states)) + ((c['draft_token'],) if token else ()))
+    return bool(cur.fetchone())
+
+
 def reopen(store, staff, data):
     """Wayne's 「改回待審核」 on one we closed by itself: the AI writes a follow-up and it never closes by itself again."""
     from .knowledge import require_reviewer
@@ -581,6 +616,11 @@ def draft_thread(store, c, engine_factory=None, instruction='', original='', rul
     from .provider import BudgetExceeded, Unavailable, Transient, month_key
     if not instruction and close_ad_only(store, c):  # Wayne 11/16 11:03: no draft, no review
         return dict(ok=True,applied=True,status='skip',remembered=False)
+    if not instruction and line_closable(c) and asked_back(
+            store.all('SELECT role,note,content FROM desk_fb_events WHERE thread_id=%s ORDER BY id', (c['id'],))):
+        with store.cursor() as cur:
+            if close_line(cur, c, 'asked'):
+                return dict(ok=True,applied=True,status='skip',remembered=False)
     try:
         unsent = voided_reply(store, c)
         result = (engine_factory or Engine)(store).draft(messages(store,c['id'],True),now().astimezone(TAIPEI),
@@ -614,6 +654,9 @@ def draft_thread(store, c, engine_factory=None, instruction='', original='', rul
                         (kind,str(result.get('staff_note') or '')[:200],c['id']))
         if rule_id and applied and state=='ready':
             cur.execute('UPDATE desk_edit_rules SET revised_draft=%s WHERE id=%s',(result['draft'],rule_id))
+        if (applied and state=='ready' and not instruction and line_closable(c)
+                and NO_REPLY in str(result.get('draft') or '') and close_line(cur, c, 'noreply', result, ('ready',), False)):
+            state = 'skip'
     return dict(ok=True,applied=applied,status=state,remembered=bool(rule_id))
 
 

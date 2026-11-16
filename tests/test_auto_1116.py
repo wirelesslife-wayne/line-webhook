@@ -212,3 +212,64 @@ def test_voided_approval_is_not_treated_as_sent(db, logged):
     assert fb.voided_reply(db, fb.conversation(db, tid())) == ''
     # LINE is left exactly as it was
     assert fb.voided_reply(db, dict(c, channel='line_message')) == ''
+
+
+# Wayne 11/16 16:30: LINE showed 24 to review against far fewer in the LINE inbox.
+def test_line_asked_back_rule():
+    ask = ev('page', '您好，請問有什麼地方需要為您服務的嗎？(happy face)', '自動回覆')  # a colleague's saved reply
+    call = ev('user', '呼叫客服')
+    night = ev('page', '請您先留言，一看到您的訊息就會馬上回覆您喔', '自動（夜間AI或系統）')
+    assert fb.asked_back([call, night, ev('page', '[貼圖]', '暫回'), ask])  # 黃寶珠
+    assert fb.asked_back([ev('user', 'TEL：0981-104-442', '選單電話'), ask])  # 林廼智Jason
+    assert not fb.asked_back([call, night])  # only the system's night message
+    assert not fb.asked_back([call, ask, ev('user', '我想問尾門')])  # the customer answered: ours again
+    assert not fb.asked_back([call, ev('page', '請問有什麼需要服務的嗎？', '自動回應')])  # LINE's own auto-response
+    assert not fb.asked_back([ask])  # no customer message at all
+
+
+def test_line_no_reply_and_asked_back_close_by_themselves(db):
+    fb.push(db, [thread(channel='line_message', key='U950010', messages=[
+        dict(role='user', text='TEL：02-29525859', at='下午3:00', note='選單電話')])])
+    fb.push(db, [thread(channel='line_message', key='U950011', messages=[
+        dict(role='user', text='呼叫客服', at='下午3:00'),
+        dict(role='page', text='[貼圖]', at='下午3:05', note='暫回'),
+        dict(role='page', text='請問有什麼地方需要為您服務的嗎？', at='下午3:05', note='自動回覆')])])
+    engine = Mock()
+    engine.draft.return_value = {'draft': fb.NO_REPLY, 'flags': [], 'staff_note': '只點門市電話'}
+    fb.draft_once(db, lambda store: engine)
+    a = db.one("SELECT * FROM desk_fb_threads WHERE key='U950010'")
+    b = db.one("SELECT * FROM desk_fb_threads WHERE key='U950011'")
+    assert engine.draft.call_count == 1  # the asked-back one needs no draft
+    assert a['status'] == 'skip' and a['auto_at'] and a['draft']['auto'] == 'noreply' and a['unstar'] == ''
+    assert b['status'] == 'skip' and b['draft']['auto'] == 'asked'
+    assert fb.status(db)['awaiting_review'] == 0
+    # the customer writes again: back to review, like the ad-button ones
+    fb.push(db, [thread(channel='line_message', key='U950011', messages=[
+        dict(role='user', text='呼叫客服', at='下午3:00'),
+        dict(role='page', text='[貼圖]', at='下午3:05', note='暫回'),
+        dict(role='page', text='請問有什麼地方需要為您服務的嗎？', at='下午3:05', note='自動回覆'),
+        dict(role='user', text='想問安卓機價格', at='下午3:20')])])
+    assert db.one("SELECT status FROM desk_fb_threads WHERE key='U950011'")['status'] == 'waiting'
+
+
+def test_line_ready_draft_closes_when_a_colleague_asks_back(db):
+    first = [dict(role='user', text='呼叫客服', at='下午3:00')]
+    fb.push(db, [thread(channel='line_message', key='U950012', messages=first)])
+    engine = Mock()
+    engine.draft.return_value = {'draft': '您好～請問想了解哪項產品呢？', 'flags': []}
+    fb.draft_once(db, lambda store: engine)
+    assert db.one("SELECT status FROM desk_fb_threads WHERE key='U950012'")['status'] == 'ready'
+    fb.push(db, [thread(channel='line_message', key='U950012', messages=first + [
+        dict(role='page', text='請問有什麼地方需要為您服務的嗎？', at='下午3:30', note='自動回覆')])])
+    c = db.one("SELECT * FROM desk_fb_threads WHERE key='U950012'")
+    assert c['status'] == 'skip' and c['draft']['auto'] == 'asked'
+
+
+def test_line_kept_when_wayne_marked_it(db):
+    fb.push(db, [thread(channel='line_message', key='U950013', messages=[
+        dict(role='user', text='TEL：02-29525859', at='下午3:00', note='選單電話')])])
+    db.execute("UPDATE desk_fb_threads SET hold='ours',hold_by='wayne' WHERE key='U950013'")
+    engine = Mock()
+    engine.draft.return_value = {'draft': fb.NO_REPLY, 'flags': []}
+    fb.draft_once(db, lambda store: engine)
+    assert db.one("SELECT status FROM desk_fb_threads WHERE key='U950013'")['status'] == 'ready'
