@@ -1,4 +1,5 @@
 import json
+from datetime import timedelta
 from flask import request, jsonify, g, render_template, Response
 from . import fb, fb_media, library, meta
 from .errors import ActionError
@@ -41,6 +42,9 @@ def register(bp,store):
             out.append(dict(id=c['id'],name=c['name'],channel=c['channel'],label=fb.LABELS[c['channel']],key=c['key'],url=c['url'],
                 context=c['context'],status=c['status'],version=c['version'],note=c['note'],result=c['draft'] or {},
                 hold=c['hold'],hold_note=c['hold_note'],hold_at=local_time(c['hold_at'])[5:16] if c['hold_at'] else '',
+                hold_by=c['hold_by'],hold_iso=c['hold_at'].isoformat() if c['hold_at'] else '',
+                hold_ends=local_time(c['hold_at']+timedelta(days=3))[5:10].replace('-','/').lstrip('0') if c['hold_at'] else '',
+                auto=(c['draft'] or {}).get('auto','') if c['status']=='skip' and c.get('auto_at') else '',
                 messages=timeline[-12:],older=max(0,len(timeline)-12),is_public=c['channel'].endswith('_comment'),
                 media=[fb_media.describe(m) for m in media],shot=shots.get(c['id']),avatar=faces.get(c['id']),live=meta.live(c),
                 attempts=[dict(status=a['status'],time=local_time(a['approved_at']),staff=a['username'],text=a['content'],reason=a['reason']) for a in attempts]))
@@ -61,11 +65,14 @@ def register(bp,store):
         order=request.args.get('order','old')
         if order not in ('old','new'): raise ActionError('排序不正確',400)
         late=request.args.get('late')=='1' and tab=='todo'  # Wayne 11/14: only those waiting more than 24 hours
+        auto=request.args.get('auto')=='1' and tab=='done'  # Wayne 11/16: only those closed by themselves (ad buttons)
         states=list(fb.TODO) if tab=='todo' else ['approved'] if tab=='approved' else ['done','skip']
         # Wayne 11/14: the customer who has waited longest first, unless he switches to newest first
         # by when the customer last wrote (the desk may read it an hour later), not when the desk picked it up
         said="COALESCE((SELECT MAX(e.event_at) FROM desk_fb_events e WHERE e.thread_id=t.id AND e.role='user'),t.last_at)"
         where=f"t.status=ANY(%s) AND (%s='' OR t.channel=%s){f' AND {said} < NOW()-INTERVAL {chr(39)}24 hours{chr(39)}' if late else ''}"
+        if auto:
+            states,where=['skip'],"t.status=ANY(%s) AND (%s='' OR t.channel=%s) AND t.auto_at IS NOT NULL"
         if tab=='hold':  # Wayne 11/15: whatever still needs checking, whether or not a reply went out
             states,where=list(fb.TODO)+['approved','done','skip'],"t.hold<>'' AND t.status=ANY(%s) AND (%s='' OR t.channel=%s)"
         args=(states,channel,channel)
@@ -95,8 +102,10 @@ def register(bp,store):
             item['closed_at']=local_time(row['updated_at'])[5:16]
             item['hold_days']=int(row['hold_days'] or 0)
         holds={r['hold']:r['n'] for r in store.all("SELECT hold,COUNT(*) AS n FROM desk_fb_threads WHERE hold<>'' GROUP BY hold")}
+        autos=store.one("""SELECT COUNT(*) FILTER (WHERE auto_at >= date_trunc('day',NOW() AT TIME ZONE 'Asia/Taipei') AT TIME ZONE 'Asia/Taipei') AS today,
+          COUNT(*) AS n FROM desk_fb_threads WHERE status='skip' AND auto_at IS NOT NULL""") if tab=='done' else dict(today=0,n=0)
         return dict(items=items,has_more=len(rows)>20,page=page,tab=tab,channel=channel,order=order,per_channel=per,
-            total=total,overdue=overdue,manual=manual,late=late,q=q,
+            total=total,overdue=overdue,manual=manual,late=late,q=q,auto=auto,auto_today=autos['today'],auto_total=autos['n'],
             hold=sum(holds.values()),hold_ours=holds.get('ours',0),hold_customer=holds.get('customer',0),  # Wayne 11/15: both kinds
             todo=counts['waiting_draft']+counts['awaiting_review']+counts['draft_failed'],approved=counts['approved_unsent'])
 
@@ -163,6 +172,9 @@ def register(bp,store):
 
     @bp.post('/api/fb/hold')
     def fb_hold(): return jsonify(fb.set_hold(store,g.staff,request.get_json(silent=True)))
+
+    @bp.post('/api/fb/reopen')
+    def fb_reopen(): return jsonify(fb.reopen(store,g.staff,request.get_json(silent=True)))
 
     @bp.post('/api/fb/skip')
     def fb_skip(): return jsonify(fb.action(store,g.staff,request.get_json(silent=True),'skip'))

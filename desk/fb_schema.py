@@ -17,6 +17,10 @@ ALTER TABLE desk_fb_threads ADD COLUMN IF NOT EXISTS hold_at TIMESTAMPTZ;
 ALTER TABLE desk_fb_threads ADD COLUMN IF NOT EXISTS hold_by TEXT NOT NULL DEFAULT '';
 -- Wayne 11/15 23:50: 不發送 in the desk -> the browser run removes Meta's 持續追蹤 star ('todo' -> 'done').
 ALTER TABLE desk_fb_threads ADD COLUMN IF NOT EXISTS unstar TEXT NOT NULL DEFAULT '';
+-- Wayne 11/16 11:03: only ad buttons, all answered by the ad's automatic reply -> closed by itself (auto_at);
+-- 「改回待審核」 sets no_auto so it is never closed by itself again.
+ALTER TABLE desk_fb_threads ADD COLUMN IF NOT EXISTS auto_at TIMESTAMPTZ;
+ALTER TABLE desk_fb_threads ADD COLUMN IF NOT EXISTS no_auto BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE desk_fb_threads DROP CONSTRAINT IF EXISTS desk_fb_threads_channel_check;
 ALTER TABLE desk_fb_threads ADD CONSTRAINT desk_fb_threads_channel_check
  CHECK(channel IN ('fb_message','ig_message','fb_comment','ig_comment','line_message'));

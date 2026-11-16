@@ -169,7 +169,8 @@ def test_ad_buttons_all_answered_get_no_follow_up_without_asking_the_ai(db):
     engine = Mock()
     fb.draft_once(db, lambda store: engine)
     assert not engine.draft.called
-    assert fb.conversation(db, t)['draft']['draft'] == fb.NO_REPLY
+    c = fb.conversation(db, t)  # Wayne 11/16 11:03: not even a 建議不回覆 draft to review, it is closed by itself
+    assert c['draft']['draft'] == fb.NO_REPLY and c['status'] == 'skip' and c['auto_at'] and c['unstar'] == 'todo'
     # one preset question without an automatic answer -> the AI writes a follow-up as before
     fb.push(db, [thread(key='940402', messages=[dict(role='user', text='四顆鏡頭需要挖孔安裝嗎？', at='下午7:01', note='廣告預設問題')])])
     assert not fb.ad_buttons_all_answered(db, db.one("SELECT id FROM desk_fb_threads WHERE key='940402'")['id'])

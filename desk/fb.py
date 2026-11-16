@@ -143,7 +143,8 @@ def push(store, payload):
             elif not old and not users:
                 state, note = 'skip', '沒有客人自己打的字'
             if users:
-                state, draft, drafted, note = 'waiting', None, None, ''
+                # Wayne 11/16: one we closed by itself (only ad buttons) comes back the moment the customer writes
+                state, draft, drafted, note = 'waiting', None, None, '客人有新訊息（之前自動處理過）' if c['status']=='skip' and c.get('auto_at') else ''
                 cur.execute("UPDATE desk_fb_threads SET pending_instruction='',pending_original='',pending_rule=NULL WHERE id=%s",(tid,))
                 cur.execute("UPDATE desk_fb_threads SET hold='',hold_note='',hold_at=NULL,hold_by='' WHERE id=%s AND hold='customer'",(tid,))
                 cur.execute("""UPDATE desk_fb_attempts SET status='expired',reason='客人有新訊息，請重新擬稿',updated_at=NOW()
@@ -343,8 +344,10 @@ def action(store,staff,data,kind):
 
 def to_unstar(store):
     """FB/IG conversations Wayne marked 不發送: the browser run removes Meta's 持續追蹤 star, then calls unstarred()."""
-    return [dict(thread_id=r['id'],channel=r['channel'],key=r['key'],name=r['name'],url=r['url'],is_public=r['channel'].endswith('_comment'))
-            for r in store.all("""SELECT id,channel,key,name,url FROM desk_fb_threads WHERE unstar='todo' AND channel<>'line_message'
+    # auto: closed by itself (only ad buttons). The run first checks the last line is a button or our automatic reply.
+    return [dict(thread_id=r['id'],channel=r['channel'],key=r['key'],name=r['name'],url=r['url'],is_public=r['channel'].endswith('_comment'),
+                 auto=r.get('auto_at') is not None and r['status']=='skip')
+            for r in store.all("""SELECT * FROM desk_fb_threads WHERE unstar='todo' AND channel<>'line_message'
               ORDER BY updated_at LIMIT 40""")]
 
 
@@ -423,44 +426,139 @@ def hold_from(result):
     return 'customer' if '等客人' in note else ''
 
 
+CLOSED_NOTE = 'Wayne 確認完了，結案'
+
+
 def set_hold(store, staff, data):
-    """Wayne marks or clears 待處理 by hand: 'ours', 'customer' or '' (處理好了)."""
+    """Wayne marks or clears 待處理 by hand: 'ours', 'customer' or '' (✅ 確認完了，結案).
+    Clearing also closes a draft still waiting for review (nothing is sent; a reply already approved still goes out)
+    and returns `undo`, which 復原 sends back as `restore` within 10 seconds (Wayne 11/16 11:03)."""
     from .knowledge import require_reviewer
     require_reviewer(staff)
     if not isinstance(data,dict) or data.get('hold') not in HOLDS+('',) or not isinstance(data.get('note',''),str):
         raise ActionError('操作格式不正確',400)
+    tid = str(data.get('thread_id',''))
     with store.cursor() as cur:
-        cur.execute("""UPDATE desk_fb_threads SET hold=%s,hold_note=%s,hold_at=CASE WHEN %s='' THEN NULL ELSE NOW() END,
-          hold_by=CASE WHEN %s='' THEN '' ELSE 'wayne' END WHERE id=%s RETURNING id""",
-          (data['hold'],data.get('note','')[:200],data['hold'],data['hold'],str(data.get('thread_id',''))))
-        if not cur.fetchone():
+        cur.execute('SELECT * FROM desk_fb_threads WHERE id=%s FOR UPDATE',(tid,))
+        c = cur.fetchone()
+        if not c:
             raise ActionError('找不到對話',404)
-    return dict(ok=True)
+        back = data.get('restore')
+        if back is not None:
+            if (not isinstance(back,dict) or back.get('hold') not in HOLDS or back.get('by') not in ('','wayne')
+                    or not isinstance(back.get('note',''),str) or c['hold']):
+                raise ActionError('已經不能復原，請重新載入',409)
+            at = event_time(str(back.get('at') or '')) or now()
+            cur.execute("UPDATE desk_fb_threads SET hold=%s,hold_note=%s,hold_at=%s,hold_by=%s WHERE id=%s",
+                        (back['hold'],back.get('note','')[:200],at,back['by'],tid))
+            if back.get('status') in TODO and c['status']=='done' and c['note']==CLOSED_NOTE:
+                cur.execute("UPDATE desk_fb_threads SET status=%s,note=%s,updated_at=NOW() WHERE id=%s",(back['status'],back.get('was_note','')[:500],tid))
+            return dict(ok=True)
+        cur.execute("""UPDATE desk_fb_threads SET hold=%s,hold_note=%s,hold_at=CASE WHEN %s='' THEN NULL ELSE NOW() END,
+          hold_by=CASE WHEN %s='' THEN '' ELSE 'wayne' END WHERE id=%s""",
+          (data['hold'],data.get('note','')[:200],data['hold'],data['hold'],tid))
+        undo = None
+        if data['hold']=='' and c['hold']:
+            undo = dict(hold=c['hold'],note=c['hold_note'],at=c['hold_at'].isoformat() if c['hold_at'] else '',by=c['hold_by'],
+                        status=c['status'],was_note=c['note'])
+            if c['status'] in ('ready','blocked','error'):
+                cur.execute("UPDATE desk_fb_threads SET status='done',note=%s,draft_token=NULL,updated_at=NOW() WHERE id=%s",(CLOSED_NOTE,tid))
+    return dict(ok=True,undo=undo)
+
+
+THUMBS = ('[貼圖] 👍', '[貼圖] 讚')  # Wayne 11/16 11:03 (Sunny Chung): a lone 👍 after the buttons needs no answer
+AWAY = re.compile(r'不在線上|無法回覆您的問題')  # the Page's after-hours message is not an answer to the button
+PROMISE = re.compile(r'專人|稍後|客服人員|(會|將)(盡快|儘快|再|主動)?(與您)?(聯繫|聯絡|回電)|為您安排')
+AUTO_NOTE = '🤖 自動處理：只點廣告按鈕，自動回覆已答完'
+
+
+def ad_only(rows):
+    """Wayne 11/16 11:03: '' unless the customer only pressed the ad's preset questions (maybe one 👍 after them),
+    every press got the ad's own automatic answer that promises no person, and nobody from us wrote anything.
+    Then 'buttons' or 'thumb': the thread is closed without a draft and without review."""
+    rows = list(rows)
+    users = [i for i, r in enumerate(rows) if r['role'] == 'user']
+    buttons = [i for i in users if '廣告預設問題' in (rows[i]['note'] or '')]
+    if not buttons:
+        return ''
+    thumbs = [i for i in users if i not in buttons]
+    if any((rows[i]['note'] or '').strip() not in THUMBS or (rows[i]['content'] or '').strip() or i < buttons[0] for i in thumbs):
+        return ''  # typed words, a photo, voice, another sticker
+    if any(answers(r['role'], r['note']) for r in rows):
+        return ''  # a colleague already wrote: not ours to close
+    # A run of presses is answered by the run of automatic replies after it (customers often press 3-5 at once).
+    i = 0
+    while i < len(rows):
+        if rows[i]['role'] != 'user' or i not in buttons:
+            i += 1
+            continue
+        j = i
+        while j < len(rows) and j in buttons:
+            j += 1
+        pressed = {squash(rows[k]['content']) for k in range(i, j)}
+        k = j
+        replies = []
+        while k < len(rows) and rows[k]['role'] == 'page':
+            if '自動回覆' in (rows[k]['note'] or '') and not AWAY.search(rows[k]['content'] or ''):
+                replies.append(rows[k]['content'] or '')
+            k += 1
+        if len(replies) < len(pressed) or any(PROMISE.search(t) for t in replies):
+            return ''
+        i = k
+    return 'thumb' if thumbs else 'buttons'
 
 
 def ad_buttons_all_answered(store, thread_id):
-    """Wayne 11/16 01:00: the customer only pressed the ad's preset questions and the ad's own automatic reply
-    answered every one of them -> no follow-up (the AI kept writing one anyway: 18 of 21)."""
-    rows = store.all('SELECT role,note FROM desk_fb_events WHERE thread_id=%s ORDER BY id', (thread_id,))
-    users = [i for i, r in enumerate(rows) if r['role'] == 'user']
-    if not users or any('廣告預設問題' not in (rows[i]['note'] or '') for i in users):
+    return bool(ad_only(store.all('SELECT role,note,content FROM desk_fb_events WHERE thread_id=%s ORDER BY id', (thread_id,))))
+
+
+def close_ad_only(store, c):
+    """Closes one thread that is only ad buttons (see ad_only); True when it did. The version check makes a message
+    arriving at this moment win: the thread then stays open for a draft."""
+    if c['channel'] not in ('fb_message', 'ig_message') or c.get('hold') or c.get('no_auto') or c.get('pending_instruction'):
         return False
-    for i in users:
-        nxt = next((r for r in rows[i + 1:] if r['role'] == 'page' or '廣告預設問題' not in (r['note'] or '')), None)
-        if not nxt or nxt['role'] != 'page' or '自動回覆' not in (nxt['note'] or ''):
-            return False
-    return True
+    why = ad_only(store.all('SELECT role,note,content FROM desk_fb_events WHERE thread_id=%s ORDER BY id', (c['id'],)))
+    if not why:
+        return False
+    note = AUTO_NOTE + ('（客人只回 👍）' if why == 'thumb' else '')
+    return bool(store.execute("""UPDATE desk_fb_threads SET status='skip',note=%s,draft=%s,drafted_version=%s,draft_token=NULL,
+      auto_at=NOW(),unstar='todo',updated_at=NOW() WHERE id=%s AND version=%s AND status='drafting' AND draft_token=%s""",
+      (note, Json(dict(draft=NO_REPLY, flags=[], staff_note=note, auto=why)), c['version'], c['id'], c['version'], c['draft_token'])))
+
+
+def reopen(store, staff, data):
+    """Wayne's 「改回待審核」 on one we closed by itself: the AI writes a follow-up and it never closes by itself again."""
+    from .knowledge import require_reviewer
+    require_reviewer(staff)
+    if not isinstance(data, dict) or not isinstance(data.get('thread_id'), str):
+        raise ActionError('操作格式不正確', 400)
+    if not store.execute("""UPDATE desk_fb_threads SET status='waiting',no_auto=TRUE,auto_at=NULL,draft=NULL,drafted_version=NULL,
+      draft_token=NULL,pending_instruction='Wayne 把這則改回待審核：請擬一則跟進訊息',pending_original='',pending_rule=NULL,
+      unstar=CASE WHEN unstar='todo' THEN '' ELSE unstar END,note='Wayne 改回待審核',updated_at=NOW()
+      WHERE id=%s AND status='skip' AND auto_at IS NOT NULL""", (data['thread_id'],)):
+        raise ActionError('這則已經不是自動處理的狀態，請重新載入', 409)
+    return dict(ok=True, status='waiting')
+
+
+def recheck(store):
+    """Closed by itself in the last 7 days: the hourly browser run compares each one's last line in Meta's list.
+    A customer who wrote again but whose message was opened on a phone first is no longer 「未讀」."""
+    out = []
+    for r in store.all("""SELECT id,channel,key,name,url FROM desk_fb_threads WHERE status='skip' AND auto_at > NOW()-INTERVAL '7 days'
+      AND channel IN ('fb_message','ig_message') ORDER BY auto_at DESC LIMIT 200"""):
+        pressed = [e['content'] for e in store.all("SELECT content FROM desk_fb_events WHERE thread_id=%s AND role='user' AND note LIKE '%%廣告預設問題%%' ORDER BY id", (r['id'],))]
+        out.append(dict(thread_id=r['id'], channel=r['channel'], key=r['key'], name=r['name'], url=r['url'], pressed=list(dict.fromkeys(pressed))))
+    return out
 
 
 def draft_thread(store, c, engine_factory=None, instruction='', original='', rule_id=None):
     from .engine import Engine, ProviderPending
     from .provider import BudgetExceeded, Unavailable, month_key
+    if not instruction and close_ad_only(store, c):  # Wayne 11/16 11:03: no draft, no review
+        return dict(ok=True,applied=True,status='skip',remembered=False)
     try:
-        if not instruction and c['channel'] in ('fb_message','ig_message') and ad_buttons_all_answered(store, c['id']):
-            result = dict(draft=NO_REPLY,flags=[],staff_note='客人只點廣告按鈕，自動回覆已答完，建議不回覆（Wayne 11/16）')
-        else:
-            result = (engine_factory or Engine)(store).draft(messages(store,c['id'],True),now().astimezone(TAIPEI),
-                channel=c['channel'],context=c['context'],instruction=instruction,original_draft=original)
+        result = (engine_factory or Engine)(store).draft(messages(store,c['id'],True),now().astimezone(TAIPEI),
+            channel=c['channel'],context=c['context'],instruction=instruction,original_draft=original)
         state = 'ready'
     except BudgetExceeded as e:
         result,state = dict(draft=original,staff_note=str(e),budget_month=month_key()),'blocked'

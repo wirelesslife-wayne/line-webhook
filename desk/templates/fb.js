@@ -4,7 +4,7 @@ const STATUS={waiting:'AI 擬稿中，約 1 分鐘',drafting:'AI 擬稿中，約
 const TODO=['waiting','drafting','ready','blocked','error'];
 const CHIP={waiting:['AI 擬稿中','wait'],drafting:['AI 擬稿中','wait'],ready:['待審核',''],blocked:['需人工回覆','manual'],error:['擬稿失敗',''],approved:['已核准','ok'],done:['已結案','off'],skip:['不回覆','off']};
 const BRAND={};document.getElementById('fb-brands').content.querySelectorAll('span').forEach(s=>BRAND[s.dataset.ch]=s.innerHTML);
-let openId=null,lastData=null;
+let openId=null,lastData=null,autoOnly=false;
 let q='',beforeSearch='todo',tab='todo',channel='',page=0,order='old',late=false,items=[],edits={},confirmation=null,busy=false,shown='',listVersion=0,polling=false;
 async function api(path,body){const r=await fetch('/desk/api/fb/'+path,{method:body?'POST':'GET',headers:body?{'Content-Type':'application/json','X-CSRF-Token':csrf}:{},body:body?JSON.stringify(body):undefined});let d={};try{d=await r.json()}catch(e){}if(r.status===401){location.href='/desk/login';throw Error('請重新登入')}if(!r.ok)throw Error(d.error||'暫時無法處理，請重新載入');return d}
 function say(text,bad){const e=f('feedback');e.textContent=text||'';e.hidden=!text;e.classList.toggle('bad',!!bad)}
@@ -22,11 +22,21 @@ function files(list,removable){return (list||[]).map(m=>`<figure>${m.type==='ima
 // Wayne 11/15: like 待處理 in the LINE back office, so a conversation he still has to check never gets lost.
 const HOLD={ours:'待我們確認',customer:'等客人回'};let holdFor=null;
 const FULL={};const msgSig=d=>{const l=d.messages[d.messages.length-1]||{};return d.messages.length+'|'+(l.time||'')+'|'+(l.text||'')};
+// Wayne 11/16 11:03 picked the preview (ChatGPT, Gemini, Claude): reason in its own box, who marked it and since when,
+// it says plainly that the buttons send nothing, two full-width buttons, 10 seconds to undo.
 function holdBlock(d){
-  if(!canReview)return d.hold?`<p class="note">${d.hold==='ours'?'📌':'⏳'} ${HOLD[d.hold]}${d.hold_note?'：'+esc(d.hold_note):''}</p>`:'';
-  if(d.hold){const other=d.hold==='ours'?'customer':'ours';
-    return `<div class="note hold"><p>${d.hold==='ours'?'📌':'⏳'} <b>${HOLD[d.hold]}</b>${d.hold_note?'：'+esc(d.hold_note):''}${d.hold_at?` <small class="muted">（${esc(d.hold_at)} 起）</small>`:''}</p><p class="muted">${d.hold==='ours'?'會一直留在「待處理」，處理好了再按下面的按鈕。':'客人回訊息就會自動回到待審核；3 天沒回會自動結案。'}</p><div class="actions"><button data-act="hold" data-hold="">處理好了</button><button data-act="hold" data-hold="${other}">改成${HOLD[other]}</button></div></div>`}
-  return ''}
+  if(!d.hold)return '';
+  const ours=d.hold==='ours',day=(d.hold_days||0)+1;
+  const head=ours?`📌 待我們確認・第 ${day} 天`:'⏳ 等客人回';
+  const by=`${d.hold_by==='wayne'?'👤 Wayne 標記':'🤖 AI 自動標記'}${d.hold_at?'・'+esc(d.hold_at.replace('-','/')):''}`;
+  const why=d.hold_note?`<div class="hold-why">${ours?'要確認：':''}${esc(d.hold_note)}</div>`:'';
+  const hint=ours?'下面兩個按鈕都不會傳訊息給客人':`客人回訊息會自動回到待審核；${d.hold_ends?esc(d.hold_ends)+' ':'3 天'}沒回自動結案`;
+  const btns=!canReview?'':ours
+    ?'<div class="hold-btns"><button class="hold-main" data-act="hold" data-hold="">✅ 確認完了，結案</button><button class="hold-alt" data-act="hold" data-hold="customer">⏳ 改成等客人回</button></div>'
+    :'<div class="hold-btns"><button class="hold-main" data-act="hold" data-hold="">✅ 不用等了，結案</button><button class="hold-alt" data-act="hold" data-hold="ours">📌 改成待我們確認</button></div>';
+  return `<section class="holdcard ${ours?'ours':'cust'}"><h3>${head}</h3><p class="hold-by">${by}</p>${why}<p class="hold-hint">${hint}</p>${btns}</section>`}
+let undoTimer=null;
+function toast(text,undo){const t=f('toast');clearTimeout(undoTimer);t.innerHTML=`<span>${esc(text)}</span>${undo?'<button id="fb-undo">復原</button>':''}`;t.hidden=false;t._undo=undo||null;undoTimer=setTimeout(()=>{t.hidden=true;t._undo=null},10000)}
 // Wayne 11/15 20:35 picked option A: one grey button under 發送, two choices in a bottom sheet, nothing is sent
 function holdPick(d){return canReview&&!d.hold?'<div class="holdpick"><button class="holdbtn" data-act="hold-pick" aria-haspopup="dialog">📌 標記待處理 ▾</button></div>':''}
 function card(d,i,closed){
@@ -36,8 +46,10 @@ function card(d,i,closed){
   let [chip,tone]=CHIP[d.status]||[d.status,'off'];const open=openId===d.id&&!closed;
   if(TODO.includes(d.status)&&d.waited>=24){chip=`未回覆 ${Math.floor(d.waited/24)} 天`;tone='late'}
   // Wayne 11/15: in 待處理 (and search) the chip says what we are waiting for, not that the reply went out
-  if((tab==='hold'||tab==='search')&&d.hold){chip=d.hold==='ours'?`📌 待確認${d.hold_days?` ${d.hold_days} 天`:''}`:'⏳ 等客人回';tone=d.hold==='ours'?'':'wait'}
-  let h=`<article class="item${open?' open':''}${closed&&openId===d.id?' sel':''}" data-id="${esc(d.id)}"><button class="row" data-act="toggle" aria-expanded="${open}"><span class="avatar">${d.avatar?`<img src="/desk/api/fb/avatar?thread_id=${encodeURIComponent(d.id)}&t=${esc(d.avatar)}" alt="" decoding="async">`:USER_ICON}${(BRAND[d.channel]||'').split('<svg class="ic"')[0]}</span><span class="sep"></span><span class="who-said"><b>${d.hold?(d.hold==='ours'?'📌 ':'⏳ '):''}${esc(d.name)}</b><span>${esc((lastUser.text||'').replace(/\s+/g,' '))}</span></span><span class="when">${esc(when(lastUser.time||''))}</span><span class="state-chip ${tone}">${esc(chip)}</span>${CHEV}</button>`;
+  if((tab==='hold'||tab==='search')&&d.hold){chip=d.hold==='ours'?`📌 待確認 ${(d.hold_days||0)+1} 天`:'⏳ 等客人回';tone=d.hold==='ours'?'hold':'wait'}
+  if(d.auto){chip='🤖 自動處理';tone='off'}
+  const mark=d.hold&&tab!=='hold'&&tab!=='search'?(d.hold==='ours'?'📌 ':'⏳ '):'';
+  let h=`<article class="item${open?' open':''}${closed&&openId===d.id?' sel':''}" data-id="${esc(d.id)}"><button class="row" data-act="toggle" aria-expanded="${open}"><span class="avatar">${d.avatar?`<img src="/desk/api/fb/avatar?thread_id=${encodeURIComponent(d.id)}&t=${esc(d.avatar)}" alt="" decoding="async">`:USER_ICON}${(BRAND[d.channel]||'').split('<svg class="ic"')[0]}</span><span class="sep"></span><span class="who-said"><b>${mark}${esc(d.name)}</b><span>${esc((lastUser.text||'').replace(/\s+/g,' '))}</span></span><span class="when">${esc(when(lastUser.time||''))}</span><span class="state-chip ${tone}">${esc(chip)}</span>${CHEV}</button>`;
   if(!open)return h+'</article>';
   h+=`<div class="detail"><p class="muted">${esc(d.label)} · ${esc(STATUS[d.status]||d.status)}${d.note&&d.note!==STATUS[d.status]?' · '+esc(d.note):''}</p>`;
   h+=holdBlock(d);
@@ -69,7 +81,8 @@ function card(d,i,closed){
     h+=`<p class="closed-by">${a?`${esc(a.staff)} 核准 · ${esc(a.time.slice(5,16))}・`:''}<b>尚未送出</b></p><label>已核准的內容</label><div class="preview">${esc(a?a.text:'')}</div>${(d.media||[]).length?`<div class="attach"><div class="files">${files(d.media,false)}</div></div>`:''}<p class="muted">${d.live?'正在用 Meta 官方 API 送出，幾秒內完成；送不出去會退回待審並寫原因。':'下一輪排程會照這段文字送出（最慢約 60 分鐘）。'}</p><div class="actions"><button data-act="cancel" ${canReview?'':'disabled'}>取消核准</button></div>`;
   }else{
     const a=d.attempts.find(x=>x.status==='sent');
-    h+=`<p class="closed-by">${d.status==='skip'?'不回覆':a?`已送出 · ${esc(a.staff)} 核准`:'已結案'} · ${esc(d.closed_at||'')}</p>`;
+    if(d.auto)h+=`<div class="autobox"><p class="closed-by">🤖 自動處理（只點廣告按鈕${d.auto==='thumb'?'，最後只回 👍':''}）· ${esc(d.closed_at||'')}</p><p class="muted">客人只點了廣告的預設問題，粉專自動回覆都答完了。沒有擬稿，也沒有傳任何訊息；客人之後再傳訊息會自動回到待審核。</p>${canReview?'<div class="actions"><button data-act="reopen">改回待審核</button></div>':''}</div>`;
+    else h+=`<p class="closed-by">${d.status==='skip'?'不回覆':a?`已送出 · ${esc(a.staff)} 核准`:'已結案'} · ${esc(d.closed_at||'')}</p>`;
     if(a)h+=`<label>已送出的內容（${esc(a.time)}）</label><div class="preview">${esc(a.text)}</div>`;
   }
   if(!todo)h+=holdPick(d);
@@ -130,6 +143,8 @@ function draw(d){
   f('total').textContent=`共 ${d.total||0} 位`;f('alert').hidden=tab!=='todo'||!(d.overdue||d.manual||late);
   f('late').textContent=late?`只看超過 24 小時未回覆的 ${d.total||0} 則・顯示全部 ›`:d.overdue?`⚠ ${d.overdue} 則超過 24 小時未回覆 ›`:'';f('late').setAttribute('aria-pressed',String(late));
   f('manual').textContent=d.manual?`${d.manual} 則需人工回覆`:'';
+  f('autobar').hidden=tab!=='done'||!(d.auto_total||autoOnly);f('auto').setAttribute('aria-pressed',String(autoOnly));
+  f('auto').textContent=autoOnly?`🤖 只看自動處理（${d.total||0}）・顯示全部`:`🤖 自動處理 ${d.auto_total||0} 則`;f('auto-today').textContent=`今天自動處理 ${d.auto_today||0} 則`;
   const empty={todo:'目前沒有待審核的訊息。',approved:'目前沒有即將送出的回覆。',hold:'目前沒有待處理的對話。',done:'還沒有結案的紀錄。',search:`沒有找到名字含「${esc(q)}」的客人。`}[tab];
   if(tab==='search')f('total').textContent=`搜尋「${q}」：${d.total||0} 位`;
   const sec=(x,i)=>tab==='hold'&&(i===0||items[i-1].hold!==x.hold)?`<h3 class="holdsec">${x.hold==='ours'?`📌 待我們確認（${d.hold_ours||0}）`:`⏳ 等客人回（${d.hold_customer||0}）`}</h3>`:'';
@@ -144,7 +159,7 @@ function wipe(){items=[];shown='';openId=null;f('list').innerHTML='<p class="mut
 async function load(force){
   if(!force&&polling)return; // a slow answer must not be discarded by the next timer tick
   const v=++listVersion;polling=true;
-  try{const d=await api(`list?channel=${encodeURIComponent(channel)}&tab=${tab}&page=${page}&order=${order}${late?'&late=1':''}${tab==='search'?'&q='+encodeURIComponent(q):''}`);if(v!==listVersion)return;const sig=JSON.stringify(d);if(!force&&(sig===shown||editing()))return;shown=sig;draw(d)}
+  try{const d=await api(`list?channel=${encodeURIComponent(channel)}&tab=${tab}&page=${page}&order=${order}${late?'&late=1':''}${autoOnly&&tab==='done'?'&auto=1':''}${tab==='search'?'&q='+encodeURIComponent(q):''}`);if(v!==listVersion)return;const sig=JSON.stringify(d);if(!force&&(sig===shown||editing()))return;shown=sig;draw(d)}
   catch(e){if(v===listVersion&&force)say(e.message,true)}
   finally{if(v===listVersion)polling=false}
 }
@@ -158,9 +173,12 @@ document.addEventListener('click',async event=>{
   try{
     if(b.id==='fb-order'){order=order==='old'?'new':'old';b.textContent=order==='old'?'排序：等最久優先 ⇅':'排序：最新優先 ⇅';page=0;await load(true);return}
     if(b.id==='fb-late'){late=!late;page=0;wipe();await load(true);return}
+    if(b.id==='fb-auto'){autoOnly=!autoOnly;page=0;wipe();await load(true);return}
+    if(b.id==='fb-undo'){const t=f('toast'),u=t._undo;t.hidden=true;t._undo=null;clearTimeout(undoTimer);if(!u)return;busy=true;
+      try{await api('hold',{thread_id:u.id,hold:'',restore:u.undo});say('已復原。')}catch(e){say(e.message,true)}finally{busy=false}await load(true);return}
     if(b.id==='fb-search-open'){const open=f('search').hidden;f('search').hidden=!open;b.setAttribute('aria-expanded',String(open));if(open)f('q').focus();else if(tab==='search')endSearch();return}
     if(b.id==='fb-search-close'){f('search').hidden=true;f('search-open').setAttribute('aria-expanded','false');if(tab==='search')endSearch();return}
-    if(b.dataset.fbTab!==undefined){q='';f('search').hidden=true;f('search-open').setAttribute('aria-expanded','false');tab=b.dataset.fbTab;page=0;late=false;document.querySelectorAll('[data-fb-tab]').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));f('order').hidden=tab==='done'||tab==='hold';say('');wipe();await load(true);return}
+    if(b.dataset.fbTab!==undefined){q='';f('search').hidden=true;f('search-open').setAttribute('aria-expanded','false');tab=b.dataset.fbTab;page=0;late=false;autoOnly=false;document.querySelectorAll('[data-fb-tab]').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));f('order').hidden=tab==='done'||tab==='hold';say('');wipe();await load(true);return}
     if(b.dataset.fbChannel!==undefined){channel=b.dataset.fbChannel;page=0;document.querySelectorAll('[data-fb-channel]').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));wipe();await load(true);return}
     if(b.id==='fb-prev'||b.id==='fb-next'){page=Math.max(0,page+(b.id==='fb-prev'?-1:1));wipe();await load(true);window.scrollTo(0,0);return}
     if(b.dataset.lk){lkShow(b.dataset.lk);return}
@@ -174,7 +192,7 @@ document.addEventListener('click',async event=>{
       if(f('lk-submit').checked)say('已送交知識審核，AI 也正在依這個答案重寫，約 1 分鐘。');return}
     if(b.id==='fb-hold-cancel'){f('hold').close();holdFor=null;return}
     if(b.dataset.holdKind!==undefined&&holdFor){const d=holdFor,k=b.dataset.holdKind;f('hold').close();holdFor=null;busy=true;
-      try{await api('hold',{thread_id:d.id,hold:k,note:d.hold_note||''});say(`已標「${HOLD[k]}」，會留在「待處理」直到你按處理好了。`)}catch(e){say(e.message,true)}finally{busy=false}await load(true);return}
+      try{await api('hold',{thread_id:d.id,hold:k,note:d.hold_note||''});say(`已標「${HOLD[k]}」，會留在「待處理」，沒有傳訊息給客人。`)}catch(e){say(e.message,true)}finally{busy=false}await load(true);return}
     if(b.id==='fb-confirm-cancel'){f('confirm').close();confirmation=null;return}
     if(b.id==='fb-confirm-ok'&&confirmation){
       const snap=confirmation;if(linkGate.pending||linkGate.bad)return;if(snap.is_public&&!f('public-check').checked)return;const lc=document.getElementById('fb-links-check');if(lc&&!lc.checked)return;
@@ -187,7 +205,9 @@ document.addEventListener('click',async event=>{
     const act=b.dataset.act;if(!act)return;const p=pick(b);if(!p)return;const {d,el}=p;
     if(act==='toggle'&&WIDE.matches){if(openId!==d.id){openId=d.id;if(lastData)draw(lastData);document.querySelector('.pane')?.scrollTo(0,0)}return}
     if(act==='toggle'){openId=openId===d.id?null:d.id;if(lastData)draw(lastData);if(openId)document.querySelector(`.item[data-id="${CSS.escape(openId)}"]`)?.scrollIntoView({block:'nearest'});return}
-    if(act==='hold'){busy=true;try{await api('hold',{thread_id:d.id,hold:b.dataset.hold,note:b.dataset.hold?d.hold_note||'':''});say(b.dataset.hold?`已標「${HOLD[b.dataset.hold]}」，會留在「待處理」直到你按處理好了。`:'已從「待處理」移除。')}catch(e){say(e.message,true)}finally{busy=false}await load(true);return}
+    if(act==='hold'){busy=true;try{const r=await api('hold',{thread_id:d.id,hold:b.dataset.hold,note:b.dataset.hold?d.hold_note||'':''});
+      if(b.dataset.hold)say(`已改成「${HOLD[b.dataset.hold]}」，沒有傳訊息給客人。`);else{say('');toast('已結案，沒有傳訊息給客人',r.undo?{id:d.id,undo:r.undo}:null)}}catch(e){say(e.message,true)}finally{busy=false}await load(true);return}
+    if(act==='reopen'){busy=true;try{await api('reopen',{thread_id:d.id});say(`「${d.name}」已改回待審核，AI 會擬一則跟進。`)}catch(e){say(e.message,true)}finally{busy=false}await load(true);return}
     if(act==='older'){b.disabled=true;try{FULL[d.id]={sig:msgSig(d),list:(await api('history?thread_id='+encodeURIComponent(d.id))).messages};draw(lastData);const box=document.querySelector(`.item[data-id="${CSS.escape(d.id)}"] .messages`);if(box)box.scrollTop=0}catch(e){say(e.message,true);b.disabled=false}return}
     if(act==='hold-pick'){holdFor=d;f('hold').showModal();return}
     if(act==='refs-toggle'){refsOpen.has(d.id)?refsOpen.delete(d.id):refsOpen.add(d.id);const box=el.querySelector('.refs');if(box)box.outerHTML=refsBlock(d);return}

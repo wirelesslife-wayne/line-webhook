@@ -21,6 +21,7 @@ def main(argv=None, store_factory=None):
     sub.add_parser('open').add_argument('--line',action='store_true',help='only the official LINE account')
     sub.add_parser('unstar',help='FB/IG conversations Wayne marked 不發送: remove their 持續追蹤 star')
     sub.add_parser('unstarred').add_argument('thread_id')
+    sub.add_parser('recheck',help='closed by itself in the last 7 days (only ad buttons): compare the last line in Meta')
     result=sub.add_parser('result')
     result.add_argument('attempt_id')
     result.add_argument('outcome',choices=('sent','failed'))
@@ -68,6 +69,7 @@ def main(argv=None, store_factory=None):
         elif args.command=='open': out=fb.awaiting(db,args.line)
         elif args.command=='unstar': out=fb.to_unstar(db)
         elif args.command=='unstarred': out=fb.unstarred(db,args.thread_id)
+        elif args.command=='recheck': out=fb.recheck(db)
         else: out=fb.record_result(db,args.attempt_id,args.outcome,args.reason)
         print(json.dumps(out,ensure_ascii=False))
         return 0

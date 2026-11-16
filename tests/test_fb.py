@@ -502,9 +502,10 @@ def test_customer_who_only_pressed_ad_buttons_still_gets_a_draft(db):
     assert fb.push(db, [thread(messages=pressed)])['new_customer_messages'] == 0
     c = fb.conversation(db, tid())
     assert c['status'] == 'waiting' and '廣告預設問題' in c['note']
-    ready(db)
+    ready(db)  # Wayne 11/16 11:03: the auto reply answered the only button -> closed by itself, no draft
+    assert fb.conversation(db, tid())['status'] == 'skip'
     assert fb.push(db, [thread(messages=pressed)])['new_customer_messages'] == 0
-    assert fb.conversation(db, tid())['status'] == 'ready'  # re-reading the same thing changes nothing
+    assert fb.conversation(db, tid())['status'] == 'skip'  # re-reading the same thing changes nothing
     assert fb.push(db, [thread(messages=pressed + [dict(role='user', text='我的車是 2022 RAV4', at='上午9:10')])])['new_customer_messages'] == 1
     assert fb.conversation(db, tid())['status'] == 'waiting'
 
