@@ -41,6 +41,10 @@ def test_rule_cases():
     assert fb.ad_only([button(), auto(), ev('page', '您好，請問車款年份？')]) == ''  # a colleague wrote
     assert fb.ad_only([button()]) == ''  # the automatic answer is not in yet
     assert fb.ad_only([ev('user', '多少錢')]) == ''
+    # the broadcast read back between the presses (張木榮、葉紹忠 11/16) is not an unanswered press
+    promo = ev('page', 'WRM-418 只錄前後，真的夠嗎？', '群發')
+    assert fb.ad_only([promo, button(), promo, button(), auto(), auto()]) == 'buttons'
+    assert fb.ad_only([promo, button(), promo]) == ''  # still no automatic answer
 
 
 def msgs(*extra):

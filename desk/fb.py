@@ -481,7 +481,9 @@ def ad_only(rows):
     """Wayne 11/16 11:03: '' unless the customer only pressed the ad's preset questions (maybe one 👍 after them),
     every press got the ad's own automatic answer that promises no person, and nobody from us wrote anything.
     Then 'buttons' or 'thumb': the thread is closed without a draft and without review."""
-    rows = list(rows)
+    # The broadcast that brought them in (「群發」「推播」) is often read back repeated between the presses
+    # (張木榮 11/16 05:21): it answers nothing and asks nothing, so it is left out (Wayne 11/16).
+    rows = [r for r in rows if not (r['role'] == 'page' and any(w in (r['note'] or '') for w in ('群發', '推播')))]
     users = [i for i, r in enumerate(rows) if r['role'] == 'user']
     buttons = [i for i in users if '廣告預設問題' in (rows[i]['note'] or '')]
     if not buttons:
