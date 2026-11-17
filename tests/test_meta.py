@@ -121,6 +121,8 @@ def test_events_read_every_shape(monkeypatch):
         echo('同事直接回的內容'),
         echo('感謝您的訊息！我們的客服團隊不在線上，會盡快回覆'),
         echo('稍等一下喔'),
+        echo('', attachments=[{'type': 'template', 'payload': {}}]),   # Wayne 11/17 test: the card after Meta's greeting
+        echo('', attachments=[{'type': 'image', 'payload': {'url': 'https://x.test/b.jpg'}}]),
         {'sender': {'id': PSID}, 'recipient': {'id': PAGE}, 'timestamp': ms(), 'postback': {'title': '預約安裝', 'payload': 'BOOK'}},
         {'sender': {'id': PSID}, 'recipient': {'id': PAGE}, 'timestamp': ms(), 'referral': ads['referral']},
         {'sender': {'id': PSID}, 'recipient': {'id': PAGE}, 'timestamp': ms(), 'read': {'watermark': 1}},
@@ -136,6 +138,8 @@ def test_events_read_every_shape(monkeypatch):
         ('message', 'page', '同事直接回的內容', '', False),
         ('message', 'page', '感謝您的訊息！我們的客服團隊不在線上，會盡快回覆', '自動回覆', False),
         ('message', 'page', '稍等一下喔', '暫回', False),
+        ('message', 'page', '[卡片]', '自動回覆', False),
+        ('message', 'page', '[圖片]', '', False),               # a photo a colleague sent still counts as an answer
         ('message', 'user', '預約安裝', '廣告預設問題', False),
         ('context', None, None, None, None),
     ]

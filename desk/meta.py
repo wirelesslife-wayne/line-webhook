@@ -173,6 +173,8 @@ def events(payload):
                 if echo:
                     own = str(msg.get('metadata', '')).startswith('wl-desk:') or bool(app_id and str(msg.get('app_id', '')) == app_id)
                     note = note or page_note(text)
+                    if not msg.get('text') and atts and all(a.get('type') in ('template', 'fallback') for a in atts):
+                        note = '自動回覆'  # Wayne 11/17 test: the button card Meta sends after its greeting is not a person
                     out.append(dict(base, kind='message', user=user, role='page', text=text, note=note, mid=msg.get('mid', ''), own=own))
                 else:
                     if msg.get('quick_reply'):
