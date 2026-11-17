@@ -78,6 +78,8 @@ def validate(payload):
                     raise ActionError('訊息欄位格式不正確', 400)
             if 'text' not in msg or not msg.get('at'):
                 raise ActionError('每則訊息需有 text 與 at', 400)
+            if not isinstance(msg.get('pic', ''), str) or len(msg.get('pic', '')) > 60:
+                raise ActionError('訊息欄位格式不正確', 400)
         normalized.append(row)
     return normalized
 
@@ -167,16 +169,20 @@ def push(store, payload):
             if old and len(seen)>len(old) and seen[:len(old)]==old:
                 # Exactly what we had plus newer messages (always so for the webhook): add only the new ones.
                 for i,msg in enumerate(row['messages'][len(old):],len(old)):
-                    cur.execute("""INSERT INTO desk_fb_events(thread_id,fingerprint,role,content,at,note,event_at)
-                      VALUES(%s,%s,%s,%s,%s,%s,%s) ON CONFLICT(thread_id,fingerprint) DO NOTHING""",
-                      (tid,digest([i,msg['role'],msg['text'],msg['at']]),msg['role'],msg['text'],msg['at'],msg.get('note',''),event_time(msg['at'])))
+                    cur.execute("""INSERT INTO desk_fb_events(thread_id,fingerprint,role,content,at,note,event_at,pic)
+                      VALUES(%s,%s,%s,%s,%s,%s,%s,%s) ON CONFLICT(thread_id,fingerprint) DO NOTHING""",
+                      (tid,digest([i,msg['role'],msg['text'],msg['at']]),msg['role'],msg['text'],msg['at'],msg.get('note',''),event_time(msg['at']),pic_of(msg)))
             elif seen and old[-len(seen):]!=seen or any(o[0]!=n[0] for o,n in zip(old[-len(seen):],seen)):
                 # Keep the longer history when this read simply saw fewer old messages; otherwise take the new snapshot.
                 cur.execute('DELETE FROM desk_fb_events WHERE thread_id=%s',(tid,))
                 for i,msg in enumerate(row['messages']):
-                    cur.execute("""INSERT INTO desk_fb_events(thread_id,fingerprint,role,content,at,note,event_at)
-                      VALUES(%s,%s,%s,%s,%s,%s,%s)""",
-                      (tid,digest([i,msg['role'],msg['text'],msg['at']]),msg['role'],msg['text'],msg['at'],msg.get('note',''),event_time(msg['at'])))
+                    cur.execute("""INSERT INTO desk_fb_events(thread_id,fingerprint,role,content,at,note,event_at,pic)
+                      VALUES(%s,%s,%s,%s,%s,%s,%s,%s)""",
+                      (tid,digest([i,msg['role'],msg['text'],msg['at']]),msg['role'],msg['text'],msg['at'],msg.get('note',''),event_time(msg['at']),pic_of(msg)))
+            for msg in row['messages']:  # photos read before the run started sending their ids (Wayne 11/17)
+                if pic_of(msg):
+                    cur.execute("""UPDATE desk_fb_events SET pic=%s WHERE thread_id=%s AND role=%s AND at=%s AND content=%s
+                      AND pic IS NULL""",(pic_of(msg),tid,msg['role'],msg['at'],msg['text']))
             cur.execute("""UPDATE desk_fb_threads SET name=%s,url=%s,context=%s,version=%s,status=%s,draft=%s,
               drafted_version=%s,note=%s,last_at=CASE WHEN %s THEN NOW() ELSE last_at END,
               draft_token=CASE WHEN %s THEN NULL ELSE draft_token END,updated_at=NOW() WHERE id=%s""",
@@ -189,6 +195,12 @@ def push(store, payload):
             counts['new_customer_messages'] += int(users)
         counts['threads'] = len({r['id'] for r in rows})
     return counts
+
+
+def pic_of(msg):
+    """LINE message id of a customer's photo (the LINE run sends it from 11/17; FB/IG do not)."""
+    from .fb_pics import clean_pic
+    return (clean_pic(msg.get('pic')) or None) if msg.get('role') == 'user' else None
 
 
 def unstar_later(cur, tid):
@@ -209,7 +221,10 @@ def conversation(store, tid):
 
 
 def messages(store, tid, for_ai=False):
-    return shape(store.all('SELECT * FROM desk_fb_events WHERE thread_id=%s ORDER BY id',(tid,)))
+    rows = shape(store.all('SELECT * FROM desk_fb_events WHERE thread_id=%s ORDER BY id',(tid,)))
+    for r in rows:
+        r.pop('pic', None), r.pop('pic_old', None)  # the AI reads 「[圖片]」 as before
+    return rows
 
 
 def shape(rows):
@@ -219,7 +234,8 @@ def shape(rows):
         rows.sort(key=lambda r:(r['event_at'],r['id']))
     handled = max((i for i,r in enumerate(rows) if answers(r['role'],r['note'])),default=-1)
     return [dict(time=r['at'],role='assistant' if r['role']=='page' else 'user',
-                 text=r['content']+(' '+r['note'] if r['note'] else ''),new=i>handled and r['role']=='user',origin=r['origin'])
+                 text=r['content']+(' '+r['note'] if r['note'] else ''),new=i>handled and r['role']=='user',origin=r['origin'],
+                 **({'pic':r['pic'],'pic_old':bool(r['event_at'] and r['event_at']<now()-timedelta(days=30))} if r.get('pic') else {}))
             for i,r in enumerate(rows)]
 
 

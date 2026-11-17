@@ -19,6 +19,37 @@ function goNext(nx,text,tone){
   else if(el&&tab==='todo'&&items.length){const top=el.getBoundingClientRect().top+scrollY-(f('feedback').offsetHeight||0)-12;scrollTo({top,behavior:'smooth'})}
   else f('feedback').scrollIntoView({block:'start'})}
 const editKey=d=>d.id+':'+d.version;
+// Wayne 11/17 (preview v2, ChatGPT+Gemini reviewed): a LINE customer's photos as thumbnails, one bubble per minute
+function talk(list){
+  let h='',i=0;
+  while(i<list.length){
+    const m=list[i];
+    if(PICS_ON&&m.role!=='assistant'&&m.pic_state){
+      const k=when(m.time),g=[m];let j=i+1;
+      while(j<list.length&&list[j].role!=='assistant'&&list[j].pic_state&&when(list[j].time)===k)g.push(list[j++]);
+      const ok=g.filter(x=>x.pic_state==='ok'),bad=g.filter(x=>x.pic_state==='missing').length,gone=g.filter(x=>x.pic_state==='gone').length;
+      h+=`<div class="message"><small>客人 · ${esc(k)}</small>${ok.length?`<div class="pics${ok.length===1?' one':''}">${ok.map(x=>`<button type="button" class="picbtn" data-pic="${esc(x.pic)}" data-at="${esc(k)}" aria-label="放大照片"><img src="/desk/api/fb/pic/${esc(x.pic)}" alt="客人傳的照片" loading="lazy"></button>`).join('')}</div><span class="picnote">${ok.length>1?`共 ${ok.length} 張照片・`:''}點照片放大</span>`:''}${bad?`<span class="nopic bad">⚠️ ${bad>1?bad+' 張':''}照片載入失敗，請到 LINE 官方後台查看</span>`:''}${gone?`<span class="nopic gone">🗑 ${gone>1?gone+' 張':''}照片已超過 30 天保存期限，無法查看</span>`:''}</div>`;
+      i=j;continue;
+    }
+    h+=`<div class="message ${m.role==='assistant'?'ours':''}"><small>${m.role==='assistant'?'我們':'客人'} · ${esc(when(m.time))}</small>${esc(m.text)}</div>`;i++;
+  }
+  return h;
+}
+// the enlarged photo: a modal dialog, so nothing behind it (核准送出) can be tapped; back button, ✕ or the dark area closes it
+const LB={list:[],i:0,name:'',at:''};
+function lbShow(){const x=LB.list[LB.i];f('lb-img').src=`/desk/api/fb/pic/${encodeURIComponent(x)}?size=full`;f('lb-cap').textContent=`${LB.i+1}／${LB.list.length}・${LB.name}・${LB.at}`;f('lb-hint').hidden=LB.list.length<2}
+function lbStep(n){if(LB.list.length<2)return;LB.i=(LB.i+n+LB.list.length)%LB.list.length;lbShow()}
+document.addEventListener('click',e=>{const b=e.target.closest('.picbtn');if(!b)return;const box=b.closest('.pics'),item=b.closest('.item');
+  LB.list=[...box.querySelectorAll('.picbtn')].map(x=>x.dataset.pic);LB.i=Math.max(0,LB.list.indexOf(b.dataset.pic));
+  LB.name=(item&&item.querySelector('.who-said b')?item.querySelector('.who-said b').textContent:'').replace(/^[📌⏳]\s*/u,'');LB.at=b.dataset.at||'';
+  lbShow();f('lb').showModal();history.pushState({lb:1},'')});
+f('lb').addEventListener('click',e=>{if(e.target===f('lb')||e.target.id==='fb-lb-close')f('lb').close()});
+f('lb').addEventListener('close',()=>{f('lb-img').removeAttribute('src');if(history.state&&history.state.lb)history.back()});
+window.addEventListener('popstate',()=>{if(f('lb').open)f('lb').close()});
+let lbX=null;
+f('lb').addEventListener('touchstart',e=>{lbX=e.touches[0].clientX},{passive:true});
+f('lb').addEventListener('touchend',e=>{if(lbX===null)return;const dx=e.changedTouches[0].clientX-lbX;lbX=null;if(Math.abs(dx)>50)lbStep(dx<0?1:-1)});
+document.addEventListener('keydown',e=>{if(!f('lb').open)return;if(e.key==='ArrowRight')lbStep(1);if(e.key==='ArrowLeft')lbStep(-1)});
 function when(t){const d=new Date(t);if(/^\d{4}-\d\d-\d\dT/.test(t||'')&&!isNaN(d))return d.toLocaleString('zh-TW',{timeZone:'Asia/Taipei',month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false});
   // Meta's own long form 「2026年11月12日 星期四上午7:23」 → 「11/12 上午7:23」 (phone review 11/13: it overlapped the status tag)
   const m=/\d{4}年(\d+)月(\d+)日\s*星期.\s*(上午|下午)?\s*(\d+:\d+)/.exec(t||'');return m?`${m[1]}/${m[2]} ${m[3]||''}${m[4]}`:(t||'')}
@@ -73,7 +104,7 @@ function card(d,i,closed){
   if(d.context){const long=d.context.length>60;h+=`<p class="context${long&&!more(d,'ctx')?' one':''}"><b>所屬貼文：</b><span>${esc(d.context.slice(0,200))}</span>${long?moreBtn(d,'ctx','展開 ▾','收合 ▴'):''}</p>`}
   // Wayne 11/15 23:50: only the last 12 come with the list; 顯示更早的對話 loads the whole conversation (Liang Hong's 11/26 booking)
   const full=FULL[d.id]&&FULL[d.id].sig===msgSig(d)?FULL[d.id].list:null,shown=full||d.messages;
-  h+=`<div class="messages">${!full&&d.older?`<button class="link older" data-act="older">▲ 顯示更早的 ${d.older} 則對話</button>`:''}${shown.map(m=>`<div class="message ${m.role==='assistant'?'ours':''}"><small>${m.role==='assistant'?'我們':'客人'} · ${esc(when(m.time))}</small>${esc(m.text)}</div>`).join('')||'<p class="muted">沒有訊息內容</p>'}</div>`;
+  h+=`<div class="messages">${!full&&d.older?`<button class="link older" data-act="older">▲ 顯示更早的 ${d.older} 則對話</button>`:''}${talk(shown)||'<p class="muted">沒有訊息內容</p>'}</div>`;
   if(d.shot)h+=`<details class="shot"><summary>原始畫面截圖 ${esc(d.shot.replace('-','/'))}</summary><a href="/desk/api/fb/shot?thread_id=${encodeURIComponent(d.id)}" target="_blank" rel="noopener"><img src="/desk/api/fb/shot?thread_id=${encodeURIComponent(d.id)}&t=${encodeURIComponent(d.shot)}" alt="Meta 收件匣這則對話的截圖" loading="lazy"></a></details>`;
   if(/^https:\/\//.test(d.url||''))h+=`<p><a class="meta-link" href="${esc(d.url)}" target="_blank" rel="noopener noreferrer">${d.channel==='line_message'?'在 LINE 官方後台打開這則':'在 Meta 收件匣打開這則'}</a></p>`;
   if(todo){

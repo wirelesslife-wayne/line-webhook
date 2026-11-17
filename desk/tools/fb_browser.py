@@ -22,6 +22,7 @@ def main(argv=None, store_factory=None):
     sub.add_parser('unstar',help='FB/IG conversations Wayne marked 不發送: remove their 持續追蹤 star')
     sub.add_parser('unstarred').add_argument('thread_id')
     sub.add_parser('recheck',help='closed by itself in the last 7 days (only ad buttons): compare the last line in Meta')
+    sub.add_parser('pics',help='photos LINE customers sent that the desk still lacks, with a 40-minute upload ticket (Wayne 11/17)')
     for name in ('lock','unlock'):  # one round at a time per inbox (scheduled rounds and WL-DeskSync)
         p=sub.add_parser(name)
         p.add_argument('what',choices=('line','fb'))
@@ -74,6 +75,11 @@ def main(argv=None, store_factory=None):
         elif args.command=='unstar': out=fb.to_unstar(db)
         elif args.command=='unstarred': out=fb.unstarred(db,args.thread_id)
         elif args.command=='recheck': out=fb.recheck(db)
+        elif args.command=='pics':
+            from .. import fb_pics
+            fb_pics.cleanup(db)
+            todo=fb_pics.todo(db)
+            out=dict(todo=todo,ticket=fb_pics.ticket(db) if todo else '')
         elif args.command=='lock': out=fb.run_lock(db,args.what,args.owner)
         elif args.command=='unlock': out=fb.run_unlock(db,args.what,args.owner)
         else: out=fb.record_result(db,args.attempt_id,args.outcome,args.reason)

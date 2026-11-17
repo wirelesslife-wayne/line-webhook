@@ -1,7 +1,7 @@
 import json
 from datetime import timedelta
 from flask import request, jsonify, g, render_template, Response
-from . import fb, fb_media, library, meta
+from . import fb, fb_media, fb_pics, library, meta
 from .errors import ActionError
 from .knowledge import can_review, require_reviewer, submit
 from .worker import local_time, line_on
@@ -13,6 +13,16 @@ def register(bp,store):
         if not c:
             raise ActionError('找不到對話',404)
         return c
+
+    def with_pics(timeline, tid, tokens):
+        """Wayne 11/17: a LINE customer's photo shows as a thumbnail; 'gone' after 30 days, 'missing' if never read."""
+        for m in timeline:
+            if m.get('pic'):
+                token=tokens.get((tid,m['pic']))
+                m['pic_state']='ok' if token else 'gone' if m.get('pic_old') else 'missing'
+                m['pic']=token or ''
+            m.pop('pic_old',None)
+        return timeline
 
     def details(rows):
         # One connection for the whole page: the list is polled every few seconds by a single web worker.
@@ -32,13 +42,16 @@ def register(bp,store):
             shots={s['thread_id']:local_time(s['taken_at'])[5:16] for s in cur.fetchall()}
             cur.execute('SELECT thread_id,fetched_at FROM desk_fb_avatars WHERE thread_id=ANY(%s)',(ids,))
             faces={a['thread_id']:a['fetched_at'].strftime('%m%d%H%M') for a in cur.fetchall()}
+            cur.execute(f"""SELECT thread_id,pic,token FROM desk_fb_pics WHERE thread_id=ANY(%s)
+              AND saved_at >= NOW()-INTERVAL '{fb_pics.KEEP_DAYS} days'""",(ids,))
+            pics={(p['thread_id'],p['pic']):p['token'] for p in cur.fetchall()}
         out=[]
         for c in rows:
             attempts=[a for a in all_attempts if a['thread_id']==c['id']][:10]
             mine=[m for m in files if m['thread_id']==c['id']]
             sent=next((a['retry_key'] for a in attempts if a['status'] in ('approved','sent')),None)
             media=[m for m in mine if m['free']] if c['status'] in fb.TODO else [m for m in mine if sent and m['attempt_key']==sent]
-            timeline=fb.shape(e for e in events if e['thread_id']==c['id'])
+            timeline=with_pics(fb.shape(e for e in events if e['thread_id']==c['id']),c['id'],pics)
             out.append(dict(id=c['id'],name=c['name'],channel=c['channel'],label=fb.LABELS[c['channel']],key=c['key'],url=c['url'],
                 context=c['context'],status=c['status'],version=c['version'],note=c['note'],result=c['draft'] or {},
                 hold=c['hold'],hold_note=c['hold_note'],hold_at=local_time(c['hold_at'])[5:16] if c['hold_at'] else '',
@@ -112,7 +125,10 @@ def register(bp,store):
 
     @bp.get('/fb')
     def fb_page():
-        return render_template('fb.html',line_on=line_on(),staff=g.staff,can_review=can_review(g.staff),labels=fb.LABELS,view=listing(),
+        # Wayne 11/17: photo thumbnails stay hidden until he approves the real screen (desk_marks pics_ui = on);
+        # ?pics=1 shows them to whoever opens that address, for the preview screenshots
+        pics_on=request.args.get('pics')=='1' or bool(store.one("SELECT 1 AS ok FROM desk_marks WHERE name='pics_ui' AND value='on'"))
+        return render_template('fb.html',line_on=line_on(),staff=g.staff,can_review=can_review(g.staff),labels=fb.LABELS,view=listing(),pics_on=pics_on,
             rules=[dict(id=r['id'],instruction=r['instruction'],active=r['active'],label=fb.LABELS.get(r['channel'],r['channel']),
                         time=local_time(r['created_at'])[5:16],said=r['conversation_summary'][:60])
                    for r in store.all('SELECT * FROM desk_edit_rules ORDER BY id DESC LIMIT 200')] if can_review(g.staff) else [])
@@ -254,7 +270,26 @@ def register(bp,store):
     def fb_history():
         # Wayne 11/15 23:50 (Liang Hong: the 11/26 booking was in the 15th message from the end)
         c=get_thread(request.args.get('thread_id'))
-        return jsonify(dict(messages=fb.shape(store.all('SELECT * FROM desk_fb_events WHERE thread_id=%s ORDER BY id',(c['id'],)))))
+        return jsonify(dict(messages=with_pics(fb.shape(store.all('SELECT * FROM desk_fb_events WHERE thread_id=%s ORDER BY id',(c['id'],))),
+                                               c['id'],fb_pics.tokens(store,[c['id']]))))
+
+    @bp.get('/api/fb/pic/<token>')
+    def fb_pic(token):
+        data=fb_pics.read(store,token,request.args.get('size','thumb'))
+        if data is None: raise ActionError('照片無法顯示',404)
+        return Response(data,mimetype='image/jpeg',headers={'Content-Disposition':'inline'})
+
+    @bp.route('/api/fb/pics/upload',methods=['POST','OPTIONS'])
+    def fb_pic_upload():
+        """Called by the LINE back office page in the AI Chrome (the LINE run), with that run's ticket; no login cookie."""
+        cors={'Access-Control-Allow-Origin':fb_pics.ORIGIN,'Access-Control-Allow-Methods':'POST','Access-Control-Allow-Headers':'Content-Type',
+              'Access-Control-Max-Age':'600','Vary':'Origin'}
+        if request.method=='OPTIONS': return ('',204,cors)
+        try: data=json.loads(request.get_data(cache=False) or b'{}')
+        except ValueError: data=None
+        if not isinstance(data,dict) or not fb_pics.ticket_ok(store,data.get('ticket')):
+            return (jsonify(error='forbidden'),403,cors)
+        return (jsonify(result=fb_pics.save(store,data.get('key'),data.get('pic'),data.get('data'))),200,cors)
 
     @bp.get('/api/fb/references')
     def fb_references():
