@@ -494,3 +494,10 @@ def test_one_comment_read_under_two_keys_stays_one_thread(db):
                (fb.thread_id('fb_comment', '950090#333'), fb.DUPLICATE))
     fb.push(db, [thread(channel='fb_comment', key='950090#333', messages=msg + [dict(role='user', text='還有嗎', at='上午11:00')])])
     assert db.one("SELECT version FROM desk_fb_threads WHERE key='950090#Cheng Yan Li'")['version'] == 2
+
+
+def test_api_conversations_are_not_in_the_browser_unstar_list(db):
+    fb.push(db, [thread(key='psid:950110', messages=[dict(role='user', text='測試', at='下午3:00')])])
+    fb.push(db, [thread(key='950111', messages=[dict(role='user', text='測試', at='下午3:00')])])
+    db.execute("UPDATE desk_fb_threads SET unstar='todo' WHERE key IN ('psid:950110','950111')")
+    assert [x['key'] for x in fb.to_unstar(db) if x['key'] in ('psid:950110', '950111')] == ['950111']

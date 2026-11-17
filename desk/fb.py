@@ -429,7 +429,9 @@ def to_unstar(store):
     return [dict(thread_id=r['id'],channel=r['channel'],key=r['key'],name=r['name'],url=r['url'],is_public=r['channel'].endswith('_comment'),
                  auto=r.get('auto_at') is not None and r['status']=='skip')
             for r in store.all("""SELECT * FROM desk_fb_threads WHERE unstar='todo' AND channel<>'line_message'
-              ORDER BY updated_at LIMIT 40""")]
+              AND NOT (key LIKE 'psid:%%' OR key LIKE 'igsid:%%') ORDER BY updated_at LIMIT 40""")]
+    # Wayne 11/17: a conversation that came through the Meta API is named 「FB 客人 1234」 until Meta allows names,
+    # so the browser could never find it by name; it would sit in this list every round.
 
 
 def unstarred(store, thread_id):
