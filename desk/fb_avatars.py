@@ -84,6 +84,25 @@ def collect(store, rows, get=None):
     return saved
 
 
+def upload(store, channel, key, name, data_b64):
+    """From the FB round's page (Wayne 11/17): one conversation's picture as base64. A comment thread may be filed under
+    the commenter's name or id (fb.same_commenter); the same post and name finds it either way."""
+    import base64
+    from .fb import thread_id, CHANNELS
+    if channel not in CHANNELS or channel == 'line_message' or not isinstance(key, str) or not 0 < len(key) <= 300:
+        return 'bad id'
+    try:
+        raw = base64.b64decode(data_b64 or '', validate=True)
+    except Exception:
+        return 'bad data'
+    tid = thread_id(channel, key)
+    if not store.one('SELECT 1 AS ok FROM desk_fb_threads WHERE id=%s', (tid,)) and channel.endswith('_comment') and '#' in key             and isinstance(name, str) and name:
+        row = store.one("""SELECT id FROM desk_fb_threads WHERE channel=%s AND name=%s AND starts_with(key,%s)
+          ORDER BY last_at DESC LIMIT 1""", (channel, name, key.split('#', 1)[0] + '#'))
+        tid = row['id'] if row else tid
+    return 'saved' if save(store, tid, raw) else 'skipped'
+
+
 def read(store, tid):
     return store.one('SELECT data FROM desk_fb_avatars WHERE thread_id=%s', (tid,)) if isinstance(tid, str) else None
 
