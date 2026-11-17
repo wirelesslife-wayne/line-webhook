@@ -624,7 +624,7 @@ def weak_after_complaint(rows):
     if not any(COMPLAINT.search(r['content'] or '') for r in run):
         return False
     ours = [r for r in rows[i + 1:] if r['role'] == 'page' and (r['note'] or '') in COLLEAGUE]
-    return all(len((r['content'] or '').strip()) < 30 and (WEAK.search(r['content'] or '') or (r['content'] or '').strip() in ('', '[貼圖]'))
+    return all(len((r['content'] or '').strip()) < 60 and (WEAK.search(r['content'] or '') or (r['content'] or '').strip() in ('', '[貼圖]'))
                for r in ours)
 
 

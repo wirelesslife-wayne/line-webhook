@@ -420,7 +420,7 @@ def test_complaint_answered_only_with_a_greeting_stays_open():
     """Wayne 11/17 (志宏): a broken part, 「呼叫客服」, then only the saved greeting: not answered."""
     broke = ev('user', '安裝完後扶手的把手斷了')
     call = ev('user', '呼叫客服', '選單')
-    greet = ev('page', '您好，請問有什麼地方需要為您服務的嗎？', '自動回覆')
+    greet = ev('page', '您好，請問有什麼地方需要為您服務的嗎？(happy face)', '')  # as the LINE run writes it
     assert fb.weak_after_complaint([broke, call, greet])
     assert not fb.asked_back([broke, call, greet])
     assert not fb.weak_after_complaint([broke, call, greet, ev('page', '很抱歉，請問方便明天下午回門市讓師傅看一下嗎？我們幫您處理')])
