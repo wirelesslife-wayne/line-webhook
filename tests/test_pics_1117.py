@@ -141,24 +141,3 @@ def test_videos_cover_then_video_with_limits(db, logged, monkeypatch):
     db.execute("UPDATE desk_fb_events SET event_at=NOW()-INTERVAL '31 days' WHERE content='[影片]'")
     d = client.get('/desk/api/fb/conversation?thread_id=' + fb.thread_id('line_message', KEY)).get_json()
     assert {m['vid']['state'] for m in d['messages'] if m.get('vid')} == {'gone'}
-
-
-def test_meta_page_uploads_profile_pictures(db, logged):
-    """Wayne 11/17 (gray circles on FB/IG): the FB round's page posts the picture it shows, with the run's ticket."""
-    import json
-    from desk import fb_avatars
-    app, client, staff, _ = logged
-    fb.push(db, [thread(key='950100', messages=[dict(role='user', text='多少錢', at='下午3:00')])])
-    fb.push(db, [thread(channel='fb_comment', key='950101#Cheng Yan Li', messages=[dict(role='user', text='台中有嗎', at='上午10:44')])])
-    pic = base64.b64encode(jpeg(200, 200)).decode()
-    post = lambda **b: client.post('/desk/api/fb/avatars/upload', data=json.dumps(b), content_type='text/plain')
-    r = post(ticket='0' * 32, channel='fb_message', key='950100', data=pic)
-    assert r.status_code == 403 and r.headers['Access-Control-Allow-Origin'] == 'https://business.facebook.com'
-    t = fb_pics.ticket(db)
-    assert post(ticket=t, channel='fb_message', key='950100', data=pic).get_json() == {'result': 'saved'}
-    # the comment filed under the name, the page knows the commenter's id: same post + same name finds it
-    assert post(ticket=t, channel='fb_comment', key='950101#1161328779924957', name='合成測試客人', data=pic).get_json() == {'result': 'saved'}
-    assert post(ticket=t, channel='line_message', key='U1', data=pic).get_json() == {'result': 'bad id'}
-    assert post(ticket=t, channel='fb_message', key='950100', data=base64.b64encode(b'x').decode()).get_json() == {'result': 'skipped'}
-    have = set(fb_avatars.have(db))
-    assert {'950100', '950101#Cheng Yan Li'} <= have

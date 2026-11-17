@@ -59,9 +59,7 @@ def main(argv=None, store_factory=None):
             out['avatars']=fb_avatars.collect(db,fb.validate(data))  # optional "avatar": picture address or saved file
         elif args.command=='faces':
             from .. import fb_avatars
-            from .. import fb_pics
             out=dict(have_picture=fb_avatars.have(db,args.line))
-            if not args.line: out['ticket']=fb_pics.ticket(db)  # Wayne 11/17: the Meta page uploads pictures itself
         elif args.command=='status':
             from .. import meta
             out=fb.status(db)

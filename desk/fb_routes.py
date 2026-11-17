@@ -306,19 +306,6 @@ def register(bp,store):
             return (jsonify(result=fb_vids.save_cover(store,data.get('key'),data.get('pic'),data.get('data'),data.get('size'),data.get('dur'))),200,cors)
         return (jsonify(result=fb_pics.save(store,data.get('key'),data.get('pic'),data.get('data'))),200,cors)
 
-    @bp.route('/api/fb/avatars/upload',methods=['POST','OPTIONS'])
-    def fb_avatar_upload():
-        """Wayne 11/17 (gray circles): the FB round's Meta page posts the profile picture it already shows, with its ticket."""
-        from . import fb_avatars
-        cors={'Access-Control-Allow-Origin':'https://business.facebook.com','Access-Control-Allow-Methods':'POST',
-              'Access-Control-Allow-Headers':'Content-Type','Access-Control-Max-Age':'600','Vary':'Origin'}
-        if request.method=='OPTIONS': return ('',204,cors)
-        try: data=json.loads(request.get_data(cache=False) or b'{}')
-        except ValueError: data=None
-        if not isinstance(data,dict) or not fb_pics.ticket_ok(store,data.get('ticket')):
-            return (jsonify(error='forbidden'),403,cors)
-        return (jsonify(result=fb_avatars.upload(store,data.get('channel'),data.get('key'),data.get('name'),data.get('data'))),200,cors)
-
     @bp.route('/api/fb/pics/video',methods=['POST','OPTIONS'])
     def fb_vid_upload():
         """Step 2 of a video: the MP4 itself as the body; the ticket and ids ride in headers."""
