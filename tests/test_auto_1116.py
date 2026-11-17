@@ -386,3 +386,15 @@ def test_fb_ig_no_reply_closes_by_itself_and_drops_the_star(db):
     b = db.one("SELECT status FROM desk_fb_threads WHERE key='950051#1'")
     assert a['status'] == 'skip' and a['unstar'] == 'todo' and a['draft']['auto'] == 'noreply'
     assert b['status'] == 'ready'
+
+
+def test_ad_buttons_with_line_guidance_and_out_of_order_answers():
+    """Wayne 11/17: new ads end every answer with 「官方LINE專人服務」 and Meta shows answers out of order."""
+    line = auto('完工價 NT$18,500，施工約 4～6 小時。 官方LINE專人服務 https://lin.ee/x')
+    assert fb.ad_only([button('a'), line]) == 'buttons'  # pointing to LINE is not a promise
+    assert fb.ad_only([button('a'), auto('加入官方LINE，我們專人會為您介紹與安排。👉官方LINE專人服務 https://lin.ee/x')]) == 'buttons'
+    assert fb.ad_only([button('a'), auto('稍後將由專人與您聯繫')]) == ''  # still a promise
+    # 周安南: two presses, one answer, two presses, three answers
+    assert fb.ad_only([button('a'), button('b'), auto('1'), button('c'), auto('2'), button('d'), auto('3'), auto('4')]) == 'buttons'
+    assert fb.ad_only([button('a'), auto('1'), button('b')]) == ''  # the last press has no answer yet
+    assert fb.ad_only([auto(ASK), auto('開場'), button('a'), button('b'), auto('1')]) == ''  # greetings before the press do not count

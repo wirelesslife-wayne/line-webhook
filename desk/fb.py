@@ -498,6 +498,12 @@ AUTO_NOTE = '🤖 自動處理：只點廣告按鈕，自動回覆已答完'
 TRANSIENT_TRIES = 3
 
 
+def promises(text):
+    """Wayne 11/17 (ChatGPT, Gemini agreed): 「加入官方LINE，專人為您介紹」 points the customer to LINE, it does not
+    promise that someone will come back to them; only the other sentences can promise a person."""
+    return any(PROMISE.search(x) for x in re.split(r'[。！!？?\n]', text or '') if 'LINE' not in x.upper())
+
+
 def ad_only(rows):
     """Wayne 11/16 11:03: '' unless the customer only pressed the ad's preset questions (maybe one 👍 after them),
     every press got the ad's own automatic answer that promises no person, and nobody from us wrote anything.
@@ -514,25 +520,15 @@ def ad_only(rows):
         return ''  # typed words, a photo, voice, another sticker
     if any(answers(r['role'], r['note']) for r in rows):
         return ''  # a colleague already wrote: not ours to close
-    # A run of presses is answered by the run of automatic replies after it (customers often press 3-5 at once).
-    i = 0
-    while i < len(rows):
-        if rows[i]['role'] != 'user' or i not in buttons:
-            i += 1
-            continue
-        j = i
-        while j < len(rows) and j in buttons:
-            j += 1
-        pressed = {squash(rows[k]['content']) for k in range(i, j)}
-        k = j
-        replies = []
-        while k < len(rows) and rows[k]['role'] == 'page':
-            if '自動回覆' in (rows[k]['note'] or '') and not AWAY.search(rows[k]['content'] or ''):
-                replies.append(rows[k]['content'] or '')
-            k += 1
-        if len(replies) < len(pressed) or any(PROMISE.search(t) for t in replies):
-            return ''
-        i = k
+    # Wayne 11/17: Meta shows the automatic replies out of order when several buttons are pressed at once (周安南), so
+    # count instead of pairing: every different button pressed needs an automatic reply after the first press, and the
+    # last press must have one after it (the answer may not be in yet).
+    replies = [r['content'] or '' for r in rows[buttons[0]:] if r['role'] == 'page' and '自動回覆' in (r['note'] or '')
+               and not AWAY.search(r['content'] or '')]
+    pressed = {squash(rows[k]['content']) for k in buttons}
+    after_last = any(r['role'] == 'page' and '自動回覆' in (r['note'] or '') for r in rows[buttons[-1] + 1:])
+    if len(replies) < len(pressed) or not after_last or any(promises(t) for t in replies):
+        return ''
     return 'thumb' if thumbs else 'buttons'
 
 
