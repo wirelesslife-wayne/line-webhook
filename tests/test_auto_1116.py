@@ -501,3 +501,20 @@ def test_api_conversations_are_not_in_the_browser_unstar_list(db):
     fb.push(db, [thread(key='950111', messages=[dict(role='user', text='測試', at='下午3:00')])])
     db.execute("UPDATE desk_fb_threads SET unstar='todo' WHERE key IN ('psid:950110','950111')")
     assert [x['key'] for x in fb.to_unstar(db) if x['key'] in ('psid:950110', '950111')] == ['950111']
+
+
+def test_draft_from_a_half_read_closes_when_the_answer_arrives(db):
+    """Wayne 11/17 21:30 (徐永清): the last button's automatic answer arrived after the first read had been drafted."""
+    half = [button('我的車可以安裝嗎？'), auto('不分車型，多數車款都可以安裝。'), button('我要怎麼預約安裝？')]
+    rows = lambda ms: [dict(role=m['role'], text=m['content'], at=f'下午1:5{i}', note=m['note']) for i, m in enumerate(ms)]
+    fb.push(db, [thread(key='950120', messages=rows(half))])
+    db.execute("UPDATE desk_fb_threads SET status='ready',draft='{\"draft\":\"您好～\"}' WHERE key='950120'")
+    full = half + [auto('加入官方LINE，我們專人會為您介紹與安排。 官方LINE專人服務 https://lin.ee/x')]
+    fb.push(db, [thread(key='950120', messages=rows(full))])
+    c = db.one("SELECT status,unstar,auto_at,draft FROM desk_fb_threads WHERE key='950120'")
+    assert c['status'] == 'skip' and c['unstar'] == 'todo' and c['auto_at'] and c['draft']['auto'] == 'buttons'
+    # one Wayne pinned stays
+    fb.push(db, [thread(key='950121', messages=rows(half))])
+    db.execute("UPDATE desk_fb_threads SET status='ready',hold='ours',hold_by='wayne' WHERE key='950121'")
+    fb.push(db, [thread(key='950121', messages=rows(full))])
+    assert db.one("SELECT status FROM desk_fb_threads WHERE key='950121'")['status'] == 'ready'

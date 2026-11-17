@@ -189,6 +189,19 @@ def push(store, payload):
               draft_token=CASE WHEN %s THEN NULL ELSE draft_token END,updated_at=NOW() WHERE id=%s""",
               (row['name'],row['url'],c['context'] or row['context'],c['version']+int(users),state,
                Json(draft) if draft is not None else None,drafted,note,changed,changed,tid))
+            if (seen != old and not users and state in ('ready','waiting','blocked','error') and row['channel'] in ('fb_message','ig_message')
+                    and auto_closable(c) and not c.get('hold')):
+                # Wayne 11/17 21:30 (徐永清): read halfway (the last button's answer had not arrived), drafted; the full
+                # read later had no typed words, so nothing looked again. Every button answered by the ad -> close it.
+                cur.execute('SELECT role,note,content FROM desk_fb_events WHERE thread_id=%s ORDER BY id',(tid,))
+                why = ad_only(cur.fetchall())
+                if why:
+                    note = AUTO_NOTE + ('（客人只回 👍）' if why == 'thumb' else '')
+                    state = 'skip'
+                    cur.execute("""UPDATE desk_fb_threads SET status='skip',note=%s,draft=%s,drafted_version=version,draft_token=NULL,
+                      auto_at=NOW(),unstar='todo',updated_at=NOW() WHERE id=%s""",
+                      (note, Json(dict(draft=NO_REPLY, flags=[], staff_note=note, auto=why)), tid))
+                    counts['auto_closed'] += 1
             if (seen != old and not users and state in ('done','skip') and c['status'] in ('done','skip')
                     and row['channel'] in ('fb_message','ig_message')):
                 # Wayne 11/17 (陳裕隆, 王英寬): an old, closed customer pressed more ad buttons; the FB round stars any
