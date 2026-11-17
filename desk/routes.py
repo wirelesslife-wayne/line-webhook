@@ -147,6 +147,10 @@ def make_blueprint(store,notifier=None):
         return jsonify(basis.set_learned(store,g.staff,data.get('id') if isinstance(data,dict) else None,
                                          data.get('active') if isinstance(data,dict) else None))
 
+    @bp.post('/api/basis/report')
+    def basis_report():
+        return jsonify(basis.report(store,g.staff,request.get_json(silent=True))),201
+
     @bp.get('/api/basis/docs')
     def basis_docs():
         require_reviewer(g.staff)

@@ -22,6 +22,7 @@
 .kb .li:last-of-type{border-bottom:0}.kb .li b{flex:1}.kb .li small{color:var(--muted);display:block;font-weight:400}
 .kb .doc{padding:0 0 12px;border-bottom:1px solid var(--line)}.kb table{width:100%;border-collapse:collapse;font-size:15px}.kb td,.kb th{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top}
 .kb th{color:var(--muted);font-weight:600;font-size:13px}.kb .doc details{border-bottom:1px solid var(--line);padding:8px 0}.kb .doc summary{cursor:pointer;font-weight:600}.kb .doc pre{white-space:pre-wrap;font:inherit;margin:6px 0 0}
+.kb .st{font-size:12px;border-radius:999px;padding:2px 9px;background:#fff1d6;color:#8a5300;white-space:nowrap}.kb .rep{padding:4px 0 12px;border-bottom:1px solid var(--line)}.kb .rep label{display:block;font-size:14px;margin:6px 0 2px}.kb .rep textarea,.kb .rep input{width:100%;box-sizing:border-box;font-size:16px;border:1px solid var(--line);border-radius:8px;padding:8px}
 .kb .newrule textarea{width:100%;min-height:72px;box-sizing:border-box;font-size:16px}.kb .pager{display:flex;gap:8px;margin-top:8px}
 #feedback:empty{display:none}#feedback{position:sticky;top:0;z-index:5;background:#e8f5ec;border-radius:8px;padding:8px 12px}#feedback.bad{background:#fbe4e2;color:var(--bad)}
 header form button{white-space:nowrap}header form span{white-space:nowrap}
@@ -43,7 +44,7 @@ header form button{white-space:nowrap}header form span{white-space:nowrap}
 <div id="learned-list"><p class="muted">讀取中…</p></div>
 <div class="pager"><button id="learned-prev">上一頁</button><button id="learned-next">下一頁</button><button id="learned-off">看已停用的</button></div>
 
-<h2 id="docs">📋 公司正式資料</h2><p class="h2sub">這裡只能看。內容有錯請直接跟 Claude 說，Claude 會修改並回報你</p>
+<h2 id="docs">📋 公司正式資料</h2><p class="h2sub">這裡只能看。有錯按「回報資料有誤」，會傳 LINE 給你，轉給 Claude 修改</p>
 <div class="list" id="docs-list"><p class="muted">讀取中…</p></div>
 </div>
 </main><script nonce="{{ g.nonce }}">

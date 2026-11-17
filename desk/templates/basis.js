@@ -38,7 +38,7 @@ function redrawLearned(){el('learned-list').innerHTML=LEARNED.map(exCard).join('
 let openDoc='';
 async function loadDocs(){
  const d=await api('basis/docs');el('n-docs').textContent=d.items.length;
- el('docs-list').innerHTML=d.items.map(x=>`<div class="li"><b>${esc(x.title)}<small>${esc(x.size)}${x.updated?'・'+esc(x.updated)+' 更新':''}</small></b><button data-doc="${x.key}" aria-expanded="false">查看</button></div><div class="doc" id="doc-${x.key}" hidden></div>`).join('');
+ el('docs-list').innerHTML=d.items.map(x=>`<div class="li"><b>${esc(x.title)}<small>${esc(x.size)}${x.updated?'・'+esc(x.updated)+' 更新':''}</small></b>${x.reported?`<span class="st">已回報 ${x.reported} 則・待修改</span>`:''}<button data-doc="${x.key}" aria-expanded="false">查看</button><button class="warn" data-rep="${x.key}">回報資料有誤</button></div><div class="rep" id="rep-${x.key}" hidden><label for="rep-where-${x.key}">哪裡錯？</label><textarea id="rep-where-${x.key}" maxlength="300" placeholder="例如：WRM-418 工時寫 4～6 小時，實際約 5 小時"></textarea><label for="rep-should-${x.key}">正確應該是？（不確定可以空著）</label><input id="rep-should-${x.key}" maxlength="300"><div class="actions"><button data-rep-cancel="${x.key}">取消</button><button class="primary" data-rep-send="${x.key}">送出回報</button></div></div><div class="doc" id="doc-${x.key}" hidden></div>`).join('');
 }
 function drawDoc(key,d){
  const box=el('doc-'+key);
@@ -68,6 +68,11 @@ document.addEventListener('click',async e=>{
   if(b.id==='learned-prev'){lpage=Math.max(0,lpage-1);asking=null;await loadLearned();return}
   if(b.id==='learned-next'){lpage++;asking=null;await loadLearned();return}
   if(b.id==='learned-off'){loff=!loff;lpage=0;asking=null;await loadLearned();return}
+  if(b.dataset.rep){const box=el('rep-'+b.dataset.rep);box.hidden=!box.hidden;if(!box.hidden)el('rep-where-'+b.dataset.rep).focus();return}
+  if(b.dataset.repCancel){el('rep-'+b.dataset.repCancel).hidden=true;return}
+  if(b.dataset.repSend){const k=b.dataset.repSend,w=el('rep-where-'+k).value.trim();if(w.length<2){say('請寫哪裡錯。',true);return}
+   b.disabled=true;try{await api('basis/report',{key:k,where:w,should:el('rep-should-'+k).value.trim()})}finally{b.disabled=false}
+   await loadDocs();say('已回報，約 1 分鐘內會傳 LINE 給你，轉給 Claude 修改就好。');return}
   if(b.dataset.doc){const k=b.dataset.doc,box=el('doc-'+k),open=box.hidden;
    document.querySelectorAll('.kb .doc').forEach(x=>x.hidden=true);document.querySelectorAll('[data-doc]').forEach(x=>{x.textContent='查看';x.setAttribute('aria-expanded','false')});
    if(open){box.hidden=false;b.textContent='收合 ▴';b.setAttribute('aria-expanded','true');if(!box.dataset.loaded){box.innerHTML='<p class="muted">讀取中…</p>';drawDoc(k,await api('basis/doc?key='+k));box.dataset.loaded='1'}}

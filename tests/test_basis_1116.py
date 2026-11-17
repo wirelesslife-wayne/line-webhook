@@ -65,3 +65,20 @@ def test_price_lookup_finds_the_car_typed():
     assert [l.split('（')[0] for l in basis.price(wlf, 'CX-30')] == ['MAZDA CX-30']  # not BMW X3, not CX-3
     assert [l.split('（')[0] for l in basis.price(wlf, 'mazda cx30 2021')] == ['MAZDA CX-30']
     assert basis.price(wlf, '') == [] and basis.price(wlf, '2021') == []
+
+
+def test_report_a_mistake_waits_for_the_line_and_for_claude(db, logged):
+    _, client, staff, _ = logged
+    wayne(db, staff)
+    h = {'X-CSRF-Token': staff['csrf']}
+    assert client.post('/desk/api/basis/report', json=dict(key='hours', where='x'), headers=h).status_code == 400
+    r = client.post('/desk/api/basis/report', json=dict(key='hours', where='WRM-418 工時寫錯', should='約 5 小時'), headers=h)
+    assert r.status_code == 201
+    rid = r.get_json()['id']
+    item = next(d for d in client.get('/desk/api/basis/docs').get_json()['items'] if d['key'] == 'hours')
+    assert item['reported'] == 1
+    assert [x['id'] for x in basis.reports(db, ('open',))] == [rid]
+    basis.set_report(db, rid, 'sent')  # the office PC sent the LINE
+    assert basis.reports(db, ('open',)) == [] and next(d for d in basis.docs(db) if d['key'] == 'hours')['reported'] == 1
+    basis.set_report(db, rid, 'done')  # Claude fixed the source
+    assert next(d for d in basis.docs(db) if d['key'] == 'hours')['reported'] == 0

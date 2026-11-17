@@ -2,7 +2,9 @@
 in three parts Wayne can see — his own rules (add, stop, start again), the replies the desk learned from (search, stop,
 start again) and the company's official data (read only; mistakes are reported to Claude, who fixes the source).
 It replaces the old 知識審核 page, which nobody ever used."""
+import json
 import re
+import uuid
 from .errors import ActionError
 from .knowledge import require_reviewer
 from .worker import local_time
@@ -69,10 +71,51 @@ def set_learned(store, staff, digest, active):
     return dict(ok=True)
 
 
+# 「回報資料有誤」(Wayne 11/17 picked LINE): kept in desk_marks as kbr:<id> with state open -> sent -> done.
+# The office PC's one-minute job (WL-DeskSync) sends each new one to Wayne by LINE (the server has no LINE to him);
+# Claude fixes the source and closes it with `python -m desk.tools.basis_reports done <id>`.
+def report(store, staff, data):
+    require_reviewer(staff)
+    if not isinstance(data, dict) or data.get('key') not in DOCS:
+        raise ActionError('沒有這份資料', 400)
+    where, should = data.get('where'), data.get('should', '')
+    if not isinstance(where, str) or not 2 <= len(where.strip()) <= 300 or not isinstance(should, str) or len(should) > 300:
+        raise ActionError('請寫哪裡錯（最多 300 字）', 400)
+    rid = uuid.uuid4().hex[:10]
+    store.execute("INSERT INTO desk_marks(name,value) VALUES(%s,%s)", ('kbr:' + rid, json.dumps(dict(
+        key=data['key'], title=DOCS[data['key']][0], where=where.strip(), should=should.strip(), state='open'), ensure_ascii=False)))
+    return dict(ok=True, id=rid)
+
+
+def reports(store, states=('open', 'sent')):
+    out = []
+    for r in store.all("SELECT name,value,at FROM desk_marks WHERE name LIKE 'kbr:%%' ORDER BY at"):
+        try:
+            v = json.loads(r['value'])
+        except ValueError:
+            continue
+        if v.get('state') in states:
+            out.append(dict(v, id=r['name'][4:], at=local_time(r['at'])[5:16]))
+    return out
+
+
+def set_report(store, rid, state):
+    row = store.one('SELECT value FROM desk_marks WHERE name=%s', ('kbr:' + str(rid),))
+    if not row:
+        raise ActionError('找不到這筆回報', 404)
+    v = json.loads(row['value'])
+    v['state'] = state
+    store.execute('UPDATE desk_marks SET value=%s WHERE name=%s', (json.dumps(v, ensure_ascii=False), 'kbr:' + str(rid)))
+    return dict(ok=True)
+
+
 def docs(store):
     rows = {r['name']: r for r in store.all('SELECT name,content,updated_at FROM desk_kb WHERE name=ANY(%s)',
                                             ([d[1] for d in DOCS.values()],))}
     out = []
+    waiting = {}
+    for r in reports(store):
+        waiting[r['key']] = waiting.get(r['key'], 0) + 1
     for key, (title, name, note) in DOCS.items():
         r = rows.get(name)
         c = r['content'] if r else None
@@ -81,7 +124,8 @@ def docs(store):
                 'dealers': lambda: f"{sum(1 for l in str(c or '').splitlines() if '｜' in l)} 個據點",
                 'canned': lambda: f"{len(c or [])} 篇", 'faq': lambda: f"{len(c or [])} 題", 'tone': lambda: note}[key]()
         out.append(dict(key=key, title=title, size=size if key != 'price' else note,
-                        updated=local_time(r['updated_at'])[5:10].replace('-', '/') if r else '', ok=bool(r)))
+                        updated=local_time(r['updated_at'])[5:10].replace('-', '/') if r else '', ok=bool(r),
+                        reported=waiting.get(key, 0)))
     return out
 
 
