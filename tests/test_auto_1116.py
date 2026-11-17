@@ -398,3 +398,19 @@ def test_ad_buttons_with_line_guidance_and_out_of_order_answers():
     assert fb.ad_only([button('a'), button('b'), auto('1'), button('c'), auto('2'), button('d'), auto('3'), auto('4')]) == 'buttons'
     assert fb.ad_only([button('a'), auto('1'), button('b')]) == ''  # the last press has no answer yet
     assert fb.ad_only([auto(ASK), auto('開場'), button('a'), button('b'), auto('1')]) == ''  # greetings before the press do not count
+
+
+def test_sent_fb_reply_queues_the_star_removal(db, logged):
+    """Wayne 11/17 (Jeffery Tai): approved and sent, but the 持續追蹤 star stayed."""
+    import uuid
+    from test_fb import wayne
+    boss = wayne(db, logged[2])
+    fb.push(db, [thread(key='950060', messages=[dict(role='user', text='尾門多少錢', at='下午3:00')])])
+    engine = Mock()
+    engine.draft.return_value = {'draft': '您好～國產車完工價 $18,000', 'flags': []}
+    fb.draft_once(db, lambda store: engine)
+    t = db.one("SELECT id,version FROM desk_fb_threads WHERE key='950060'")
+    a = fb.approve(db, boss, dict(thread_id=t['id'], text='您好～國產車完工價 $18,000', version=t['version'],
+                                  retry_key=str(uuid.uuid4()), confirmed=True, public_confirmed=False))['attempt_id']
+    fb.record_result(db, a, 'sent')
+    assert db.one("SELECT unstar FROM desk_fb_threads WHERE key='950060'")['unstar'] == 'todo'

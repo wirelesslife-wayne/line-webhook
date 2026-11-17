@@ -413,6 +413,9 @@ def record_result(store, attempt_id, outcome, reason='', via='browser'):
             cur.execute("""INSERT INTO desk_fb_events(thread_id,fingerprint,role,content,at,event_at,origin,source_version)
               VALUES(%s,%s,'page',%s,%s,%s,%s,%s) ON CONFLICT(thread_id,fingerprint) DO NOTHING""",
               (c['id'],'attempt:'+attempt_id,a['content'],stamp,event_time(stamp),via,a['source_version']))
+            # Wayne 11/17 (Jeffery Tai): the sending round is told to remove Meta's 持續追蹤 star but sometimes does not;
+            # the next FB/IG round's step 1.5 removes it as a backup (already gone: it just moves on).
+            unstar_later(cur, c['id'])
             # Wayne 11/16 20:50 (ChatGPT, Gemini, Claude agreed): nothing is marked by itself any more. 「等客人回」 only
             # made the list long (a customer who writes back returns to 待審核 anyway), and he reads the AI's note on
             # every draft. 📌 待處理 holds only what he marked; the confirm box offers the mark when the AI's note
