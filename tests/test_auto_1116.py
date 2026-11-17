@@ -462,3 +462,18 @@ def test_fb_send_check_uses_the_last_typed_words(db, logged):
     fb.approve(db, boss, dict(thread_id=t['id'], text='您好～國產車完工價 $18,000', version=t['version'],
                               retry_key=str(uuid.uuid4()), confirmed=True, public_confirmed=False))
     assert [x['last_customer_text'] for x in fb.pending(db) if x['key'] == '950072'] == ['尾門多少錢']
+
+
+def test_closed_customer_pressing_more_buttons_gets_unstarred(db):
+    """Wayne 11/17 (陳裕隆, 王英寬): closed long ago, pressed more ad buttons today; the star had to come off again."""
+    first = [button('a'), auto('1')]
+    fb.push(db, [thread(key='950080', messages=[dict(role=m['role'], text=m['content'], at='下午3:00', note=m['note']) for m in first])])
+    db.execute("UPDATE desk_fb_threads SET status='done',unstar='' WHERE key='950080'")
+    more = first + [button('b'), auto('2')]
+    fb.push(db, [thread(key='950080', messages=[dict(role=m['role'], text=m['content'], at=f'下午3:0{i}', note=m['note']) for i, m in enumerate(more)])])
+    assert db.one("SELECT status,unstar FROM desk_fb_threads WHERE key='950080'") == {'status': 'done', 'unstar': 'todo'}
+    # a press nobody answered yet: the star stays (somebody should look)
+    db.execute("UPDATE desk_fb_threads SET unstar='' WHERE key='950080'")
+    open_end = more + [button('c')]
+    fb.push(db, [thread(key='950080', messages=[dict(role=m['role'], text=m['content'], at=f'下午3:1{i}', note=m['note']) for i, m in enumerate(open_end)])])
+    assert db.one("SELECT unstar FROM desk_fb_threads WHERE key='950080'")['unstar'] == ''

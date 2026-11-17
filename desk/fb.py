@@ -188,6 +188,13 @@ def push(store, payload):
               draft_token=CASE WHEN %s THEN NULL ELSE draft_token END,updated_at=NOW() WHERE id=%s""",
               (row['name'],row['url'],c['context'] or row['context'],c['version']+int(users),state,
                Json(draft) if draft is not None else None,drafted,note,changed,changed,tid))
+            if (seen != old and not users and state in ('done','skip') and c['status'] in ('done','skip')
+                    and row['channel'] in ('fb_message','ig_message')):
+                # Wayne 11/17 (陳裕隆, 王英寬): an old, closed customer pressed more ad buttons; the FB round stars any
+                # button press, and nothing here asked it to take the star off again. All answered by the ad -> unstar.
+                cur.execute('SELECT role,note,content FROM desk_fb_events WHERE thread_id=%s ORDER BY id',(tid,))
+                if ad_only(cur.fetchall()):
+                    unstar_later(cur, tid)
             if state in ('waiting','ready','blocked','error') and line_closable(dict(c, pending_instruction='' if users else c['pending_instruction'])):
                 cur.execute('SELECT role,note,content FROM desk_fb_events WHERE thread_id=%s ORDER BY id',(tid,))
                 if asked_back(cur.fetchall()):  # Wayne 11/16: a colleague asked what they need; the customer is next
