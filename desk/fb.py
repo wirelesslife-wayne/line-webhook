@@ -603,9 +603,12 @@ def asked_back(rows):
                              for r in rows[last + 1:])
 
 
+def auto_closable(c):
+    return not c.get('no_auto') and not c.get('pending_instruction') and c.get('hold_by') != 'wayne'
+
+
 def line_closable(c):
-    return (c['channel'] == 'line_message' and not c.get('no_auto') and not c.get('pending_instruction')
-            and c.get('hold_by') != 'wayne')
+    return c['channel'] == 'line_message' and auto_closable(c)
 
 
 def close_line(cur, c, why, draft=None, states=('drafting',), token=True):
@@ -616,6 +619,8 @@ def close_line(cur, c, why, draft=None, states=('drafting',), token=True):
                 + (" AND draft_token=%s" if token else '') + " RETURNING id",
                 (LINE_AUTO[why], Json(shown), c['version'], c['id'], c['version'], list(states)) + ((c['draft_token'],) if token else ()))
     closed = bool(cur.fetchone())
+    if closed:
+        unstar_later(cur, c['id'])  # FB/IG: the next round removes Meta's 持續追蹤 star (LINE has none)
     if closed and why == 'asked':
         clear_ai_hold(cur, c['id'])  # a colleague answered (asked what they need)
     return closed
@@ -763,7 +768,8 @@ def draft_thread(store, c, engine_factory=None, instruction='', original='', rul
         applied = bool(cur.fetchone())
         if rule_id and applied and state=='ready':
             cur.execute('UPDATE desk_edit_rules SET revised_draft=%s WHERE id=%s',(result['draft'],rule_id))
-        if (applied and state=='ready' and not instruction and line_closable(c)
+        # Wayne 11/17 (A): FB/IG too — 52 joke comments under the WD40 video sat in 待審核 waiting for 不發送
+        if (applied and state=='ready' and not instruction and auto_closable(c)
                 and NO_REPLY in str(result.get('draft') or '') and close_line(cur, c, 'noreply', result, ('ready',), False)):
             state = 'skip'
     return dict(ok=True,applied=applied,status=state,remembered=bool(rule_id))

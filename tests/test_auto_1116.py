@@ -372,3 +372,17 @@ def test_closed_by_a_colleague_queues_the_star_removal(db):
     fb.push(db, [thread(channel='line_message', key='U950041', messages=ask)])
     fb.push(db, [thread(channel='line_message', key='U950041', messages=ask + [dict(role='page', text='您好，國產車完工價 18,000', at='下午3:10')])])
     assert db.one("SELECT unstar FROM desk_fb_threads WHERE key='U950041'")['unstar'] == ''  # LINE has no star
+
+
+def test_fb_ig_no_reply_closes_by_itself_and_drops_the_star(db):
+    """Wayne 11/17 (A): 「建議不回覆」 FB/IG comments and messages leave 待審核 like LINE's; nothing is sent."""
+    fb.push(db, [thread(channel='ig_comment', key='950050#1', messages=[dict(role='user', text='我便秘都用這罐', at='下午8:00')])])
+    fb.push(db, [thread(channel='fb_comment', key='950051#1', messages=[dict(role='user', text='WD40 不可以噴皮膚', at='下午8:00')])])
+    engine = Mock()
+    engine.draft.side_effect = [{'draft': fb.NO_REPLY, 'flags': [], 'staff_note': '玩笑留言'},
+                                {'draft': '您好～謝謝您的提醒', 'flags': []}]
+    fb.draft_once(db, lambda store: engine)
+    a = db.one("SELECT status,unstar,draft FROM desk_fb_threads WHERE key='950050#1'")
+    b = db.one("SELECT status FROM desk_fb_threads WHERE key='950051#1'")
+    assert a['status'] == 'skip' and a['unstar'] == 'todo' and a['draft']['auto'] == 'noreply'
+    assert b['status'] == 'ready'
