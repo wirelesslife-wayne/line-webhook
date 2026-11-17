@@ -12,7 +12,7 @@ function say(text,bad,tone){const e=f('feedback');e.textContent=text||'';e.hidde
 // line saying what happened to the last one; only when the action worked. 請 AI 重寫 stays.
 function nextAfter(id){const i=items.findIndex(x=>x.id===id);const n=items[i+1]||items[i-1];return n?{id:n.id,name:n.name}:null}
 function goNext(nx,text,tone){
-  if(tab==='todo'&&nx&&items.some(x=>x.id===nx.id)){openId=nx.id;if(lastData)draw(lastData);text+=`・下一位：${nx.name}`}
+  if(tab==='todo'&&nx&&items.some(x=>x.id===nx.id)){openId=nx.id;if(lastData)draw(lastData);text+=`・已開啟下一位：${nx.name}`}
   say(text,false,tone);
   const el=openId&&document.querySelector(WIDE.matches?`.rows .item[data-id="${CSS.escape(openId)}"]`:`.item[data-id="${CSS.escape(openId)}"]`);
   if(WIDE.matches){document.querySelector('.pane')?.scrollTo(0,0);el?.scrollIntoView({block:'nearest'});f('feedback').scrollIntoView({block:'nearest'})}
@@ -178,7 +178,8 @@ function draw(d){syncDraw(d.sync);
     if(!items.some(x=>x.id===openId))openId=items[0].id;  // two columns always show one conversation
     const n=items.findIndex(x=>x.id===openId);
     f('list').innerHTML=`<div class="split"><div class="rows">${items.map((x,i)=>sec(x,i)+card(x,i,true)).join('')}</div><div class="pane">${card(items[n],n)}</div></div>`;
-  }else f('list').innerHTML=items.length?items.map((x,i)=>sec(x,i)+card(x,i)).join(''):`<p class="muted">${empty}</p>`;
+  }else f('list').innerHTML=items.length?items.map((x,i)=>sec(x,i)+card(x,i)).join(''):tab==='todo'&&!late&&!channel?'<div class="alldone"><b>🎉 全部審核完成！</b><p class="muted">目前沒有待審核的訊息，有新訊息會自動出現。</p></div>':`<p class="muted">${empty}</p>`;
+  f('prev').hidden=f('next').hidden=!items.length&&page===0;
   document.querySelectorAll('[data-draft]').forEach(grow);
 }
 function wipe(){items=[];shown='';openId=null;f('list').innerHTML='<p class="muted">讀取中…</p>'}
@@ -223,7 +224,7 @@ document.addEventListener('click',async event=>{
     if((b.id==='fb-confirm-ok'||b.id==='fb-confirm-pin')&&confirmation){
       const snap=confirmation;if(linkGate.pending||linkGate.bad)return;if(snap.is_public&&!f('public-check').checked)return;const lc=document.getElementById('fb-links-check');if(lc&&!lc.checked)return;
       busy=true;b.disabled=true;const nx=nextAfter(snap.thread_id);let flash=null;
-      try{const out=await api('send',{thread_id:snap.thread_id,version:snap.version,text:snap.text,retry_key:snap.retry_key,confirmed:true,hold:b.id==='fb-confirm-pin',public_confirmed:snap.is_public,links_confirmed:!!(lc&&lc.checked),media_ids:snap.media_ids});delete edits[snap.key];flash=out.live?`✓ ${snap.name} 已核准，正在即時送出`:`✓ ${snap.name} 已核准`}
+      try{const out=await api('send',{thread_id:snap.thread_id,version:snap.version,text:snap.text,retry_key:snap.retry_key,confirmed:true,hold:b.id==='fb-confirm-pin',public_confirmed:snap.is_public,links_confirmed:!!(lc&&lc.checked),media_ids:snap.media_ids});delete edits[snap.key];flash=out.live?`✓ ${snap.name} 已核准，正在即時送出`:`✓ ${snap.name} 已核准，等送出`}
       catch(e){say(e.message,true)}
       finally{busy=false;b.disabled=false;f('confirm').close();confirmation=null}
       await load(true);if(flash)goNext(nx,flash,'ok');return}
@@ -279,7 +280,7 @@ document.addEventListener('click',async event=>{
     if(act==='skip'||act==='cancel'){
       if(act==='skip'&&!b.dataset.armed){b.dataset.armed='1';b.textContent='再按一次確定';setTimeout(()=>{if(b.isConnected){delete b.dataset.armed;b.textContent='不發送'}},4000);return}
       busy=true;b.disabled=true;const nx=act==='skip'?nextAfter(d.id):null;let flash=null;
-      try{await api(act,{thread_id:d.id,version:d.version});delete edits[editKey(d)];if(act==='skip')flash=`✓ ${d.name} 已結案（沒有發送）`;else say('已取消核准，回到待審核。')}
+      try{await api(act,{thread_id:d.id,version:d.version});delete edits[editKey(d)];if(act==='skip')flash=`— ${d.name} 已結案（沒有發送）`;else say('已取消核准，回到待審核。')}
       catch(e){say(e.message,true)}
       finally{busy=false}
       await load(true);if(flash)goNext(nx,flash,'skip');return}
