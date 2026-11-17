@@ -123,6 +123,7 @@ def push(store, payload):
     with store.cursor() as cur:
         # Stable order prevents cross-batch deadlocks; all mutations also lock the thread.
         for row in sorted(rows,key=lambda r:r['id']):
+            same_commenter(cur, row)
             tid = row['id']
             cur.execute("""INSERT INTO desk_fb_threads(id,channel,key,name,url,context)
               VALUES(%s,%s,%s,%s,%s,%s) ON CONFLICT(channel,key) DO NOTHING""",
@@ -202,6 +203,27 @@ def push(store, payload):
             counts['new_customer_messages'] += int(users)
         counts['threads'] = len({r['id'] for r in rows})
     return counts
+
+
+DUPLICATE = '重複：同一位留言者在同一篇貼文，已併到另一筆'
+
+
+def same_commenter(cur, row):
+    """Wayne 11/17 (Cheng Yan Li, Nicky Wang, 張肇紘): the FB round wrote a comment's key once as post#name and once as
+    post#commenter-id, so one comment became two drafts that could both be approved. A comment thread is one commenter
+    on one post: when another key for the same name on the same post is already open, this read goes to that one."""
+    if not row['channel'].endswith('_comment') or '#' not in row['key']:
+        return
+    post = row['key'].split('#', 1)[0]
+    cur.execute("SELECT key,note FROM desk_fb_threads WHERE channel=%s AND key=%s", (row['channel'], row['key']))
+    exact = cur.fetchone()
+    if exact and exact['note'] != DUPLICATE:
+        return
+    cur.execute("""SELECT key FROM desk_fb_threads WHERE channel=%s AND name=%s AND key<>%s AND starts_with(key,%s)
+      AND note<>%s ORDER BY last_at DESC LIMIT 1""", (row['channel'], row['name'], row['key'], post + '#', DUPLICATE))
+    other = cur.fetchone()
+    if other:
+        row['key'], row['id'] = other['key'], thread_id(row['channel'], other['key'])
 
 
 def pic_of(msg):

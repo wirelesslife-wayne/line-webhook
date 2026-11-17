@@ -477,3 +477,20 @@ def test_closed_customer_pressing_more_buttons_gets_unstarred(db):
     open_end = more + [button('c')]
     fb.push(db, [thread(key='950080', messages=[dict(role=m['role'], text=m['content'], at=f'下午3:1{i}', note=m['note']) for i, m in enumerate(open_end)])])
     assert db.one("SELECT unstar FROM desk_fb_threads WHERE key='950080'")['unstar'] == ''
+
+
+def test_one_comment_read_under_two_keys_stays_one_thread(db):
+    """Wayne 11/17 (Cheng Yan Li): post#name one round, post#commenter-id the next -> still one thread, one draft."""
+    msg = [dict(role='user', text='台中有嗎', at='上午10:44')]
+    fb.push(db, [thread(channel='fb_comment', key='950090#Cheng Yan Li', messages=msg)])
+    fb.push(db, [thread(channel='fb_comment', key='950090#1161328779924957', messages=msg)])
+    rows = db.all("SELECT key FROM desk_fb_threads WHERE channel='fb_comment' AND key LIKE '950090#%%'")
+    assert [r['key'] for r in rows] == ['950090#Cheng Yan Li']
+    # another commenter on the same post is still their own thread
+    fb.push(db, [dict(thread(channel='fb_comment', key='950090#222', messages=msg), name='別人')])
+    assert db.one("SELECT COUNT(*) AS n FROM desk_fb_threads WHERE key LIKE '950090#%%'")['n'] == 2
+    # a copy already marked duplicate sends its next read to the open one
+    db.execute("INSERT INTO desk_fb_threads(id,channel,key,name,url,context,note) VALUES(%s,'fb_comment','950090#333','合成測試客人','','',%s)",
+               (fb.thread_id('fb_comment', '950090#333'), fb.DUPLICATE))
+    fb.push(db, [thread(channel='fb_comment', key='950090#333', messages=msg + [dict(role='user', text='還有嗎', at='上午11:00')])])
+    assert db.one("SELECT version FROM desk_fb_threads WHERE key='950090#Cheng Yan Li'")['version'] == 2
