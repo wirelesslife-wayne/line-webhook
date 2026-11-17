@@ -265,8 +265,9 @@ def test_routes_need_login_csrf_and_reviewer(db, logged):
     assert post(client, staff, 'rules/%d' % rule, dict(active=False)).status_code == 200
     assert db.one('SELECT active FROM desk_edit_rules')['active'] is False
     assert post(client, staff, 'rules/999999', dict(active=True)).status_code == 404
-    page = client.get('/desk/fb')
-    assert page.status_code == 200 and '語氣輕鬆一點' in page.get_data(as_text=True)
+    # Wayne 11/17: the rules moved from /desk/fb to the 「AI 回覆依據」 page, which loads them from this API
+    listed = client.get('/desk/api/basis/rules')
+    assert listed.status_code == 200 and listed.get_json()['items'][0]['text'] == '語氣輕鬆一點'
 
 
 def test_tool_reads_and_writes_utf8_json(db, tmp_path, capsys):
@@ -500,9 +501,10 @@ def test_customer_who_only_pressed_ad_buttons_still_gets_a_draft(db):
     pressed = [dict(role='user', text='多少錢？安裝要多久？', at='上午3:00', note='廣告預設問題'),
                dict(role='page', text='WRM-418 完工價 NT$18,500，施工時間約 4～5 小時。', at='上午3:00', note='自動回覆')]
     assert fb.push(db, [thread(messages=pressed)])['new_customer_messages'] == 0
-    c = fb.conversation(db, tid())
-    assert c['status'] == 'waiting' and '廣告預設問題' in c['note']
-    ready(db)  # Wayne 11/16 11:03: the auto reply answered the only button -> closed by itself, no draft
+    # Wayne 11/16 11:03: the auto reply answered the only button -> closed by itself, no draft; since 11/17 21:30
+    # (徐永清) that already happens when the conversation is read
+    assert fb.conversation(db, tid())['status'] == 'skip'
+    ready(db)
     assert fb.conversation(db, tid())['status'] == 'skip'
     assert fb.push(db, [thread(messages=pressed)])['new_customer_messages'] == 0
     assert fb.conversation(db, tid())['status'] == 'skip'  # re-reading the same thing changes nothing

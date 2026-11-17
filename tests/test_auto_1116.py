@@ -83,7 +83,9 @@ def test_thumb_after_the_buttons_is_closed_too(db):
 
 def test_not_closed_with_a_hold_or_on_line(db):
     fb.push(db, [thread(key='950003', messages=msgs())])
-    db.execute("UPDATE desk_fb_threads SET hold='ours',hold_note='查庫存' WHERE key='950003'")
+    # since 11/17 21:30 the read itself closes it; Wayne marking it 待處理 afterwards puts it back for a draft
+    db.execute("""UPDATE desk_fb_threads SET hold='ours',hold_note='查庫存',status='waiting',auto_at=NULL,note=''
+                  WHERE key='950003'""")
     fb.push(db, [thread(channel='line_message', key='U950004', messages=msgs())])
     engine = Mock()
     engine.draft.return_value = {'draft': '您好～', 'flags': []}

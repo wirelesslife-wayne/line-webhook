@@ -17,6 +17,10 @@ def plate(models):
         dashed = '-' in m.group(0) and not re.match(r'\s*(年|款|式)', m.string[m.end():])
         if letters.upper() in models and (year or engine) and not dashed:
             return m.group(0)
+        # 「G LC 300」 is a GLC 300 typed with a space (劉君 11/17: masked, so the draft asked for the car again).
+        lead = re.search(r'(?<![A-Za-z0-9])([A-Za-z])\s?$', m.string[:m.start()])
+        if lead and (lead.group(1) + letters).upper() in models and (year or engine) and not dashed:
+            return m.group(0)
         return '[車牌]'
     return replace
 

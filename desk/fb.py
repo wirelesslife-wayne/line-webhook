@@ -187,7 +187,7 @@ def push(store, payload):
             cur.execute("""UPDATE desk_fb_threads SET name=%s,url=%s,context=%s,version=%s,status=%s,draft=%s,
               drafted_version=%s,note=%s,last_at=CASE WHEN %s THEN NOW() ELSE last_at END,
               draft_token=CASE WHEN %s THEN NULL ELSE draft_token END,updated_at=NOW() WHERE id=%s""",
-              (row['name'],row['url'],c['context'] or row['context'],c['version']+int(users),state,
+              (row['name'],row['url'],merged_context(c['context'],row['context']),c['version']+int(users),state,
                Json(draft) if draft is not None else None,drafted,note,changed,changed,tid))
             if (seen != old and not users and state in ('ready','waiting','blocked','error') and row['channel'] in ('fb_message','ig_message')
                     and auto_closable(c) and not c.get('hold')):
@@ -219,6 +219,20 @@ def push(store, payload):
 
 
 DUPLICATE = '重複：同一位留言者在同一篇貼文，已併到另一筆'
+
+
+def merged_context(old, new):
+    """Every ad the customer came in from, oldest first. Only the first one was kept: 林昌秋 asked the tailgate ad's
+    price, then tapped the S14 ad, and the draft answered one product only (Wayne 11/18)."""
+    old, new = (old or '').strip(), (new or '').strip()
+    if not old:
+        return new
+    # The reader words the same post differently each time; only a different ad is added.
+    ad = re.search(r'廣告「([^」]+)」', new)
+    if not ad or f'廣告「{ad.group(1)}」' in old:
+        return old
+    both = old + '\n' + new
+    return both[-10000:]
 
 
 def same_commenter(cur, row):
