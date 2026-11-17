@@ -414,3 +414,51 @@ def test_sent_fb_reply_queues_the_star_removal(db, logged):
                                   retry_key=str(uuid.uuid4()), confirmed=True, public_confirmed=False))['attempt_id']
     fb.record_result(db, a, 'sent')
     assert db.one("SELECT unstar FROM desk_fb_threads WHERE key='950060'")['unstar'] == 'todo'
+
+
+def test_complaint_answered_only_with_a_greeting_stays_open():
+    """Wayne 11/17 (志宏): a broken part, 「呼叫客服」, then only the saved greeting: not answered."""
+    broke = ev('user', '安裝完後扶手的把手斷了')
+    call = ev('user', '呼叫客服', '選單')
+    greet = ev('page', '您好，請問有什麼地方需要為您服務的嗎？', '自動回覆')
+    assert fb.weak_after_complaint([broke, call, greet])
+    assert not fb.asked_back([broke, call, greet])
+    assert not fb.weak_after_complaint([broke, call, greet, ev('page', '很抱歉，請問方便明天下午回門市讓師傅看一下嗎？我們幫您處理')])
+    assert not fb.weak_after_complaint([ev('user', '呼叫客服'), greet])  # pressing the button alone is not a complaint
+    assert fb.asked_back([ev('user', '呼叫客服'), greet])
+
+
+def test_complaint_with_a_greeting_is_kept_and_flagged(db):
+    msgs_ = [dict(role='user', text='安裝完後扶手的把手斷了', at='下午3:00'),
+             dict(role='user', text='呼叫客服', at='下午3:01', note='選單')]
+    fb.push(db, [thread(channel='line_message', key='U950070', messages=msgs_)])
+    fb.push(db, [thread(channel='line_message', key='U950070', messages=msgs_ + [
+        dict(role='page', text='您好，請問有什麼地方需要為您服務的嗎？', at='下午3:05', note='自動回覆')])])
+    engine = Mock()
+    engine.draft.return_value = {'draft': fb.NO_REPLY, 'flags': []}
+    fb.draft_once(db, lambda store: engine)
+    c = db.one("SELECT status,draft FROM desk_fb_threads WHERE key='U950070'")
+    assert c['status'] == 'ready' and c['draft']['flags'][0] == fb.COMPLAINT_FLAG
+    # FB: a colleague's 「收到」 after a complaint does not mark it answered either
+    ask = [dict(role='user', text='裝完車子刮傷了，很失望', at='下午3:00')]
+    fb.push(db, [thread(key='950071', messages=ask)])
+    fb.push(db, [thread(key='950071', messages=ask + [dict(role='page', text='收到', at='下午3:10')])])
+    assert db.one("SELECT status FROM desk_fb_threads WHERE key='950071'")['status'] != 'done'
+    fb.push(db, [thread(key='950071', messages=ask + [dict(role='page', text='收到', at='下午3:10'),
+        dict(role='page', text='非常抱歉，麻煩拍刮傷的位置給我們，我們安排回廠處理', at='下午3:12')])])
+    assert db.one("SELECT status FROM desk_fb_threads WHERE key='950071'")['status'] == 'done'
+
+
+def test_fb_send_check_uses_the_last_typed_words(db, logged):
+    """Wayne 11/17 (蕭自強): a sticker at the end made the browser's send check fail."""
+    import uuid
+    boss = wayne(db, logged[2])
+    fb.push(db, [thread(key='950072', messages=[dict(role='user', text='尾門多少錢', at='下午3:00'),
+                                                dict(role='user', text='[貼圖]', at='下午3:01')])])
+    engine = Mock()
+    engine.draft.return_value = {'draft': '您好～國產車完工價 $18,000', 'flags': []}
+    fb.draft_once(db, lambda store: engine)
+    t = db.one("SELECT id,version FROM desk_fb_threads WHERE key='950072'")
+    fb.approve(db, boss, dict(thread_id=t['id'], text='您好～國產車完工價 $18,000', version=t['version'],
+                              retry_key=str(uuid.uuid4()), confirmed=True, public_confirmed=False))
+    assert [x['last_customer_text'] for x in fb.pending(db) if x['key'] == '950072'] == ['尾門多少錢']

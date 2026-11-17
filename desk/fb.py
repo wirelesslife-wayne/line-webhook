@@ -153,6 +153,9 @@ def push(store, payload):
                 # The ad/post this lead came from was missing when drafting: the draft may be about the wrong product.
                 state, draft, drafted, note = 'waiting', None, None, ''
             last = next((who for who,_ in reversed(seen) if who!='auto'), None)
+            if changed and last=='page' and weak_after_complaint(
+                    dict(role=m['role'], content=m['text'], note=m.get('note', '')) for m in row['messages']):
+                last = None  # a greeting after a complaint does not close it (Wayne 11/17)
             if changed and last=='page':
                 if state!='done':
                     counts['auto_closed'] += 1
@@ -239,10 +242,16 @@ def status(store):
                       WHERE hold='ours' ORDER BY hold_at LIMIT 20""")])
 
 
+# Wayne 11/17 (蕭自強): on FB/IG the check compares the customer's last typed words; a sticker or photo at the end
+# made the send check fail. LINE keeps its own check (the LINE run reads the back office directly).
+TYPED = r" AND btrim(e.content)<>'' AND e.content !~ '^\[(貼圖|圖片|影片|語音|檔案|位置)\]'"
+
+
 def awaiting(store, line=False):
     """Conversations still open on the desk, oldest first, so the browser run can re-check that nobody has answered them."""
     rows = store.all("""SELECT t.channel,t.key,t.name,t.url,
-      (SELECT content FROM desk_fb_events e WHERE e.thread_id=t.id AND e.role='user' ORDER BY e.id DESC LIMIT 1) AS last_customer_text
+      (SELECT content FROM desk_fb_events e WHERE e.thread_id=t.id AND e.role='user'
+        AND (t.channel='line_message' OR (TRUE""" + TYPED + """)) ORDER BY e.id DESC LIMIT 1) AS last_customer_text
       FROM desk_fb_threads t WHERE t.status=ANY(%s) AND (t.channel='line_message')=%s AND NOT (t.key LIKE 'psid:%%' OR t.key LIKE 'igsid:%%')
       ORDER BY t.last_at,t.id LIMIT 60""",(list(TODO),line))
     return [dict(r,last_customer_text=r['last_customer_text'] or '',is_public=r['channel'].endswith('_comment')) for r in rows]
@@ -265,7 +274,8 @@ def pending(store, line=False):
                 if c['status'] not in ('done','skip'):
                     cur.execute("UPDATE desk_fb_threads SET status='waiting',draft=NULL,drafted_version=NULL,draft_token=NULL WHERE id=%s",(c['id'],))
                 continue
-            cur.execute("SELECT content FROM desk_fb_events WHERE thread_id=%s AND role='user' ORDER BY id DESC LIMIT 1",(c['id'],))
+            cur.execute("SELECT content FROM desk_fb_events e WHERE thread_id=%s AND role='user'"
+                        + ("" if c['channel'] == 'line_message' else TYPED) + " ORDER BY id DESC LIMIT 1",(c['id'],))
             last = cur.fetchone()
             result.append(dict(attempt_id=str(a['retry_key']),channel=c['channel'],key=c['key'],name=c['name'],url=c['url'],
                 content=a['content'],parts=parts(a['content']),last_customer_text=last['content'] if last else '',approved_at=a['approved_at'].isoformat(),
@@ -595,8 +605,33 @@ def thanks_only(rows):
     return True
 
 
+# Wayne 11/17 (志宏): the customer said the install broke a part and pressed 「呼叫客服」; a colleague answered with the
+# saved greeting and the desk closed it. A complaint is only answered by a real reply after it.
+COMPLAINT = re.compile(r'壞了|壞掉|斷了|弄斷|刮傷|刮到|掉漆|漏水|退費|退款|退貨|客訴|投訴|失望|不滿|生氣|消保|騙|弄壞')
+COMPLAINT_FLAG = '⚠ 客人在反映問題，同事只回了問候或「稍等」，請確認有接住'
+WEAK = re.compile(r'^\s*(\[貼圖\]|您好[，,]?)?\s*(請問有什麼(地方)?需要|有什麼(地方)?需要|收到|好的|了解|稍等)')
+
+
+def weak_after_complaint(rows):
+    """True when the customer's latest messages complain and everything we said after them is a greeting or a
+    holding reply (or nothing)."""
+    rows = list(rows)
+    users = [i for i, r in enumerate(rows) if kind(r['role'], r['note']) == 'user' or '呼叫客服' in (r['content'] or '')]
+    if not users:
+        return False
+    i = users[-1]
+    run = [rows[k] for k in users if k > i - 8]  # the customer's last few messages
+    if not any(COMPLAINT.search(r['content'] or '') for r in run):
+        return False
+    ours = [r for r in rows[i + 1:] if r['role'] == 'page' and (r['note'] or '') in COLLEAGUE]
+    return all(len((r['content'] or '').strip()) < 30 and (WEAK.search(r['content'] or '') or (r['content'] or '').strip() in ('', '[貼圖]'))
+               for r in ours)
+
+
 def asked_back(rows):
     rows = list(rows)
+    if weak_after_complaint(rows):
+        return False
     last = max((i for i, r in enumerate(rows) if kind(r['role'], r['note']) == 'user'), default=-1)
     return last >= 0 and any(r['role'] == 'page' and (r['note'] or '') in COLLEAGUE and ASK_BACK.search(r['content'] or '')
                              for r in rows[last + 1:])
@@ -734,7 +769,7 @@ def draft_thread(store, c, engine_factory=None, instruction='', original='', rul
         return dict(ok=True,applied=True,status='skip',remembered=False)
     if not instruction and line_closable(c):
         rows = store.all('SELECT role,note,content FROM desk_fb_events WHERE thread_id=%s ORDER BY id', (c['id'],))
-        why = 'asked' if asked_back(rows) else 'thanks' if not c.get('hold') and thanks_only(rows) else ''
+        why = 'asked' if asked_back(rows) else 'thanks' if not c.get('hold') and thanks_only(rows) and not weak_after_complaint(rows) else ''
         with store.cursor() as cur:
             if why and close_line(cur, c, why):
                 return dict(ok=True,applied=True,status='skip',remembered=False)
@@ -759,6 +794,9 @@ def draft_thread(store, c, engine_factory=None, instruction='', original='', rul
         result,state = dict(draft=original,staff_note=str(e)),'blocked'
     except Exception:
         result,state = dict(draft=original,staff_note='擬稿失敗，請重新擬稿或手動填寫'),'error'
+    complaint = weak_after_complaint(store.all('SELECT role,note,content FROM desk_fb_events WHERE thread_id=%s ORDER BY id', (c['id'],)))
+    if complaint:  # Wayne 11/17 (志宏): stays in 待審核 with a red line, never closed by itself
+        result = dict(result, flags=[COMPLAINT_FLAG] + [f for f in (result.get('flags') or []) if f != COMPLAINT_FLAG])
     with store.cursor() as cur:
         cur.execute("""UPDATE desk_fb_threads SET status=%s,draft=%s,drafted_version=%s,draft_token=NULL,
           pending_instruction='',pending_original='',pending_rule=NULL,updated_at=NOW()
@@ -768,7 +806,7 @@ def draft_thread(store, c, engine_factory=None, instruction='', original='', rul
         if rule_id and applied and state=='ready':
             cur.execute('UPDATE desk_edit_rules SET revised_draft=%s WHERE id=%s',(result['draft'],rule_id))
         # Wayne 11/17 (A): FB/IG too — 52 joke comments under the WD40 video sat in 待審核 waiting for 不發送
-        if (applied and state=='ready' and not instruction and auto_closable(c)
+        if (applied and state=='ready' and not instruction and auto_closable(c) and not complaint
                 and NO_REPLY in str(result.get('draft') or '') and close_line(cur, c, 'noreply', result, ('ready',), False)):
             state = 'skip'
     return dict(ok=True,applied=applied,status=state,remembered=bool(rule_id))
