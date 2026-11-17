@@ -88,3 +88,56 @@ def test_photos_need_a_login(db, logged):
     db.execute('DELETE FROM desk_fb_pics')
     d = client.get('/desk/api/fb/conversation?thread_id=' + fb.thread_id('line_message', KEY)).get_json()
     assert d['messages'][-1]['pic_state'] == 'missing'
+
+
+VID = '612345678901234599'
+
+
+def mp4(n=1000):
+    return b'\x00\x00\x00\x18ftypmp42' + b'\x00' * n
+
+
+def test_videos_cover_then_video_with_limits(db, logged, monkeypatch):
+    """Wayne 11/17 (videos): cover + length first, then the MP4; over 20 MB only the cover; total kept under the cap."""
+    import json
+    from desk import fb_vids
+    app, client, staff, _ = logged
+    msgs = [dict(role='user', text='[影片]', at='2026-11-17T07:02:00.000Z', pic=VID)]
+    fb.push(db, [line_thread(msgs)])
+    assert [x['kind'] for x in fb_pics.todo(db) + fb_vids.todo(db)] == ['photo', 'video']
+    cover = base64.b64encode(jpeg(320, 180)).decode()
+    ticket = fb_pics.ticket(db)
+    up = lambda **b: client.post('/desk/api/fb/pics/upload', data=json.dumps(dict(b, ticket=ticket, key=KEY)), content_type='text/plain').get_json()
+    assert up(pic=VID, kind='video', data=cover, size=1000, dur=7805) == {'result': 'saved'}
+    assert [x['pic'].replace('-', '') for x in fb_vids.todo(db)] == [VID]  # the video itself is still missing
+    r = client.post('/desk/api/fb/pics/video', data=mp4(), headers={'X-Desk-Ticket': '0' * 32, 'X-Desk-Key': KEY, 'X-Desk-Pic': VID}, content_type='text/plain')
+    assert r.status_code == 403
+    hdr = {'X-Desk-Ticket': ticket, 'X-Desk-Key': KEY, 'X-Desk-Pic': VID}
+    assert client.post('/desk/api/fb/pics/video', data=b'not a video', headers=hdr, content_type='text/plain').get_json() == {'result': 'not a video'}
+    assert client.post('/desk/api/fb/pics/video', data=mp4(), headers=hdr, content_type='text/plain').get_json() == {'result': 'saved'}
+    assert fb_vids.todo(db) == []
+    d = client.get('/desk/api/fb/conversation?thread_id=' + fb.thread_id('line_message', KEY)).get_json()
+    v = [m['vid'] for m in d['messages'] if m.get('vid')][0]
+    assert v['state'] == 'ok' and v['dur'] == 7805 and 'pic' not in d['messages'][-1]
+    assert client.get(f"/desk/api/fb/vid/{v['token']}?part=cover").mimetype == 'image/jpeg'
+    r = client.get(f"/desk/api/fb/vid/{v['token']}", headers={'Range': 'bytes=0-9'})
+    assert r.status_code == 206 and len(r.data) == 10 and r.mimetype == 'video/mp4'
+    assert app.test_client().get(f"/desk/api/fb/vid/{v['token']}").status_code == 401
+    # over 20 MB: only the cover, no ▶
+    big = '612345678901234598'
+    fb.push(db, [line_thread(msgs + [dict(role='user', text='[影片]', at='2026-11-17T07:03:00.000Z', pic=big)])])
+    assert up(pic=big, kind='video', data=cover, size=25_000_000, dur=102000) == {'result': 'big'}
+    # the cap: the oldest kept video is cleared to make room (cover stays)
+    monkeypatch.setattr(fb_vids, 'TOTAL_LIMIT', 1500)
+    third = '612345678901234597'
+    fb.push(db, [line_thread(msgs + [dict(role='user', text='[影片]', at='2026-11-17T07:03:00.000Z', pic=big),
+                                     dict(role='user', text='[影片]', at='2026-11-17T07:04:00.000Z', pic=third)])])
+    assert up(pic=third, kind='video', data=cover, size=1000, dur=1000) == {'result': 'saved'}
+    assert client.post('/desk/api/fb/pics/video', data=mp4(), headers=dict(hdr, **{'X-Desk-Pic': third}), content_type='text/plain').get_json() == {'result': 'saved'}
+    d = client.get('/desk/api/fb/conversation?thread_id=' + fb.thread_id('line_message', KEY)).get_json()
+    assert [m['vid']['state'] for m in d['messages'] if m.get('vid')] == ['cleared', 'big', 'ok']
+    # 30 days: gone
+    db.execute("UPDATE desk_fb_vids SET saved_at=NOW()-INTERVAL '31 days'")
+    db.execute("UPDATE desk_fb_events SET event_at=NOW()-INTERVAL '31 days' WHERE content='[影片]'")
+    d = client.get('/desk/api/fb/conversation?thread_id=' + fb.thread_id('line_message', KEY)).get_json()
+    assert {m['vid']['state'] for m in d['messages'] if m.get('vid')} == {'gone'}

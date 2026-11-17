@@ -94,11 +94,11 @@ def save(store, key, pic, data_b64):
 def todo(store, limit=40):
     """Photos the desk still lacks: LINE customers' photos from the last 30 days, newest conversations first."""
     rows = store.all(f"""SELECT t.key,e.pic FROM desk_fb_events e JOIN desk_fb_threads t ON t.id=e.thread_id
-      WHERE t.channel='line_message' AND e.pic IS NOT NULL AND e.role='user'
+      WHERE t.channel='line_message' AND e.pic IS NOT NULL AND e.role='user' AND e.content NOT LIKE '[影片]%%'
         AND COALESCE(e.event_at,e.received_at) > NOW() - INTERVAL '{KEEP_DAYS} days'
         AND NOT EXISTS(SELECT 1 FROM desk_fb_pics p WHERE p.thread_id=e.thread_id AND p.pic=e.pic)
       ORDER BY t.last_at DESC, e.id DESC LIMIT %s""", (limit,))
-    return [dict(key=r['key'], pic='-'.join(re.findall('.{1,6}', r['pic']))) for r in rows]
+    return [dict(key=r['key'], pic='-'.join(re.findall('.{1,6}', r['pic'])), kind='photo') for r in rows]
 
 
 def cleanup(store):

@@ -24,6 +24,7 @@ function talk(list){
   let h='',i=0;
   while(i<list.length){
     const m=list[i];
+    if(VIDS_ON&&m.role!=='assistant'&&m.vid){h+=`<div class="message"><small>客人 · ${esc(when(m.time))}</small>${clip(m.vid,when(m.time))}</div>`;i++;continue}
     if(PICS_ON&&m.role!=='assistant'&&m.pic_state){
       const k=when(m.time),g=[m];let j=i+1;
       while(j<list.length&&list[j].role!=='assistant'&&list[j].pic_state&&when(list[j].time)===k)g.push(list[j++]);
@@ -35,16 +36,31 @@ function talk(list){
   }
   return h;
 }
+// Wayne 11/17 (videos, ChatGPT+Gemini reviewed): cover + ▶ + length; nothing loads or plays until he taps
+function mmss(ms){const s=Math.round((ms||0)/1000);return Math.floor(s/60)+':'+String(s%60).padStart(2,'0')}
+function clip(v,at){
+  const cover=`/desk/api/fb/vid/${esc(v.token)}?part=cover`,dur=v.dur?`<span class="dur">${mmss(v.dur)}</span>`:'';
+  if(v.state==='ok')return `<button type="button" class="vidbtn" data-vid="${esc(v.token)}" data-at="${esc(at)}" aria-label="播放影片"><img src="${cover}" alt="影片封面" loading="lazy"><span class="play">▶</span>${dur}</button><span class="picnote">▶ 點擊播放（含聲音）</span>`;
+  if(v.state==='big')return `<span class="vidbox"><img src="${cover}" alt="影片封面" loading="lazy"><span class="over">超過 20MB<br>請到 LINE 官方後台查看</span>${dur}</span>`;
+  if(v.state==='cleared')return '<span class="nopic gone">🗑 影片已清除（空間已滿，先刪最舊的），無法播放</span>';
+  if(v.state==='gone')return '<span class="nopic gone">🗑 影片已超過 30 天保存期限，無法查看</span>';
+  return '<span class="nopic bad">⚠️ 影片載入失敗，請到 LINE 官方後台查看</span>';
+}
+document.addEventListener('click',e=>{const b=e.target.closest('.vidbtn');if(!b)return;const item=b.closest('.item');
+  const name=(item&&item.querySelector('.who-said b')?item.querySelector('.who-said b').textContent:'').replace(/^[📌⏳]\s*/u,'');
+  const v=f('lb-vid');f('lb-img').hidden=true;v.hidden=false;v.poster=`/desk/api/fb/vid/${encodeURIComponent(b.dataset.vid)}?part=cover`;v.src=`/desk/api/fb/vid/${encodeURIComponent(b.dataset.vid)}`;
+  LB.list=[];f('lb-cap').textContent=`${name}・${b.dataset.at||''}`;f('lb-hint').hidden=false;f('lb-hint').textContent='有聲音・點黑底或按返回關閉';
+  f('lb').showModal();history.pushState({lb:1},'')});
 // the enlarged photo: a modal dialog, so nothing behind it (核准送出) can be tapped; back button, ✕ or the dark area closes it
 const LB={list:[],i:0,name:'',at:''};
-function lbShow(){const x=LB.list[LB.i];f('lb-img').src=`/desk/api/fb/pic/${encodeURIComponent(x)}?size=full`;f('lb-cap').textContent=`${LB.i+1}／${LB.list.length}・${LB.name}・${LB.at}`;f('lb-hint').hidden=LB.list.length<2}
+function lbShow(){f('lb-vid').hidden=true;f('lb-img').hidden=false;f('lb-hint').textContent='左右滑動看上一張／下一張・點黑色地方或按返回也能關閉';const x=LB.list[LB.i];f('lb-img').src=`/desk/api/fb/pic/${encodeURIComponent(x)}?size=full`;f('lb-cap').textContent=`${LB.i+1}／${LB.list.length}・${LB.name}・${LB.at}`;f('lb-hint').hidden=LB.list.length<2}
 function lbStep(n){if(LB.list.length<2)return;LB.i=(LB.i+n+LB.list.length)%LB.list.length;lbShow()}
 document.addEventListener('click',e=>{const b=e.target.closest('.picbtn');if(!b)return;const box=b.closest('.pics'),item=b.closest('.item');
   LB.list=[...box.querySelectorAll('.picbtn')].map(x=>x.dataset.pic);LB.i=Math.max(0,LB.list.indexOf(b.dataset.pic));
   LB.name=(item&&item.querySelector('.who-said b')?item.querySelector('.who-said b').textContent:'').replace(/^[📌⏳]\s*/u,'');LB.at=b.dataset.at||'';
   lbShow();f('lb').showModal();history.pushState({lb:1},'')});
 f('lb').addEventListener('click',e=>{if(e.target===f('lb')||e.target.id==='fb-lb-close')f('lb').close()});
-f('lb').addEventListener('close',()=>{f('lb-img').removeAttribute('src');if(history.state&&history.state.lb)history.back()});
+f('lb').addEventListener('close',()=>{f('lb-img').removeAttribute('src');const v=f('lb-vid');v.pause();v.removeAttribute('src');v.removeAttribute('poster');v.load();if(history.state&&history.state.lb)history.back()});
 window.addEventListener('popstate',()=>{if(f('lb').open)f('lb').close()});
 let lbX=null;
 f('lb').addEventListener('touchstart',e=>{lbX=e.touches[0].clientX},{passive:true});

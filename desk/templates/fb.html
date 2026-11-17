@@ -67,7 +67,12 @@ header .title{border-left:1px solid #ffffff40;padding-left:18px}header form{marg
 .nopic.bad{background:#FFF4E5;color:#7a4a00;border:1px solid #f5d9a0}.nopic.gone{background:#F3F4F6;color:#4B5563}
 dialog.lb{width:100vw;height:100dvh;max-width:none;max-height:none;margin:0;padding:12px;border-radius:0;background:#000e;box-shadow:none;box-sizing:border-box;flex-direction:column;align-items:center;justify-content:center;gap:12px}
 dialog.lb[open]{display:flex}dialog.lb::backdrop{background:#000a}dialog.lb img{max-width:100%;max-height:72dvh;border-radius:6px;object-fit:contain}
-dialog.lb small{color:#ddd;font-size:14px;text-align:center}dialog.lb button{min-height:44px;min-width:120px;font-size:16px;border-radius:10px;border:0;background:#fff;color:#123}.detail textarea{min-height:170px}.detail .editbox textarea{min-height:90px}
+dialog.lb small{color:#ddd;font-size:14px;text-align:center}dialog.lb video{max-width:100%;max-height:72dvh;border-radius:6px;background:#000}
+.vidbtn,.vidbox{position:relative;display:inline-block;margin-top:6px;padding:0;min-height:0;border:1px solid var(--line);border-radius:10px;overflow:hidden;line-height:0;background:#000}
+.vidbtn{cursor:pointer}.vidbtn img,.vidbox img{width:200px;height:auto;max-height:150px;object-fit:cover;display:block}.vidbox img{filter:grayscale(.6) brightness(.6)}
+.vidbtn .play{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:48px;height:48px;border-radius:50%;background:#000a;color:#fff;font-size:22px;line-height:48px;text-align:center}
+.vidbtn .dur,.vidbox .dur{position:absolute;right:6px;bottom:6px;background:#000b;color:#fff;font-size:12px;line-height:1;padding:3px 6px;border-radius:6px}
+.vidbox .over{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:10px;color:#fff;font-size:13px;line-height:1.4}dialog.lb button{min-height:44px;min-width:120px;font-size:16px;border-radius:10px;border:0;background:#fff;color:#123}.detail textarea{min-height:170px}.detail .editbox textarea{min-height:90px}
 .detail .context{background:var(--bg);padding:8px 12px;border-radius:8px;overflow-wrap:anywhere}
 .detail .preview,#fb-preview{white-space:pre-wrap;overflow-wrap:anywhere;background:var(--bg);padding:14px;border-radius:8px}
 .detail .editbox{border:1px dashed var(--line);border-radius:10px;padding:4px 14px 14px;margin-top:12px}
@@ -161,7 +166,7 @@ textarea,input{font-size:16px}
 <div class="actions"><button id="fb-prev">上一頁</button><button id="fb-next">下一頁</button></div>
 {% if can_review %}<p class="muted rules-moved">你記住的修改指示（{{ rules|selectattr("active")|list|length }} 條生效中）搬到 <a href="/desk/knowledge#rules">AI 回覆依據</a> 了，在那裡可以新增、停用。</p>{% endif %}
 <dialog id="fb-confirm"><h2 id="fb-recipient"></h2><p id="fb-public-warning" class="error" hidden>這是公開留言，所有人都看得到。</p><div id="fb-preview"></div><p id="fb-attach-note" class="note" hidden></p><div id="fb-links" class="note" hidden></div><label id="fb-public-label" class="check" hidden><input id="fb-public-check" type="checkbox">我確認要公開回覆這則留言</label><p id="fb-refs-used" class="muted" hidden></p><p id="fb-when" class="muted">按下確認後，下一輪排程會照這段文字送出（最慢約 60 分鐘）。</p><p id="fb-todo-note" class="note" hidden></p><div class="actions"><button id="fb-confirm-cancel">返回</button><button id="fb-confirm-pin" hidden>📌 標記待處理並核准</button><button id="fb-confirm-ok" class="primary">確認核准</button></div></dialog>
-<dialog id="fb-lb" class="lb" aria-label="放大的照片"><img id="fb-lb-img" alt="客人傳的照片"><small id="fb-lb-cap"></small><small id="fb-lb-hint">左右滑動看上一張／下一張・點黑色地方或按返回也能關閉</small><button id="fb-lb-close" type="button">✕ 關閉</button></dialog>
+<dialog id="fb-lb" class="lb" aria-label="放大的照片或影片"><img id="fb-lb-img" alt="客人傳的照片"><video id="fb-lb-vid" controls playsinline preload="none" hidden></video><small id="fb-lb-cap"></small><small id="fb-lb-hint">左右滑動看上一張／下一張・點黑色地方或按返回也能關閉</small><button id="fb-lb-close" type="button">✕ 關閉</button></dialog>
 <dialog id="fb-hold" aria-labelledby="fb-hold-title"><h2 id="fb-hold-title">標記待處理</h2><p class="muted">標了會留在「📌 待處理」分頁，不會送出任何訊息。</p><button class="holdopt" data-hold-kind="ours"><b>📌 待我們確認</b><span>我們要查東西，一直留著，按「確認完了，結案」才拿掉</span></button><button class="holdopt" data-hold-kind="customer"><b>⏳ 等客人回</b><span>等客人補資料，客人一回就回到待審核；3 天沒回自動結案</span></button><button id="fb-hold-cancel">取消</button></dialog>
 <dialog id="fb-lookup" aria-labelledby="fb-lookup-title"><div class="lk-head"><h2 id="fb-lookup-title">查資料</h2><button id="fb-lookup-close" class="link" aria-label="關閉">✕</button></div>
 <div class="lk-tabs" role="tablist"><button data-lk="canned" aria-pressed="false">制式回覆</button><button data-lk="history" aria-pressed="true">真人案例</button><button data-lk="paste" aria-pressed="false">貼上答案</button></div>
@@ -173,7 +178,7 @@ textarea,input{font-size:16px}
 <div class="actions"><button id="fb-lk-use-paste" class="primary">依此重寫</button></div></div>
 <p class="muted lk-foot">價格以現行價格表為準，舊案例只當參考。</p></dialog>
 <template id="fb-brands">{% for key in labels %}<span data-ch="{{ key }}">{{ brand(key) }}</span>{% endfor %}</template>
-</main><script nonce="{{ g.nonce }}">const csrf={{ staff.csrf|tojson }},canReview={{ can_review|tojson }},PICS_ON={{ pics_on|tojson }};
+</main><script nonce="{{ g.nonce }}">const csrf={{ staff.csrf|tojson }},canReview={{ can_review|tojson }},PICS_ON={{ pics_on|tojson }},VIDS_ON={{ vids_on|tojson }};
 const USER_ICON={{ icon('user')|tojson }},CHEV={{ ('<svg class="ic chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>')|tojson }};
 {% include 'fb.js' %}
 </script>{% endblock %}

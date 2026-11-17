@@ -1,7 +1,7 @@
 import json
 from datetime import timedelta
 from flask import request, jsonify, g, render_template, Response
-from . import fb, fb_media, fb_pics, library, meta
+from . import fb, fb_media, fb_pics, fb_vids, library, meta
 from .errors import ActionError
 from .knowledge import can_review, require_reviewer, submit
 from .worker import local_time, line_on
@@ -14,9 +14,18 @@ def register(bp,store):
             raise ActionError('找不到對話',404)
         return c
 
-    def with_pics(timeline, tid, tokens):
-        """Wayne 11/17: a LINE customer's photo shows as a thumbnail; 'gone' after 30 days, 'missing' if never read."""
+    def with_pics(timeline, tid, tokens, vids=None):
+        """Wayne 11/17: a LINE customer's photo shows as a thumbnail; 'gone' after 30 days, 'missing' if never read.
+        A video: {token, state ok|big|cleared, dur}, or 'gone'/'missing' like a photo."""
         for m in timeline:
+            if m.get('pic') and m['text'].startswith('[影片]'):
+                v=(vids or {}).get((tid,m['pic']))
+                if v and v['state']!='wait':
+                    m['vid']=dict(v,state=v['state'])
+                else:
+                    m['vid']=dict(token='',state='gone' if m.get('pic_old') else 'missing',dur=0)
+                m.pop('pic',None);m.pop('pic_old',None)
+                continue
             if m.get('pic'):
                 token=tokens.get((tid,m['pic']))
                 m['pic_state']='ok' if token else 'gone' if m.get('pic_old') else 'missing'
@@ -45,13 +54,16 @@ def register(bp,store):
             cur.execute(f"""SELECT thread_id,pic,token FROM desk_fb_pics WHERE thread_id=ANY(%s)
               AND saved_at >= NOW()-INTERVAL '{fb_pics.KEEP_DAYS} days'""",(ids,))
             pics={(p['thread_id'],p['pic']):p['token'] for p in cur.fetchall()}
+            cur.execute(f"""SELECT thread_id,pic,token,state,duration_ms FROM desk_fb_vids WHERE thread_id=ANY(%s)
+              AND saved_at >= NOW()-INTERVAL '{fb_pics.KEEP_DAYS} days'""",(ids,))
+            vids={(v['thread_id'],v['pic']):dict(token=v['token'],state=v['state'],dur=v['duration_ms']) for v in cur.fetchall()}
         out=[]
         for c in rows:
             attempts=[a for a in all_attempts if a['thread_id']==c['id']][:10]
             mine=[m for m in files if m['thread_id']==c['id']]
             sent=next((a['retry_key'] for a in attempts if a['status'] in ('approved','sent')),None)
             media=[m for m in mine if m['free']] if c['status'] in fb.TODO else [m for m in mine if sent and m['attempt_key']==sent]
-            timeline=with_pics(fb.shape(e for e in events if e['thread_id']==c['id']),c['id'],pics)
+            timeline=with_pics(fb.shape(e for e in events if e['thread_id']==c['id']),c['id'],pics,vids)
             out.append(dict(id=c['id'],name=c['name'],channel=c['channel'],label=fb.LABELS[c['channel']],key=c['key'],url=c['url'],
                 context=c['context'],status=c['status'],version=c['version'],note=c['note'],result=c['draft'] or {},
                 hold=c['hold'],hold_note=c['hold_note'],hold_at=local_time(c['hold_at'])[5:16] if c['hold_at'] else '',
@@ -128,7 +140,8 @@ def register(bp,store):
         # Wayne 11/17: photo thumbnails stay hidden until he approves the real screen (desk_marks pics_ui = on);
         # ?pics=1 shows them to whoever opens that address, for the preview screenshots
         pics_on=request.args.get('pics')=='1' or bool(store.one("SELECT 1 AS ok FROM desk_marks WHERE name='pics_ui' AND value='on'"))
-        return render_template('fb.html',line_on=line_on(),staff=g.staff,can_review=can_review(g.staff),labels=fb.LABELS,view=listing(),pics_on=pics_on,
+        vids_on=request.args.get('vids')=='1' or bool(store.one("SELECT 1 AS ok FROM desk_marks WHERE name='vids_ui' AND value='on'"))
+        return render_template('fb.html',line_on=line_on(),staff=g.staff,can_review=can_review(g.staff),labels=fb.LABELS,view=listing(),pics_on=pics_on,vids_on=vids_on,
             rules=[dict(id=r['id'],instruction=r['instruction'],active=r['active'],label=fb.LABELS.get(r['channel'],r['channel']),
                         time=local_time(r['created_at'])[5:16],said=r['conversation_summary'][:60])
                    for r in store.all('SELECT * FROM desk_edit_rules ORDER BY id DESC LIMIT 200')] if can_review(g.staff) else [])
@@ -271,7 +284,7 @@ def register(bp,store):
         # Wayne 11/15 23:50 (Liang Hong: the 11/26 booking was in the 15th message from the end)
         c=get_thread(request.args.get('thread_id'))
         return jsonify(dict(messages=with_pics(fb.shape(store.all('SELECT * FROM desk_fb_events WHERE thread_id=%s ORDER BY id',(c['id'],))),
-                                               c['id'],fb_pics.tokens(store,[c['id']]))))
+                                               c['id'],fb_pics.tokens(store,[c['id']]),fb_vids.info(store,[c['id']]))))
 
     @bp.get('/api/fb/pic/<token>')
     def fb_pic(token):
@@ -289,7 +302,30 @@ def register(bp,store):
         except ValueError: data=None
         if not isinstance(data,dict) or not fb_pics.ticket_ok(store,data.get('ticket')):
             return (jsonify(error='forbidden'),403,cors)
+        if data.get('kind')=='video':  # step 1 of a video: cover, length, size (Wayne 11/17)
+            return (jsonify(result=fb_vids.save_cover(store,data.get('key'),data.get('pic'),data.get('data'),data.get('size'),data.get('dur'))),200,cors)
         return (jsonify(result=fb_pics.save(store,data.get('key'),data.get('pic'),data.get('data'))),200,cors)
+
+    @bp.route('/api/fb/pics/video',methods=['POST','OPTIONS'])
+    def fb_vid_upload():
+        """Step 2 of a video: the MP4 itself as the body; the ticket and ids ride in headers."""
+        cors={'Access-Control-Allow-Origin':fb_pics.ORIGIN,'Access-Control-Allow-Methods':'POST',
+              'Access-Control-Allow-Headers':'Content-Type, X-Desk-Ticket, X-Desk-Key, X-Desk-Pic','Access-Control-Max-Age':'600','Vary':'Origin'}
+        if request.method=='OPTIONS': return ('',204,cors)
+        if not fb_pics.ticket_ok(store,request.headers.get('X-Desk-Ticket')):
+            return (jsonify(error='forbidden'),403,cors)
+        body=request.get_data(cache=False)
+        return (jsonify(result=fb_vids.save_video(store,request.headers.get('X-Desk-Key'),request.headers.get('X-Desk-Pic'),body)),200,cors)
+
+    @bp.get('/api/fb/vid/<token>')
+    def fb_vid(token):
+        from io import BytesIO
+        from flask import send_file
+        part=request.args.get('part','video')
+        data=fb_vids.read(store,token,part)
+        if data is None: raise ActionError('影片無法播放',404)
+        if part=='cover': return Response(data,mimetype='image/jpeg',headers={'Content-Disposition':'inline'})
+        return send_file(BytesIO(data),mimetype='video/mp4',conditional=True,max_age=0)  # phones ask in byte ranges
 
     @bp.get('/api/fb/references')
     def fb_references():

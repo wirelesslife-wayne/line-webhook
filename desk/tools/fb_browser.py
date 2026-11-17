@@ -77,8 +77,9 @@ def main(argv=None, store_factory=None):
         elif args.command=='recheck': out=fb.recheck(db)
         elif args.command=='pics':
             from .. import fb_pics
-            fb_pics.cleanup(db)
-            todo=fb_pics.todo(db)
+            from .. import fb_vids
+            fb_pics.cleanup(db);fb_vids.cleanup(db)
+            todo=fb_pics.todo(db)+fb_vids.todo(db)
             out=dict(todo=todo,ticket=fb_pics.ticket(db) if todo else '')
         elif args.command=='lock': out=fb.run_lock(db,args.what,args.owner)
         elif args.command=='unlock': out=fb.run_unlock(db,args.what,args.owner)

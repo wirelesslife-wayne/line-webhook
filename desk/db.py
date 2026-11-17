@@ -75,6 +75,8 @@ from .fb_schema import SCHEMA as FB_SCHEMA
 SCHEMA += FB_SCHEMA
 from .fb_pics import SCHEMA as PIC_SCHEMA  # LINE customers' photos (Wayne 11/17)
 SCHEMA += PIC_SCHEMA
+from .fb_vids import SCHEMA as VID_SCHEMA  # and their videos (Wayne 11/17)
+SCHEMA += VID_SCHEMA
 from .links import SCHEMA as LINK_SCHEMA
 SCHEMA += LINK_SCHEMA
 from .cases import SCHEMA as CASE_SCHEMA
