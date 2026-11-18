@@ -79,4 +79,4 @@ def test_knowledge_page_uses_the_review_page_top(db, logged):
     wayne(db, staff)
     page = client.get('/desk/knowledge')
     html = page.get_data(as_text=True)
-    assert page.status_code == 200 and 'href="/desk/fb">客服審稿' in html and '回對話工作台' not in html and 'LINE 對話集中處理' not in html
+    assert page.status_code == 200 and 'href="/desk/fb" aria-current' not in html and '>審稿</a>' in html and '回對話工作台' not in html and 'LINE 對話集中處理' not in html

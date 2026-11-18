@@ -2,7 +2,7 @@ const f=id=>document.getElementById('fb-'+id);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const STATUS={waiting:'AI 擬稿中，約 1 分鐘',drafting:'AI 擬稿中，約 1 分鐘',ready:'草稿好了',blocked:'AI 暫停，請直接在框裡寫',error:'擬稿失敗，請按「請 AI 重寫」重試或直接寫',approved:'已核准，等送出',done:'已結案',skip:'不回覆'};
 const TODO=['waiting','drafting','ready','blocked','error'];
-const CHIP={waiting:['AI 擬稿中','wait'],drafting:['AI 擬稿中','wait'],ready:['待審核',''],blocked:['需人工回覆','manual'],error:['擬稿失敗',''],approved:['已核准','ok'],done:['已結案','off'],skip:['不回覆','off']};
+const CHIP={waiting:['AI 擬稿中','wait'],drafting:['AI 擬稿中','wait'],ready:['待審核',''],blocked:['需人工回覆','manual'],error:['擬稿失敗',''],approved:['已核准','ok'],done:['已結案','off'],skip:['沒發送','off']};
 const BRAND={};document.getElementById('fb-brands').content.querySelectorAll('span').forEach(s=>BRAND[s.dataset.ch]=s.innerHTML);
 let openId=null,lastData=null,autoOnly=false;
 let q='',beforeSearch='todo',tab='todo',channel='',page=0,order='old',late=false,items=[],edits={},confirmation=null,busy=false,shown='',listVersion=0,polling=false;
@@ -102,6 +102,9 @@ function holdBlock(d){
 let undoTimer=null;
 function toast(text,undo){const t=f('toast');clearTimeout(undoTimer);t.innerHTML=`<span>${esc(text)}</span>${undo?'<button id="fb-undo">復原</button>':''}`;t.hidden=false;t._undo=undo||null;undoTimer=setTimeout(()=>{t.hidden=true;t._undo=null},10000)}
 // Wayne 11/15 20:35 picked option A: one grey button under 發送, two choices in a bottom sheet, nothing is sent
+// 11/19 第二批：不發送的原因（鍵值和 desk/fb.py SKIP_REASONS 一致）
+const SKIP_WHY=[['answered','我回過了'],['no_need','不用回'],['bad_draft','AI 寫不好'],['other','其他']];
+function skipWhy(){return '<div class="skipwhy" hidden><p><b>結案原因</b>（不會傳訊息給客人）</p>'+SKIP_WHY.map(([k,v])=>`<button data-act="skip-why" data-why="${k}">${v}</button>`).join('')+'<button class="skipcancel" data-act="skip-cancel">取消</button></div>'}
 function holdPick(d){return canReview&&!d.hold?'<div class="holdpick"><button class="holdbtn" data-act="hold-pick" aria-haspopup="dialog">📌 標記待處理 ▾</button></div>':''}
 function card(d,i,closed){
   const todo=TODO.includes(d.status),waiting=d.status==='waiting'||d.status==='drafting',r=d.result||{};
@@ -111,7 +114,7 @@ function card(d,i,closed){
   if(TODO.includes(d.status)&&d.waited>=24){chip=`未回覆 ${Math.floor(d.waited/24)} 天`;tone='late'}
   // Wayne 11/15: in 待處理 (and search) the chip says what we are waiting for, not that the reply went out
   if((tab==='hold'||tab==='search')&&d.hold){chip=d.hold==='ours'?`📌 待確認 ${(d.hold_days||0)+1} 天`:'⏳ 等客人回';tone=d.hold==='ours'?'hold':'wait'}
-  if(d.auto){chip='🤖 自動處理';tone='off'}
+  if(d.auto){chip='🤖 不用回・沒發送';tone='off'}  // 11/19 第二批（ChatGPT）：「自動處理」會被看成 AI 已經回了
   const mark=d.hold&&tab!=='hold'&&tab!=='search'?(d.hold==='ours'?'📌 ':'⏳ '):'';
   let h=`<article class="item${open?' open':''}${closed&&openId===d.id?' sel':''}" data-id="${esc(d.id)}"><button class="row" data-act="toggle" aria-expanded="${open}"><span class="avatar">${d.avatar?`<img src="/desk/api/fb/avatar?thread_id=${encodeURIComponent(d.id)}&t=${esc(d.avatar)}" alt="" decoding="async">`:USER_ICON}${(BRAND[d.channel]||'').split('<svg class="ic"')[0]}</span><span class="sep"></span><span class="who-said"><b>${mark}${esc(d.name)}</b><span>${esc((lastUser.text||'').replace(/\s+/g,' '))}</span></span>${tab==='todo'&&d.status==='ready'?`<span class="when wait${d.waited>=1?' late':''}" title="${esc(when(lastUser.time||''))}">${waitText(d.waited||0)}</span>`:`<span class="when">${esc(when(lastUser.time||''))}</span><span class="state-chip ${tone}">${esc(chip)}</span>`}${CHEV}</button>`;
   if(!open)return h+'</article>';
@@ -130,7 +133,9 @@ function card(d,i,closed){
     const vers=[{label:r.label,draft:r.draft},...(r.alternatives||[])].filter(v=>typeof v.draft==='string'&&v.draft);
     if(vers.length>1&&!waiting&&more(d,'ver'))h+=`<p class="muted">AI 寫了 ${vers.length} 個版本，按「用這版」會放進下面的框，可以再改字：</p><div class="versions">${vers.map((v,n)=>{const on=draft===v.draft;return `<section class="ver${on?' on':''}"><h3>版本${'ABC'[n]} <small>${esc(v.label||'')}${n===0?'（推薦）':''}</small></h3><pre class="${v.draft.split('\n').length>9||v.draft.length>260?'clamp':''}">${esc(v.draft)}</pre>${v.draft.split('\n').length>9||v.draft.length>260?'<button class="more" data-act="ver-more">展開全文</button>':''}<button data-act="version" data-v="${n}" aria-pressed="${on}" class="${on?'primary':''}">${on?'✓ 正在用這版':'用這版'}</button></section>`}).join('')}</div>`;
     const parts=partsOf(draft),many=parts.length>1;
-    h+=`<div class="drafthead"><label for="fb-draft-${i}-0">${many?`草稿分成 ${parts.length} 則，會一則一則送出（可以直接改字）`:'草稿（可以直接改字）'}</label>${vers.length>1&&!waiting?moreBtn(d,'ver',vers.length>2?`看其他 ${vers.length-1} 個版本 ▾`:`看另一個版本${vers[1].label?'（'+esc(vers[1].label)+'）':''} ▾`,'收起其他版本 ▴'):''}</div><div class="parts">${parts.map((t,n)=>`<div class="part">${many?`<div class="part-head"><b>第 ${n+1} 則</b>${n?`<button class="link" data-act="part-merge" data-n="${n}">併回上一則</button>`:''}</div>`:''}<textarea id="fb-draft-${i}-${n}" data-draft data-n="${n}" maxlength="2000" ${waiting?'disabled':''}>${esc(t)}</textarea></div>`).join('')}</div>`;
+    // 11/19 第二批（Gemini）：公開留言的草稿在審稿時就要醒目，不是等到確認框才提醒
+    if(d.is_public)h+='<p class="pubwarn">🌐 <b>公開留言</b>：送出後所有人都看得到</p>';
+    h+=`<div class="drafthead"><label for="fb-draft-${i}-0">${many?`草稿分成 ${parts.length} 則，會一則一則送出（可以直接改字）`:'回覆草稿（可直接改）'}</label>${vers.length>1&&!waiting?moreBtn(d,'ver',vers.length>2?`看其他 ${vers.length-1} 個版本 ▾`:`看另一個版本${vers[1].label?'（'+esc(vers[1].label)+'）':''} ▾`,'收起其他版本 ▴'):''}</div><div class="parts${d.is_public?' public':''}">${parts.map((t,n)=>`<div class="part">${many?`<div class="part-head"><b>第 ${n+1} 則</b>${n?`<button class="link" data-act="part-merge" data-n="${n}">併回上一則</button>`:''}</div>`:''}<textarea id="fb-draft-${i}-${n}" data-draft data-n="${n}" maxlength="2000" ${waiting?'disabled':''}>${esc(t)}</textarea></div>`).join('')}</div>`;
     if(!waiting&&!d.is_public&&parts.length<MAXPARTS)h+=`<div class="part-tools"><button class="link" data-act="part-cut">✂ 從游標處分成下一則</button><button class="link" data-act="part-add">＋ 加一則</button></div>`;
     if(d.channel!=='ig_comment'&&canReview){
       const have=new Set((d.media||[]).map(m=>m.name)),sug=(r.cards||[]).filter(c=>!have.has(c.name));
@@ -138,15 +143,15 @@ function card(d,i,closed){
       if(sug.length)h+=`<div class="suggest"><b>AI 建議附圖</b><div class="files">${sug.map(c=>`<figure><img src="/desk/api/fb/library/${esc(c.id)}" alt="" loading="lazy"><span>${esc(c.name)}</span><button data-act="lib-attach" data-lib="${esc(c.id)}">附上</button></figure>`).join('')}</div></div>`;
       h+=`<div class="actions"><label class="pick"><input type="file" data-file accept="image/jpeg,image/png,video/mp4" hidden>＋ 加圖片／影片</label><button data-act="lib-open">從常用圖片挑</button></div><div class="libgrid" hidden></div><small class="muted">${d.is_public?'會跟留言回覆一起送出，所有人都看得到。Facebook 留言只能附 1 個：JPEG／PNG 10MB 或 MP4 影片 25MB 以內。':'會跟文字一起送出（分成多則時，跟最後一則一起送）。JPEG／PNG 每張 10MB、MP4 影片 25MB 以內，最多 3 個。'}</small></div>`;
     }
-    h+=`<div class="actions mainacts"><button class="primary" data-act="send" ${canReview&&!waiting?'':'disabled'}>✓ 核准送出</button><button data-act="edit" ${waiting?'disabled':''}>請 AI 重寫</button><button data-act="skip" ${canReview?'':'disabled'}>不發送</button></div>${canReview&&!waiting?'<p class="actshint">在 FB／LINE 前台已經回過的，也按「不發送」</p>':''}`+holdPick(d);
-    h+=`<div class="editbox" hidden><label for="fb-ins-${i}">要改哪裡？</label><p class="muted">由原本擬稿的 AI 重寫：它讀過價格表、制式回覆、你核准過的回覆和你記住的指示，會照你這句話改。</p><textarea id="fb-ins-${i}" data-instruction maxlength="2000" placeholder="例如：不要問縣市、價格寫 18,000、語氣再輕鬆一點"></textarea>${canReview?'<label class="check"><input type="checkbox" data-remember>以後都照這樣寫（記住這條指示，會影響之後所有草稿）</label>':''}<div class="actions"><button class="primary" data-act="revise">照這樣重寫</button><button data-act="edit-cancel">取消</button></div></div>`;
+    h+=`<div class="actions mainacts"><button class="primary" data-act="send" ${canReview&&!waiting?'':'disabled'}>✓ 核准送出</button><button data-act="edit" ${waiting?'disabled':''}>請 AI 重寫</button><button data-act="skip" ${canReview?'':'disabled'} aria-expanded="false">不發送</button>${canReview?skipWhy():''}</div>${canReview&&!waiting?'<p class="actshint">在 FB／LINE 前台已經回過的，也按「不發送」</p>':''}`+holdPick(d);
+    h+=`<div class="editbox" hidden><label for="fb-ins-${i}">要改哪裡？</label><p class="muted">由原本擬稿的 AI 重寫：它讀過價格表、制式回覆、你核准過的回覆和你記住的指示，會照你這句話改。</p><textarea id="fb-ins-${i}" data-instruction maxlength="2000" placeholder="例如：不要問縣市、價格寫 18,000、語氣再輕鬆一點"></textarea>${canReview?'<label class="check"><input type="checkbox" data-remember>以後都照這樣寫（記住這條寫法，會影響之後所有草稿；價格、電話、門市請改正式資料）</label><div class="factwarn" hidden><p>⚠️ 這句有金額、電話或地址。記住的指示只適合放<b>寫法</b>（語氣、要不要問縣市）；價格、電話、門市要改<b>正式資料</b>，不然正式資料一改，這條舊指示還會蓋過去。要改正式資料：在參考資料按「回報這筆有誤」。</p><button data-act="revise-once">只改這次，不記住</button></div>':''}<div class="actions"><button class="primary" data-act="revise">照這樣重寫</button><button data-act="edit-cancel">取消</button></div></div>`;
   }else if(d.status==='approved'){
     const a=d.attempts.find(x=>x.status==='approved');
     h+=`<p class="closed-by">${a?`${esc(a.staff)} 核准 · ${esc(a.time.slice(5,16))}・`:''}<b>尚未送出</b></p><label>已核准的內容</label><div class="preview">${esc(a?a.text:'')}</div>${(d.media||[]).length?`<div class="attach"><div class="files">${files(d.media,false)}</div></div>`:''}<p class="muted">${d.live?'正在用 Meta 官方 API 送出，幾秒內完成；送不出去會退回待審並寫原因。':'下一輪排程會照這段文字送出（最慢約 '+(d.channel==='line_message'?10:30)+' 分鐘）。'}</p><div class="actions"><button data-act="cancel" ${canReview?'':'disabled'}>取消核准</button></div>`;
   }else{
     const a=d.attempts.find(x=>x.status==='sent');
-    if(d.auto)h+=`<div class="autobox"><p class="closed-by">🤖 自動處理（${d.auto==='noreply'?'AI 判斷不用回覆':d.auto==='asked'?'同事已問客人需求':d.auto==='thanks'?'客人道謝收尾':'只點廣告按鈕'+(d.auto==='thumb'?'，最後只回 👍':'')}）· ${esc(d.closed_at||'')}</p><p class="muted">${d.auto==='noreply'?'AI 判斷這則不用回覆（例如跟產品無關的玩笑留言、只點了門市電話、只是說會晚到）':d.auto==='asked'?'同事已經問客人需要什麼服務，在等客人說明':d.auto==='thanks'?'同事已經回答，客人只回了道謝、好的或貼圖':'客人只點了廣告的預設問題，粉專自動回覆都答完了'}。沒有傳任何訊息；客人之後再傳訊息會自動回到待審核。</p>${canReview?'<div class="actions"><button data-act="reopen">改回待審核</button></div>':''}</div>`;
-    else h+=`<p class="closed-by">${d.status==='skip'?'不回覆':a?`已送出 · ${esc(a.staff)} 核准`:'已結案'} · ${esc(d.closed_at||'')}</p>`;
+    if(d.auto)h+=`<div class="autobox"><p class="closed-by">🤖 沒有回覆客人・AI 判斷不用回（${d.auto==='noreply'?'AI 判斷不用回覆':d.auto==='asked'?'同事已問客人需求':d.auto==='thanks'?'客人道謝收尾':'只點廣告按鈕'+(d.auto==='thumb'?'，最後只回 👍':'')}）· ${esc(d.closed_at||'')}</p><p class="muted">${d.auto==='noreply'?'AI 判斷這則不用回覆（例如跟產品無關的玩笑留言、只點了門市電話、只是說會晚到）':d.auto==='asked'?'同事已經問客人需要什麼服務，在等客人說明':d.auto==='thanks'?'同事已經回答，客人只回了道謝、好的或貼圖':'客人只點了廣告的預設問題，粉專自動回覆都答完了'}。沒有傳任何訊息；客人之後再傳訊息會自動回到待審核。</p>${canReview?'<div class="actions"><button data-act="reopen">改回待審核</button></div>':''}</div>`;
+    else h+=`<p class="closed-by">${d.status==='skip'?esc(/^不回覆/.test(d.note||'')?d.note.replace(/^不回覆：?/,'不發送'+(d.note.length>3?'：':'')):'不發送'):a?`已送出 · ${esc(a.staff)} 核准`:'已結案'} · ${esc(d.closed_at||'')}</p>`;
     if(a)h+=`<label>已送出的內容（${esc(a.time)}）</label><div class="preview">${esc(a.text)}</div>`;
   }
   if(!todo)h+=holdPick(d);
@@ -180,10 +185,11 @@ function refCard(x,n,where){return `<div class="ref"><b>${x.kind==='canned'?'�
 function refReport(n){return `<button class="link" data-act="ref-report">回報這筆有誤</button><div class="refrep" hidden><textarea data-rep-where maxlength="240" placeholder="哪裡錯？例如：價格寫 12,800，現在是 13,800"></textarea><input data-rep-should maxlength="300" placeholder="正確應該是？（不確定可以空著）"><div class="actions"><button class="primary" data-act="ref-report-send" data-n="${n}">送出回報</button><button data-act="ref-report-cancel">取消</button></div></div>`}
 function refsBlock(d){
   const r=REFS[refKey(d)];
-  if(r===undefined){fetchRefs(d);return '<div class="refs"><p class="muted">參考資料：查詢中…</p></div>'}
+  // null = still loading (fetchRefs marks it); a redraw meanwhile (phone turned, list refresh) must not crash the whole list
+  if(r==null){if(r===undefined)fetchRefs(d);return '<div class="refs"><p class="muted">參考資料：查詢中…</p></div>'}
   const list=[...(r.canned||[]),...(r.history||[])],shut=!refsOpen.has(d.id);
   if(!list.length)return '<div class="refs"><p class="muted">參考資料 ⚪ 目前沒有合適的參考資料</p><button class="link" data-act="lookup">查資料 ›</button></div>';
-  return `<div class="refs"><button class="link refs-head" data-act="refs-toggle" aria-expanded="${!shut}">${shut?'▶':'▼'} 參考資料 ✅ 找到 ${list.length} 筆</button>${shut?'':list.map((x,n)=>refCard(x,n,'auto')).join('')}<button class="link" data-act="lookup">找不到？查資料 ›</button></div>`}
+  return `<div class="refs"><button class="link refs-head" data-act="refs-toggle" aria-expanded="${!shut}">${shut?'▶':'▼'} 參考資料 ✅ 找到 ${list.length} 筆</button>${shut?'':list.map((x,n)=>refCard(x,n,'auto')).join('')}<button class="link" data-act="lookup">查資料 ›</button></div>`}
 async function fetchRefs(d){
   const k=refKey(d);if(REFS[k]===null)return;REFS[k]=null;
   try{REFS[k]=await api('references?thread_id='+encodeURIComponent(d.id))}catch(e){REFS[k]={canned:[],history:[]}}
@@ -219,7 +225,7 @@ function draw(d){syncDraw(d.sync);
   f('late').textContent=late?`只看超過 24 小時未回覆的 ${d.total||0} 則・顯示全部 ›`:d.overdue?`⚠ ${d.overdue} 則超過 24 小時未回覆 ›`:'';f('late').setAttribute('aria-pressed',String(late));
   f('manual').textContent=d.manual?`${d.manual} 則需人工回覆`:'';
   f('autobar').hidden=tab!=='done'||!(d.auto_total||autoOnly);f('auto').setAttribute('aria-pressed',String(autoOnly));
-  f('auto').textContent=autoOnly?`🤖 只看自動處理（${d.total||0}）・顯示全部`:`🤖 自動處理 ${d.auto_total||0} 則`;f('auto-today').textContent=`今天自動處理 ${d.auto_today||0} 則`;
+  f('auto').textContent=autoOnly?`🤖 只看 AI 判斷不用回的（${d.total||0}）・顯示全部`:`🤖 AI 判斷不用回、沒發送 ${d.auto_total||0} 則`;f('auto-today').textContent=`今天 ${d.auto_today||0} 則`;
   const empty={todo:'🎉 待審核全部處理完了',approved:'目前沒有即將送出的回覆。',hold:'目前沒有待處理的對話。',done:'還沒有結案的紀錄。',search:`沒有找到名字含「${esc(q)}」的客人。`}[tab];
   if(tab==='search')f('total').textContent=`搜尋「${q}」：${d.total||0} 位`;
   const sec=(x,i)=>tab==='hold'&&(i===0||items[i-1].hold!==x.hold)?`<h3 class="holdsec">${x.hold==='ours'?`📌 待我們確認（${d.hold_ours||0}）`:`⏳ 等客人回（${d.hold_customer||0}）`}</h3>`:'';
@@ -228,7 +234,7 @@ function draw(d){syncDraw(d.sync);
     const n=items.findIndex(x=>x.id===openId);
     f('list').innerHTML=`<div class="split"><div class="rows">${items.map((x,i)=>sec(x,i)+card(x,i,true)).join('')}</div><div class="pane">${card(items[n],n)}</div></div>`;
   }else f('list').innerHTML=items.length?items.map((x,i)=>sec(x,i)+card(x,i)).join(''):tab==='todo'&&!late&&!channel?'<div class="alldone"><b>🎉 全部審核完成！</b><p class="muted">目前沒有待審核的訊息，有新訊息會自動出現。</p></div>':`<p class="muted">${empty}</p>`;
-  f('prev').hidden=f('next').hidden=!items.length&&page===0;
+  f('prev').hidden=f('next').hidden=page===0&&f('next').disabled;  // 11/19：只有一頁就不顯示上一頁／下一頁
   document.querySelectorAll('[data-draft]').forEach(grow);
 }
 function wipe(){items=[];shown='';openId=null;f('list').innerHTML='<p class="muted">讀取中…</p>'}
@@ -323,18 +329,25 @@ document.addEventListener('click',async event=>{
     if(act==='media-remove'){busy=true;b.disabled=true;try{await api('media/'+b.dataset.media+'/remove',{thread_id:d.id});say('已移除附件。')}catch(e){say(e.message,true)}finally{busy=false}await load(true);return}
     if(act==='edit'){const box=el.querySelector('.editbox');box.hidden=!box.hidden;if(!box.hidden)box.querySelector('[data-instruction]').focus();return}
     if(act==='edit-cancel'){el.querySelector('.editbox').hidden=true;return}
+    if(act==='revise-once'){const c=el.querySelector('[data-remember]');if(c)c.checked=false;el.querySelector('.factwarn').hidden=true;el.querySelector('[data-act="revise"]').click();return}
     if(act==='revise'){
       const instruction=el.querySelector('[data-instruction]').value.trim();if(!instruction){say('請寫下要改哪裡。',true);return}
       const remember=el.querySelector('[data-remember]')?.checked??false;
+      // 11/19 第二批（ChatGPT）：記住的指示只放寫法；有金額、電話、地址的先提醒一次，再按一次才記住
+      const warn=el.querySelector('.factwarn');
+      if(remember&&warn&&warn.hidden&&/\d{3,}|\d,\d{3}|\$|元|電話|地址|門市在/.test(instruction)){warn.hidden=false;b.textContent='還是要記住，照這樣重寫';warn.scrollIntoView({block:'nearest'});return}
       busy=true;b.disabled=true;
       try{const out=await api('redraft',{thread_id:d.id,version:d.version,instruction,original_draft:joined(el),remember});delete edits[editKey(d)];if(out.rule_id)remember_rule(out.rule_id,instruction);say(out.remembered?'已記住這條指示，AI 正在重寫，約 1 分鐘。':'AI 正在重寫，約 1 分鐘。')}
       catch(e){say(e.message,true)}
       finally{busy=false}
       await load(true);return}
-    if(act==='skip'||act==='cancel'){
-      if(act==='skip'&&!b.dataset.armed){b.dataset.armed='1';b.textContent='再按一次確定';setTimeout(()=>{if(b.isConnected){delete b.dataset.armed;b.textContent='不發送'}},4000);return}
-      busy=true;b.disabled=true;const nx=act==='skip'?nextAfter(d.id):null;let flash=null;
-      try{await api(act,{thread_id:d.id,version:d.version});delete edits[editKey(d)];if(act==='skip')flash=`— ${d.name} 已結案（沒有發送）`;else say('已取消核准，回到待審核。')}
+    // 11/19 第二批（ChatGPT）：「不發送」先選原因（選了就結案），「AI 學得如何」才看得出有多少是 AI 寫不好
+    if(act==='skip-cancel'){el.querySelector('.skipwhy').hidden=true;el.querySelector('[data-act="skip"]')?.setAttribute('aria-expanded','false');return}
+    if(act==='skip'){const w=el.querySelector('.skipwhy');if(w){w.hidden=!w.hidden;b.setAttribute('aria-expanded',!w.hidden)}return}
+    if(act==='skip-why'||act==='cancel'){
+      const kind=act==='cancel'?'cancel':'skip';
+      busy=true;b.disabled=true;const nx=kind==='skip'?nextAfter(d.id):null;let flash=null;
+      try{await api(kind,kind==='skip'?{thread_id:d.id,version:d.version,reason:b.dataset.why}:{thread_id:d.id,version:d.version});delete edits[editKey(d)];if(kind==='skip')flash=`— ${d.name} 已結案（沒有發送）`+(b.dataset.why==='bad_draft'?'・記得自己回客人':'');else say('已取消核准，回到待審核。')}
       catch(e){say(e.message,true)}
       finally{busy=false}
       await load(true);if(flash)goNext(nx,flash,'skip');return}

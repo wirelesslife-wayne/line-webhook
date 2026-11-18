@@ -77,7 +77,7 @@ def test_weekly_line_text(db, logged, monkeypatch):
     text = quality.weekly_text(db, today=monday)
     lines = text.splitlines()
     assert lines[0] == '🔴 AI 客服草稿上週成績（11/23～11/29）'
-    assert lines[1] == f'首稿可用率：樣本不足（4／{quality.ENOUGH} 則）' and lines[2] == '重大錯誤：1 次（金額 1）'
+    assert lines[1] == f'首稿可用率：樣本不足（4／{quality.ENOUGH} 則）' and lines[2] == '高風險修改：1 次（金額 1）'
     assert lines[3] == '數字比對通過：3／3 則'
     assert len(lines) <= 12 and lines[-1].endswith('/desk/quality')
 

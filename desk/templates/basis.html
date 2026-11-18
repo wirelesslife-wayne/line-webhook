@@ -31,11 +31,11 @@ header form button{white-space:nowrap}header form span{white-space:nowrap}
 <nav class="nav main" aria-label="客服管道">{{ nav.links('knowledge') }}</nav>
 <div class="kb">
 <p id="feedback" role="status"></p>
-<p class="lead">AI 擬稿時，價格、工時、門市一律以<b>公司正式資料</b>為準，再照<b>我的回覆規則</b>和<b>過往核准的回覆</b>來寫。舊範例不會蓋過最新的價格。</p>
+<p class="lead">價格、工時、門市以<b>公司正式資料</b>為準，舊回覆不會蓋過最新資料。</p>
 <p class="jump"><a href="#docs">公司正式資料 <span id="n-docs"></span></a><a href="#rules">我的回覆規則 <span id="n-rules"></span></a><a href="#learned">過往核准的回覆 <span id="n-learned"></span></a></p>
 
 <!-- 11/18 Gemini：AI 最先照的是正式資料，所以放最上面 -->
-<h2 id="docs">📋 公司正式資料</h2><p class="h2sub">這裡只能看。有錯按「回報資料有誤」，會傳 LINE 給你，轉給 Claude 修改</p>
+<h2 id="docs">📋 公司正式資料</h2><p class="h2sub">只能看。有錯按「回報資料有誤」</p>
 <div class="list" id="docs-list"><p class="muted">讀取中…</p></div>
 
 <div class="headrow"><div><h2 id="rules">✍️ 我的回覆規則</h2><p class="h2sub" id="rules-sub">每一則草稿都會照做</p></div><button class="primary" id="rule-add-open">＋ 新增規則</button></div>

@@ -432,6 +432,10 @@ def locked(cur, tid, version, check_state=True):
     return c
 
 
+# Wayne 11/19 (ChatGPT): 不發送 asks why; keys match SKIP_WHY in templates/fb.js
+SKIP_REASONS = {'answered': '已在前台回過', 'no_need': '不用回', 'bad_draft': 'AI 寫不好，自己回', 'other': '其他'}
+
+
 def action(store,staff,data,kind):
     from .knowledge import require_reviewer
     require_reviewer(staff)
@@ -443,8 +447,13 @@ def action(store,staff,data,kind):
             raise ActionError('狀態已更新，請重新載入',409)
         if kind not in ('cancel','skip'):
             raise ActionError('操作格式不正確',400)
+        why = data.get('reason') or ''
+        if kind=='skip' and why and why not in SKIP_REASONS:
+            raise ActionError('不發送的原因不正確',400)
         cur.execute("UPDATE desk_fb_attempts SET status='cancelled',reason='Wayne 取消核准',updated_at=NOW() WHERE thread_id=%s AND status='approved'",(c['id'],))
-        cur.execute("UPDATE desk_fb_threads SET status=%s,note=%s,draft_token=NULL,updated_at=NOW() WHERE id=%s",('ready' if kind=='cancel' else 'skip','取消核准' if kind=='cancel' else '不回覆',c['id']))
+        cur.execute("UPDATE desk_fb_threads SET status=%s,note=%s,draft_token=NULL,updated_at=NOW() WHERE id=%s",('ready' if kind=='cancel' else 'skip','取消核准' if kind=='cancel' else '不回覆'+('：'+SKIP_REASONS[why] if why else ''),c['id']))
+        if kind=='skip' and why:
+            cur.execute('INSERT INTO desk_fb_skips(thread_id,staff_id,reason) VALUES(%s,%s,%s)',(c['id'],staff['id'],why))
         if kind=='skip' and c['channel']!='line_message':  # Wayne 11/15 23:50: the next Meta run removes the 持續追蹤 star
             cur.execute("UPDATE desk_fb_threads SET unstar='todo' WHERE id=%s",(c['id'],))
     return dict(ok=True)

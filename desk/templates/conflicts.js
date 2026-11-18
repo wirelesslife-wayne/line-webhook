@@ -8,7 +8,7 @@ async function api(url,body){
 function say(t,bad){const f=el('feedback');f.textContent=t||'';f.classList.toggle('bad',!!bad);if(t&&!bad)setTimeout(()=>{if(f.textContent===t)f.textContent=''},4000)}
 // 一次只看一題（ChatGPT／Gemini 11/18：10 題全展開太長）：點一個說法 →「確定，下一題」；都不對 →「我自己寫」；不急 →「之後再說」
 // 門市、電話、價格、工時的題目（Wayne 11/18 選 A）：上面並排正式資料；選了跟正式資料不同的說法，先問要不要蓋過正式資料
-let tab='open',page=0,ITEMS=[],picked={},writing={},confirming={};
+let tab='open',page=0,product='',ITEMS=[],picked={},writing={},confirming={};
 function src(o){const b=[];if(o.latest)b.push('最近 '+o.latest);if(o.replies)b.push(`過往 ${o.replies} 則回覆`);if(o.named.length)b.push(o.named.join('、'));return b.join('・')}
 function storeNames(x){return x.kind==='dealer'&&x.official.length?x.official[0].text.split('\n').map(l=>l.split('｜')[0]).filter(Boolean):[]}
 function choices(x){const n=storeNames(x).join('、');
@@ -38,7 +38,11 @@ function draw(d){
  el('prev').hidden=page===0;el('next').hidden=!d.has_more;el('prev').parentElement.hidden=tab!=='decided'||(page===0&&!d.has_more);
 }
 let LAST=null;
-async function load(){const d=await api(`conflicts?tab=${tab}&page=${page}`);ITEMS=d.items;LAST=d;draw(d)}
+// 11/19 第二批（Gemini）：可以只看某個產品的題目，一次處理同一類
+function products(d){const s=el('product');const all=(d.products||[]).reduce((a,p)=>a+p.n,0);
+ s.innerHTML=`<option value="">全部產品（${all}）</option>`+(d.products||[]).map(p=>`<option value="${esc(p.name)}"${p.name===product?' selected':''}>${esc(p.name)}（${p.n}）</option>`).join('');
+ if(product&&!(d.products||[]).some(p=>p.name===product)){product='';s.value=''}}
+async function load(){const d=await api(`conflicts?tab=${tab}&page=${page}&product=${encodeURIComponent(product)}`);ITEMS=d.items;LAST=d;products(d);draw(d)}
 async function decide(id,body,done){
  try{const out=await api('conflicts/decide',Object.assign({id},body));const x=ITEMS.find(i=>i.id===id);say(out.scope&&x?result(x,out.scope):done)}
  catch(x){if(x.status!==409)throw x;confirming[id]=Object.assign({msg:x.message},body);draw(LAST);return false}
@@ -65,4 +69,5 @@ document.addEventListener('click',async e=>{
 document.addEventListener('input',e=>{const m=e.target.id.match(/^own-(\d+)$/);if(m&&writing[m[1]])writing[m[1]].text=e.target.value});
 el('prev').onclick=async()=>{page=Math.max(0,page-1);await load().catch(x=>say(x.message,true));scrollTo(0,0)};
 el('next').onclick=async()=>{page++;await load().catch(x=>say(x.message,true));scrollTo(0,0)};
+el('product').onchange=async e=>{product=e.target.value;page=0;picked={};writing={};confirming={};await load().catch(x=>say(x.message,true))};
 load().catch(x=>say(x.message,true));

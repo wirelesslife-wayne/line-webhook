@@ -160,7 +160,7 @@ def make_blueprint(store,notifier=None):
             page = max(0,int(request.args.get('page',0)))
         except ValueError:
             raise ActionError('頁碼不正確',400)
-        return jsonify(kb_conflicts.listing(store,request.args.get('tab','open'),page))
+        return jsonify(kb_conflicts.listing(store,request.args.get('tab','open'),page,request.args.get('product','')))
 
     @bp.post('/api/conflicts/decide')
     def conflicts_decide():

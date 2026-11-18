@@ -148,15 +148,21 @@ def counts(store):
     return dict(row)
 
 
-def listing(store, tab='open', page=0):
+def listing(store, tab='open', page=0, product=''):
+    """product: only this product's questions (the part of grp before ×; Gemini 11/18 page review, batch 2)."""
     if tab not in TABS:
         raise ActionError('分頁不正確', 400)
+    if not isinstance(product, str) or len(product) > 40:
+        raise ActionError('產品分類不正確', 400)
     order = 'decided_at DESC' if tab == 'decided' else 'rank, id'
-    rows = store.all(f"""SELECT * FROM desk_kb_conflicts WHERE status=%s ORDER BY {order} LIMIT %s OFFSET %s""",
-                     (tab, PAGE + 1, max(0, int(page)) * PAGE))
+    rows = store.all(f"""SELECT * FROM desk_kb_conflicts WHERE status=%s AND (%s='' OR split_part(grp,'×',1)=%s)
+      ORDER BY {order} LIMIT %s OFFSET %s""", (tab, product, product, PAGE + 1, max(0, int(page)) * PAGE))
+    products = store.all("""SELECT split_part(grp,'×',1) AS name, COUNT(*) AS n FROM desk_kb_conflicts WHERE status=%s
+      GROUP BY 1 ORDER BY 2 DESC, 1""", (tab,))
     kb = store.kb(OFFICIAL)
     known = corpus(kb)
-    return dict(items=[_item(r, kb, known) for r in rows[:PAGE]], has_more=len(rows) > PAGE, **counts(store))
+    return dict(items=[_item(r, kb, known) for r in rows[:PAGE]], has_more=len(rows) > PAGE,
+                products=[dict(p) for p in products], product=product, **counts(store))
 
 
 def decide(store, staff, data):

@@ -89,4 +89,10 @@ CREATE TABLE IF NOT EXISTS desk_fb_redrafts (
  instruction TEXT NOT NULL, original TEXT NOT NULL DEFAULT '', remembered BOOLEAN NOT NULL DEFAULT FALSE,
  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
 CREATE INDEX IF NOT EXISTS desk_fb_redrafts_thread ON desk_fb_redrafts(thread_id,id);
+-- Wayne 11/19 (ChatGPT, page review batch 2): 不發送 asks why, so 「AI 學得如何」 can show how many drafts were thrown away
+-- because the AI wrote them badly (those never reach the approved-draft numbers).
+CREATE TABLE IF NOT EXISTS desk_fb_skips (
+ id BIGSERIAL PRIMARY KEY, thread_id TEXT NOT NULL REFERENCES desk_fb_threads(id), staff_id BIGINT NOT NULL REFERENCES desk_users(id),
+ reason TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
+CREATE INDEX IF NOT EXISTS desk_fb_skips_at ON desk_fb_skips(created_at);
 """

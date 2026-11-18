@@ -2,7 +2,7 @@
 
 首稿可用率  the AI's first draft went out as written or with small wording edits: no 修改指示 redraft before the approval,
             no amount / phone / link the AI wrote taken out, and at least 85% of the text kept.
-重大錯誤    the AI wrote an amount, phone number or link that Wayne took out or changed (missing ones he added are not counted
+高風險修改  (was 重大錯誤; ChatGPT 11/19: not yet proven wrong) the AI wrote an amount, phone number or link that Wayne took out or changed (missing ones he added are not counted
             here; they only make the draft not usable).
 數字比對通過率 (was 抽查正確率; ChatGPT 11/18: it only checks numbers) drafts sent unchanged, checked against the official data (price table, canned replies, FAQ, hours, stores):
             catches what Wayne may have missed. Up to SPOT drafts a week, free (no AI call).
@@ -114,6 +114,17 @@ def summary(items, spots):
                 spot_pct=_pct(len(spots) - len(bad), len(spots)))
 
 
+def skipped(store, since, until=None):
+    """Wayne 11/19 (ChatGPT): drafts thrown away with 不發送, by reason. They never reach the approved-draft numbers,
+    so a draft he discarded because the AI wrote it badly would otherwise be invisible."""
+    from .fb import SKIP_REASONS
+    until = until or datetime.now(TAIPEI) + timedelta(days=1)
+    got = {r['reason']: r['n'] for r in store.all("""SELECT reason, COUNT(*) AS n FROM desk_fb_skips
+      WHERE created_at>=%s AND created_at<%s GROUP BY reason""", (since, until))}
+    return dict(total=sum(got.values()), bad=got.get('bad_draft', 0),
+                parts=[dict(label=v, n=got[k]) for k, v in SKIP_REASONS.items() if got.get(k)])
+
+
 def _week_start(d):
     d = d.astimezone(TAIPEI)
     return datetime(d.year, d.month, d.day, tzinfo=TAIPEI) - timedelta(days=d.weekday())
@@ -143,14 +154,14 @@ def gate(weeks):
     # 11/18 ChatGPT＋Gemini review: say what is still missing, not only that it is missing
     thin = [w for w in weeks if w['samples'] < GATE['weekly']]
     if thin:
-        return dict(ok=False, text=f'還差：{len(thin)} 週不到 {GATE["weekly"]} 則（最近一週 {weeks[-1]["samples"]} 則）')
+        return dict(ok=False, kind='thin', text=f'還差：{len(thin)} 週不到 {GATE["weekly"]} 則（最近一週 {weeks[-1]["samples"]} 則）')
     if any(w['major'] for w in weeks):
-        return dict(ok=False, text=f'還差：近 {GATE["weeks"]} 週重大錯誤 {sum(w["major"] for w in weeks)} 次，要 0 次')
+        return dict(ok=False, kind='major', text=f'還差：近 {GATE["weeks"]} 週高風險修改 {sum(w["major"] for w in weeks)} 次，要 0 次')
     low = [w for w in weeks if not w['samples'] or w['usable_pct'] < GATE['rate']]
     if low:
-        return dict(ok=False, text=f'還差：{len(low)} 週可用率不到 {GATE["rate"]}%（最低 {min(w["usable_pct"] or 0 for w in low)}%）')
+        return dict(ok=False, kind='low', text=f'還差：{len(low)} 週可用率不到 {GATE["rate"]}%（最低 {min(w["usable_pct"] or 0 for w in low)}%）')
     # ChatGPT 11/18: the numbers only say Wayne rarely edits; a person still checks car fit, features and warranty first
-    return dict(ok=True, text=f'數字連續 {GATE["weeks"]} 週達標，下一步：人工抽查內容（車款、功能、保固）')
+    return dict(ok=True, kind='ok', text=f'數字連續 {GATE["weeks"]} 週達標，下一步：人工抽查內容（車款、功能、保固）')
 
 
 def report(store, today=None, since=None):
@@ -184,6 +195,7 @@ def report(store, today=None, since=None):
     problems = merged([_problem(r, [e]) for r in recent for e in r['errors']])
     flagged = [_problem(s, s['flags']) for s in spots if s['flags']]
     return dict(card=card, weeks=weeks, categories=cats, problems=problems, flagged=flagged[:20],
+                skipped=skipped(store, max(start, today - timedelta(days=7))),
                 since=_short(max(start, today - timedelta(days=7))), baseline=_short(BASELINE), enough=ENOUGH, gate=GATE)
 
 
@@ -211,11 +223,14 @@ def weekly_text(store, today=None, url='https://line-webhook-airz.onrender.com/d
     head = '🔴' if w['major'] else '📈'
     lines = [f"{head} AI 客服草稿上週成績（{_short(a)}～{_short(b - timedelta(days=1))}）",
              f"首稿可用率：{rate}",
-             f"重大錯誤：{major}",
+             f"高風險修改：{major}",
              f"數字比對通過：{w['spot_ok']}／{w['spot_checked']} 則" if w['spot_checked'] else '數字比對：上週沒有原樣送出的草稿',
              f"樣本：{w['samples']} 則（廣告客人 {w['ads']}、一般 {w['samples'] - w['ads']}）"]
     if w['redrafted']:
         lines.append(f"叫 AI 重擬：{w['redrafted']} 則")
+    s = skipped(store, max(a, BASELINE), b)
+    if s['total']:
+        lines.append(f"不發送：{s['total']} 則" + (f"（AI 寫不好 {s['bad']} 則）" if s['bad'] else ''))
     worst = {}
     for r in items:
         if not r['usable']:

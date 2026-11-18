@@ -27,55 +27,82 @@
 .qa .rule{font-size:14px;color:var(--muted);background:#fafbfc;border:1px dashed #c9d3dc;border-radius:8px;padding:8px 12px;margin-top:12px;line-height:1.7}
 @media(max-width:700px){header small{display:none}header{padding:10px 14px}header form span{display:none}.nav.main{gap:16px}.nav.main a{font-size:16px}
 .qa .tiles{grid-template-columns:repeat(2,minmax(0,1fr))}.qa .tile b{font-size:26px}.qa table{font-size:14px}.qa th,.qa td{padding:7px 6px}.qa .hide-m{display:none}}
+.qa .skipline{background:#fff;border:1px solid var(--line);border-radius:10px;padding:8px 12px;margin:8px 0;font-size:15px}.qa .skipline small{display:block;color:var(--muted);font-size:13px;margin-top:2px}
+/* Wayne 11/19：字黏在一起、表格沒對齊、太多字。說明收進「怎麼算」，表格改成固定欄寬的格子，沒資料的類別併成一行 */
+.qa .lead{font-size:15px;line-height:1.5;background:none;border:0;padding:0;margin:4px 0 10px;color:var(--muted)}.qa .lead b{color:var(--ink)}
+.qa h2{margin-top:26px}.qa .tile small{line-height:1.4}
+.qa .grid{border:1px solid var(--line);border-radius:12px;background:#fff;overflow:hidden}
+.qa .gr{display:grid;grid-template-columns:minmax(0,1fr) 5.5em 4em 3.5em;gap:0 8px;align-items:baseline;padding:10px 12px;border-bottom:1px solid var(--line);font-size:15px}
+.qa .gr:last-child{border-bottom:0}.qa .gr.h{background:#f4f7f9;font-size:13px;color:var(--muted);font-weight:700;padding:7px 12px}
+.qa .gr>span{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}.qa .gr>span.few{font-size:13px;color:var(--muted)}
+.qa .gr>b{font-weight:600;min-width:0;overflow-wrap:anywhere}.qa .gr>b em{font-style:normal;font-size:12px;font-weight:400;color:var(--muted);margin-left:6px}
+.qa .gr>small{grid-column:1/-1;font-size:13px;color:var(--muted);margin-top:3px}.qa .gr>small.ok{color:var(--good);font-weight:700}
+.qa .nodata{font-size:13px;color:var(--muted);padding:9px 12px;margin:0;line-height:1.6}
+.qa details.rule summary{cursor:pointer;font-weight:700;color:var(--brand);min-height:32px}.qa details.rule dl{margin:6px 0 0}.qa details.rule dt{font-weight:700;color:var(--ink);margin-top:10px}.qa details.rule dd{margin:2px 0 0}
 </style>
 <nav class="nav main" aria-label="客服管道">{{ nav.links('quality') }}</nav>
 <div class="qa">
-<p class="lead">看 AI 第一次擬的草稿，你要改多少。<b>從 <span id="baseline"></span> 起算</b>（之前叫 AI 重擬的沒有紀錄，數字會偏高）。每週一早上也會傳一則 LINE 給你。<br><b>注意：</b>這裡量的是「你要改多少」，不是「AI 一定答對」；你沒發現的錯，數字抓不到。</p>
+<p class="lead">AI 第一版草稿你要改多少。<b>不等於答對率。</b></p>
 <div class="tiles" id="tiles"><p class="empty">讀取中…</p></div>
+<p id="skipped" class="skipline" hidden></p>
 <h2>每週變化</h2>
-<div class="scroll"><table><thead><tr><th>週</th><th class="n">首稿可用率</th><th class="n">重大錯誤</th><th class="n hide-m">數字比對</th><th class="n">樣本</th></tr></thead><tbody id="weeks"></tbody></table></div>
-<h2>能不能開全自動</h2>
-<p class="muted">不到 <span class="enough"></span> 則只顯示「樣本不足」。門檻：近 <span id="g-weeks"></span> 週每週都 ≥<span id="g-rate"></span>%、每週至少 <span id="g-n"></span> 則、重大錯誤 0 次；數字達標後還要人工抽查內容才開。</p>
+<div class="grid" id="weeks"></div>
+<h2>全自動評估</h2>
+<p class="muted">門檻：連續 <span id="g-weeks"></span> 週，每週至少 <span id="g-n"></span> 則、可用率 ≥<span id="g-rate"></span>%、高風險 0 次。樣本不夠的類別不另外寫。</p>
 <h3>依題目</h3>
-<div class="scroll"><table><thead><tr><th>題目</th><th class="n">首稿可用率</th><th class="n">重大錯誤</th><th class="n">樣本</th></tr></thead><tbody id="topics"></tbody></table></div>
-<h3>依客人來源（跟上面是同一批草稿，換個分法）</h3>
-<div class="scroll"><table><thead><tr><th>來源</th><th class="n">首稿可用率</th><th class="n">重大錯誤</th><th class="n">樣本</th></tr></thead><tbody id="who"></tbody></table></div>
-<h2>近 7 天的重大錯誤</h2>
-<p class="muted">AI 寫的金額、電話、連結被你改掉或拿掉；同樣的錯合併成一行。</p>
+<div class="grid" id="topics"></div>
+<h3>依客人來源</h3>
+<div class="grid" id="who"></div>
+<h2>高風險修改・近 7 天</h2>
 <div id="problems"></div>
-<h2 id="flagged-h">數字比對發現</h2>
-<p class="muted">你原樣送出的草稿，自動跟正式資料（價格表、制式回覆、常見問答、工時表、門市清單）比對，找不到的數字列在這裡，看看是不是漏看了。<b>只比對數字有沒有，不會發現「價格對錯車款」。</b></p>
-<div id="flagged"></div>
-<p class="rule"><b>首稿可用率</b>：AI 第一版草稿直接送出、或只改語氣小地方（八成五以上沒動；兩三句的短回覆要九成五），而且沒叫 AI 重擬、沒改金額電話連結。<br><b>重大錯誤</b>：AI 寫的金額、電話、連結被你改掉或拿掉。你自己多補的不算錯，但那則不算「可用」。車款適用、功能、保固寫錯目前抓不到，要靠開全自動前的人工抽查。<br><b>數字比對通過率</b>：每週最多抽 30 則原樣送出的草稿，數字都在正式資料裡找得到的比例。不花 AI 費用。</p>
+<section id="flagged-sec" hidden><h2 id="flagged-h">數字比對發現</h2>
+<p class="muted">你原樣送出的草稿裡，正式資料找不到的數字。</p>
+<div id="flagged"></div></section>
+<details class="rule"><summary>這些數字怎麼算？</summary><dl>
+<dt>首稿可用率</dt><dd>AI 第一版直接送出，或只小改語氣（八成五以上沒動；兩三句的短回覆要九成五），而且沒叫 AI 重擬、沒改金額電話連結。</dd>
+<dt>高風險修改</dt><dd>AI 寫的金額、電話、連結被你改掉或拿掉。不一定是 AI 寫錯，但這種改動最容易出事，所以單獨算。</dd>
+<dt>數字比對</dt><dd>每週最多抽 30 則原樣送出的草稿，看數字在正式資料（價格表、制式回覆、常見問答、工時表、門市清單）裡找不找得到。只比數字，不會發現「價格對錯車款」。不花 AI 費用。</dd>
+<dt>樣本不足</dt><dd>不到 <span class="enough"></span> 則不給百分比。</dd>
+<dt>不發送</dt><dd>你按「不發送」的草稿不算進可用率，另外列出原因。</dd>
+<dt>要注意</dt><dd>這裡量的是「你要改多少」。你沒發現的錯抓不到；車款適用、功能、保固寫錯，要靠開全自動前的人工抽查。<span id="baseline"></span> 之前叫 AI 重擬沒有紀錄，所以從那天重新算。每週一早上會傳 LINE 給你。</dd>
+</dl></details>
 </div>
 </main><script nonce="{{ g.nonce }}">
 const el=id=>document.getElementById(id);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const rate=(x,E)=>x.samples>=E?x.usable_pct+'%':(x.samples?`樣本不足（${x.samples}／${E}）`:'—');
 function tiles(c,E){
  const enough=c.samples>=E;
  return [
-  [enough?(c.usable_pct>=95?'ok':''):'', enough?c.usable_pct+'%':'樣本不足', '首稿可用率', enough?`AI 第一版不用改或只小改：${c.usable}／${c.samples} 則`:`要滿 ${E} 則才算，現在 ${c.samples} 則`, !enough,''],
-  [!c.samples?'':c.major?'bad':'ok', c.samples?c.major+' 次':'—', '重大錯誤', c.samples?'金額、電話、連結被你改掉或拿掉':'還沒有資料，不代表沒出錯', !c.samples,'#problems'],  // 11/18：0 則時不顯示綠色「0 次」
-  [c.spot_checked&&c.spot_pct<95?'bad':'', c.spot_checked?c.spot_pct+'%':'—', '數字比對通過率', c.spot_checked?`${c.spot_ok}／${c.spot_checked} 則數字對得上`:'還沒有原樣送出的草稿', !c.spot_checked,'#flagged-h'],
-  ['', c.samples+' 則', '樣本', c.samples?`廣告客人 ${c.ads}、一般 ${c.samples-c.ads}`:'從 '+document.getElementById('baseline').textContent+' 起，核准第一則就開始算', false,'']
+  [enough?(c.usable_pct>=95?'ok':''):'', enough?c.usable_pct+'%':'樣本不足', '首稿可用率', enough?`${c.usable}／${c.samples} 則不用改`:`滿 ${E} 則才算，現在 ${c.samples} 則`, !enough,''],
+  [!c.samples?'':c.major?'bad':'ok', c.samples?c.major+' 次':'—', '高風險修改', c.samples?'金額、電話、連結被你改掉':'還沒有資料，不代表沒出錯', !c.samples,'#problems'],  // 11/18：0 則時不顯示綠色「0 次」
+  [c.spot_checked&&c.spot_pct<95?'bad':'', c.spot_checked?c.spot_pct+'%':'—', '數字比對', c.spot_checked?`${c.spot_ok}／${c.spot_checked} 則對得上`:'還沒有原樣送出的草稿', !c.spot_checked,'#flagged-h'],
+  ['', c.samples+' 則', '樣本', c.samples?`廣告 ${c.ads}・一般 ${c.samples-c.ads}`:'核准第一則就開始算', false,'']
  ].map(([cls,big,name,sub,small,href])=>`<${href?`a href="${href}"`:'div'} class="tile ${cls}"><span>${name}</span><b class="${small?'small':''}">${esc(big)}</b><small>${esc(sub)}</small></${href?'a':'div'}>`).join('');
 }
 function problem(p,spot){
  const more=p.times>1?`<details><summary>看這 ${p.times} 次</summary><div>${p.more.map(esc).join('<br>')}</div></details>`:`<small>${esc(p.day)}・${esc(p.channel)}・${esc(p.name)}・${esc(p.intent)}</small>`;
  return `<div class="prob${spot?' spot':''}">${esc(p.what)}${p.times>1?` <b class="times">共 ${p.times} 次</b>`:''}${more}</div>`}
-function catRow(c,E){return `<tr><td>${esc(c.name)}<small class="${c.gate.ok?'gate-ok':''}">${c.gate.ok?'✅ ':''}${esc(c.gate.text)}</small></td><td class="n">${esc(rate(c,E))}</td><td class="n">${c.samples?c.major+' 次':'—'}</td><td class="n">${c.samples}</td></tr>`}
+// 固定四欄：名稱｜可用率｜高風險｜樣本，手機電腦都對齊
+const HEAD=first=>`<div class="gr h"><b>${first}</b><span>可用率</span><span>高風險</span><span>樣本</span></div>`;
+const cells=(x,E)=>`${x.samples>=E?`<span>${x.usable_pct}%</span>`:x.samples?'<span class="few">樣本不足</span>':'<span>—</span>'}<span>${x.samples?x.major+' 次':'—'}</span><span>${x.samples}</span>`;
+function cats(list,first,E){
+ const has=list.filter(c=>c.samples),none=list.filter(c=>!c.samples);
+ return HEAD(first)+has.map(c=>`<div class="gr"><b>${esc(c.name)}</b>${cells(c,E)}${c.gate.kind==='thin'?'':`<small class="${c.gate.ok?'ok':''}">${c.gate.ok?'✅ ':''}${esc(c.gate.text)}</small>`}</div>`).join('')
+  +(none.length?`<p class="nodata">還沒有資料：${none.map(c=>esc(c.name)).join('、')}</p>`:'')}
 async function load(){
  const r=await fetch('/desk/api/quality');if(r.status===401){location.href='/desk/login';return}
  const d=await r.json();if(!r.ok)throw Error(d.error||'讀取失敗');
  const E=d.enough;el('baseline').textContent=d.baseline;document.querySelectorAll('.enough').forEach(x=>x.textContent=E);
  el('g-weeks').textContent=d.gate.weeks;el('g-rate').textContent=d.gate.rate;el('g-n').textContent=d.gate.weekly;
  el('tiles').innerHTML=tiles(d.card,E);
+ // 11/19 第二批（ChatGPT）：按「不發送」丟掉的草稿不在上面的數字裡，另外列
+ const s=d.skipped;if(s&&s.total){el('skipped').innerHTML=`近 7 天按「不發送」<b>${s.total} 則</b>：${s.parts.map(p=>esc(p.label)+' '+p.n).join('、')}<small>不算進首稿可用率</small>`;el('skipped').hidden=false}
  const weeks=d.weeks.filter(w=>!w.before);
- el('weeks').innerHTML=weeks.map(w=>`<tr class="${w.current?'cur':''}"><td>${esc(w.label)}${w.current?'<small>本週進行中，還沒結束</small>':''}</td><td class="n">${esc(rate(w,E))}</td><td class="n">${w.samples?w.major+' 次':'—'}</td><td class="n hide-m">${w.spot_checked?w.spot_ok+'／'+w.spot_checked:'—'}</td><td class="n">${w.samples}</td></tr>`).join('')||'<tr><td colspan="5" class="empty">還沒有資料</td></tr>';
- el('topics').innerHTML=d.categories.filter(c=>c.kind==='topic').map(c=>catRow(c,E)).join('');
- el('who').innerHTML=d.categories.filter(c=>c.kind==='who').map(c=>catRow(c,E)).join('');
+ el('weeks').innerHTML=HEAD('週')+(weeks.map(w=>`<div class="gr${w.current?' cur':''}"><b>${esc(w.label)}${w.current?'<em>本週，還沒結束</em>':''}</b>${cells(w,E)}</div>`).join('')||'<p class="nodata">還沒有資料</p>');
+ el('topics').innerHTML=cats(d.categories.filter(c=>c.kind==='topic'),'題目',E);
+ el('who').innerHTML=cats(d.categories.filter(c=>c.kind==='who'),'來源',E);
  el('problems').innerHTML=d.problems.map(p=>problem(p)).join('')||`<p class="empty">${d.card.samples?'近 7 天沒有 👍':'還沒有資料'}</p>`;
+ el('flagged-sec').hidden=!d.flagged.length;
  el('flagged').innerHTML=d.flagged.map(p=>problem(p,true)).join('')||`<p class="empty">${d.card.spot_checked?'近 7 天數字都對得上 👍':'還沒有原樣送出的草稿可以比對'}</p>`;
 }
 load().catch(x=>{el('tiles').innerHTML=`<p class="empty">${esc(x.message)}</p>`});
