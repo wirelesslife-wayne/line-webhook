@@ -83,3 +83,69 @@ def test_decided_answers_reach_the_drafting_ai_and_a_new_answer_replaces_the_old
     assert 'S14 後鏡頭畫質：後 1080P' in s14 and 'STARVIS 2' not in s14
     post(client, staff, 'reopen', dict(id=ids['S14 後鏡頭畫質']))
     assert 'S14 後鏡頭畫質' not in system_for('S14 後鏡頭畫質如何')
+
+
+def test_store_question_shows_the_official_list_and_an_override_needs_his_ok(db, logged, monkeypatch):
+    """Wayne 11/18 picked 「A」: ChatGPT, Gemini and Claude warned a pick could silently override the official dealer list."""
+    from unittest.mock import Mock
+    from psycopg2.extras import Json
+    from desk.db import now
+    from desk.engine import Engine
+    from desk import kb_conflicts
+    _, client, staff, _ = logged
+    staff = wayne(db, staff)
+    official = [s for s in __import__('desk.dealers', fromlist=['stores']).stores(db.kb(['經銷商清單.txt'])['經銷商清單.txt'])
+                if s['county'] == '台中']
+    assert official  # the real list has 台中 stores
+    first = kb_conflicts.SUFFIX.sub('', official[0]['name'])
+    db.execute("""INSERT INTO desk_kb_conflicts(digest,grp,topic,options,rank) VALUES('t1','不分產品×門市地點與營業時間',
+      '台中現行經銷商門市名單',%s,1)""", (Json([dict(say=f'台中可以到{first}。', sources=['li1'], latest='2026-11-17'),
+                                         dict(say='台中主要經銷商為某某汽車音響，0900-000-111。', sources=[], latest='2026-04-01')]),))
+    cid = db.one("SELECT id FROM desk_kb_conflicts WHERE digest='t1'")['id']
+    item = client.get('/desk/api/conflicts').get_json()['items'][0]
+    assert item['official'] and official[0]['phone'] in item['official'][0]['text']  # the official list is shown
+    assert item['options'][0]['warn'] == [] and any('0900-000-111' in w for w in item['options'][1]['warn'])
+    out = post(client, staff, 'decide', dict(id=cid, choice=1))
+    assert out.status_code == 409 and '0900-000-111' in out.get_json()['error']  # asks first
+    assert db.one('SELECT status FROM desk_kb_conflicts WHERE id=%s', (cid,))['status'] == 'open'
+
+    def system_for(text):
+        provider = Mock(side_effect=[{}, dict(draft='您好～')])
+        Engine(db, provider).draft([{'time': 'now', 'role': 'user', 'text': text, 'new': True}], now(), channel='fb_message')
+        return provider.call_args.args[0][0]['content']
+
+    # 「選這個，但以正式資料為準」: kept, no override mark, the prompt says the official list wins
+    assert post(client, staff, 'decide', dict(id=cid, choice=1, override=False)).get_json()['override'] is False
+    s = system_for('台中哪裡可以裝')
+    assert '某某汽車音響，0900-000-111。' + kb_conflicts.OFFICIAL_WINS in s and kb_conflicts.OVERRIDE + '的是' in s
+    assert not db.all("SELECT 1 FROM desk_marks WHERE name LIKE 'kbr:%%'")
+    # 「改用這個，蓋過正式資料」: marked in the prompt and reported so the official file gets fixed
+    post(client, staff, 'reopen', dict(id=cid))
+    assert post(client, staff, 'decide', dict(id=cid, choice=1, override=True)).get_json()['override'] is True
+    assert '某某汽車音響，0900-000-111。' + kb_conflicts.OVERRIDE in system_for('台中哪裡可以裝')
+    report = db.one("SELECT value FROM desk_marks WHERE name LIKE 'kbr:%%'")['value']
+    assert '台中現行經銷商門市名單' in report and '"dealers"' in report
+    # 「加進正式清單」 (ChatGPT 11/18): the official stores are still listed next to the added one
+    post(client, staff, 'reopen', dict(id=cid))
+    assert post(client, staff, 'decide', dict(id=cid, choice=1, override='add')).get_json()['scope'] == 'add'
+    assert '某某汽車音響，0900-000-111。' + kb_conflicts.ADDED in system_for('台中哪裡可以裝')
+    assert client.get('/desk/api/conflicts?tab=decided').get_json()['items'][0]['scope'] == 'add'
+    # his own words go through the same check (Gemini 11/18)
+    post(client, staff, 'reopen', dict(id=cid))
+    assert post(client, staff, 'decide', dict(id=cid, choice=-1, answer='台中請洽 0900-222-333')).status_code == 409
+    assert post(client, staff, 'decide', dict(id=cid, choice=-1, answer='台中請洽 0900-222-333', override=False)).get_json()['scope'] == 'official'
+    assert '台中請洽 0900-222-333' + kb_conflicts.OFFICIAL_WINS in system_for('台中哪裡可以裝')
+    # an option that matches the official list needs no confirmation
+    post(client, staff, 'reopen', dict(id=cid))
+    out = post(client, staff, 'decide', dict(id=cid, choice=0)).get_json()
+    assert out['override'] is False and out['scope'] == ''
+
+
+def test_amounts_found_anywhere_in_official_data_or_their_sums_are_not_flagged():
+    from desk import kb_conflicts as k
+    known = {'9600', '3000', '320', '490', '1190'}
+    assert k.differs('price', '只報 S14 9,600 加專用後鏡頭 3,000，共 12,600 元', [], known) == []
+    assert k.differs('price', 'VIP 1 年 320、永久 1,190', [], known) == []
+    assert k.differs('price', '尾門 22,500 元', [], known) == ['金額／數字 22,500 在正式資料裡找不到']
+    assert k.differs('', '尾門 22,500 元', [], known) == []  # not a fact question
+    assert k.kind('颱風營業是否依停班停課') == '' and k.kind('台中現行經銷商門市名單') == 'dealer'
