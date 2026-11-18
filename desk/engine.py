@@ -401,7 +401,8 @@ class Engine:
                       '只在客人問到該題目時使用，不要主動多講。門市地址電話、價格、工時一律以參考資料的經銷商清單、價格表、'
                       '制式回覆、工時表為準：這裡跟它們不同時照正式資料寫，並在 staff_note 寫「衝突題說法跟正式資料不同」；'
                       '標' + OVERRIDE + '的是 Wayne 確認過要蓋過正式資料的，照這裡寫；標' + ADDED + '的是 Wayne 確認新增的門市，'
-                      '跟正式清單上那個縣市的門市一起列。'
+                      '跟正式清單上那個縣市的門市一起列。用到這兩種標記的說法時，staff_note 寫「用到 Wayne 新改的說法，正式資料尚待更新」'
+                      '（ChatGPT 11/18：還沒查證前不能看起來像已完成）。'
                       '跟上面 Wayne 11/15 事實不同時照這裡寫，並在 staff_note 提醒）：\n' + '\n'.join(settled))
         comment = channel in ('fb_comment','ig_comment')
         if channel == 'line_message':
