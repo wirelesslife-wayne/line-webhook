@@ -141,7 +141,9 @@ def register(bp,store):
         # ?pics=1 shows them to whoever opens that address, for the preview screenshots
         pics_on=request.args.get('pics')=='1' or bool(store.one("SELECT 1 AS ok FROM desk_marks WHERE name='pics_ui' AND value='on'"))
         vids_on=request.args.get('vids')=='1' or bool(store.one("SELECT 1 AS ok FROM desk_marks WHERE name='vids_ui' AND value='on'"))
-        return render_template('fb.html',line_on=line_on(),staff=g.staff,can_review=can_review(g.staff),labels=fb.LABELS,view=listing(),pics_on=pics_on,vids_on=vids_on,
+        # Wayne 11/18: the AI 學得如何 card stays hidden until he approves it (desk_marks quality_ui = on); ?quality=1 for previews
+        quality_on=can_review(g.staff) and (request.args.get('quality')=='1' or bool(store.one("SELECT 1 AS ok FROM desk_marks WHERE name='quality_ui' AND value='on'")))
+        return render_template('fb.html',line_on=line_on(),staff=g.staff,can_review=can_review(g.staff),labels=fb.LABELS,view=listing(),pics_on=pics_on,vids_on=vids_on,quality_on=quality_on,
             rules=[dict(id=r['id'],instruction=r['instruction'],active=r['active'],label=fb.LABELS.get(r['channel'],r['channel']),
                         time=local_time(r['created_at'])[5:16],said=r['conversation_summary'][:60])
                    for r in store.all('SELECT * FROM desk_edit_rules ORDER BY id DESC LIMIT 200')] if can_review(g.staff) else [])

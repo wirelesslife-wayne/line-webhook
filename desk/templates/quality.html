@@ -1,0 +1,82 @@
+{% extends 'base.html' %}
+{% block title %}AI 學得如何・無限科技客服工作台{% endblock %}
+{% block subtitle %}FB／IG／LINE 客服審稿 · 核准後才送出{% endblock %}
+{% block user %}<form method="post" action="/desk/logout"><span>{{ staff.username }}</span><input name="csrf" type="hidden" value="{{ staff.csrf }}"><button>登出</button></form>{% endblock %}
+{% block body %}<main>
+<style nonce="{{ g.nonce }}">
+/* Wayne 11/18: 準確率，照 Claude／ChatGPT／Gemini 共識：四個數字、樣本不足就不給百分比、從 11/19 重新起算；畫面再經兩家審過 */
+:root{--orange:#f08a24;--good:#1f6b3a}header{background:linear-gradient(120deg,#0a2c46,#0f3d5c 55%,#14456b)}header form{margin-left:auto}main{max-width:900px;margin:0 auto}
+.nav.main{display:flex;gap:22px;border-bottom:1px solid var(--line);margin:0 0 12px}.nav.main a{text-decoration:none;padding:10px 2px;min-height:44px;font-size:17px;font-weight:700;color:var(--muted);border-bottom:4px solid transparent}
+.nav.main a[aria-current=page]{color:var(--ink);border-bottom-color:var(--orange)}
+.qa{min-width:0}.qa .lead{background:#fff;border:1px solid var(--line);border-left:4px solid var(--brand);border-radius:10px;padding:8px 12px;margin:8px 0;font-size:15px;line-height:1.7;overflow-wrap:anywhere}
+.qa .tiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:12px 0}
+.qa .tile{display:block;text-decoration:none;color:inherit;background:#fff;border:1px solid var(--line);border-radius:12px;padding:12px;box-shadow:0 1px 2px #0f3d5c14;min-width:0}
+.qa .tile b{display:block;font-size:30px;line-height:1.2;color:var(--ink)}.qa .tile b.small{font-size:19px;padding:6px 0}
+.qa .tile span{font-size:15px;font-weight:700}.qa .tile small{display:block;color:var(--muted);font-size:13px;margin-top:4px;line-height:1.5}
+.qa .tile.bad b{color:#b42318}.qa .tile.ok b{color:var(--good)}
+.qa h2{font-size:18px;margin:22px 0 6px}.qa h3{font-size:15px;margin:14px 0 6px;color:var(--muted)}.qa p.muted{font-size:14px;color:var(--muted);margin:2px 0 8px;line-height:1.6}
+.qa .scroll{overflow-x:auto;border:1px solid var(--line);border-radius:12px;background:#fff}
+.qa table{width:100%;border-collapse:collapse;font-size:15px}
+.qa th,.qa td{padding:9px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}.qa tr:last-child td{border-bottom:0}.qa th{background:#f4f7f9;font-size:13px;color:var(--muted);font-weight:700}
+.qa td.n,.qa th.n{text-align:right;white-space:nowrap}.qa tr.cur td{background:#f6f7f9;color:#5b6670}.qa td small{display:block;font-size:12px;color:var(--muted);margin-top:2px}
+.qa td small.gate-ok{color:var(--good);font-weight:700}
+.qa .prob{background:#fff;border:1px solid var(--line);border-left:4px solid #b42318;border-radius:10px;padding:8px 12px;margin:8px 0;font-size:15px;overflow-wrap:anywhere}
+.qa .prob.spot{border-left-color:#e3a008}.qa .prob small{display:block;color:var(--muted);font-size:13px}.qa .prob b.times{color:#b42318;white-space:nowrap}
+.qa .prob details summary{cursor:pointer;color:var(--brand);font-size:13px;margin-top:2px}.qa .prob details div{font-size:13px;color:var(--muted);line-height:1.6}
+.qa .empty{color:var(--muted);font-size:15px;padding:6px 10px}
+.qa .rule{font-size:14px;color:var(--muted);background:#fafbfc;border:1px dashed #c9d3dc;border-radius:8px;padding:8px 12px;margin-top:12px;line-height:1.7}
+@media(max-width:700px){header small{display:none}header{padding:10px 14px}header form span{display:none}.nav.main{gap:16px}.nav.main a{font-size:16px}
+.qa .tiles{grid-template-columns:repeat(2,minmax(0,1fr))}.qa .tile b{font-size:26px}.qa table{font-size:14px}.qa th,.qa td{padding:7px 6px}.qa .hide-m{display:none}}
+</style>
+<nav class="nav main" aria-label="客服管道"><a href="/desk/fb">客服審稿</a><a href="/desk/knowledge">AI 回覆依據</a><a href="/desk/quality" aria-current="page">AI 學得如何</a></nav>
+<div class="qa">
+<p class="lead">看 AI 第一次擬的草稿，你要改多少。<b>從 <span id="baseline"></span> 起算</b>（之前叫 AI 重擬的沒有紀錄，數字會偏高）。每週一早上也會傳一則 LINE 給你。<br><b>注意：</b>這裡量的是「你要改多少」，不是「AI 一定答對」；你沒發現的錯，數字抓不到。</p>
+<div class="tiles" id="tiles"><p class="empty">讀取中…</p></div>
+<h2>每週變化</h2>
+<div class="scroll"><table><thead><tr><th>週</th><th class="n">首稿可用率</th><th class="n">重大錯誤</th><th class="n hide-m">數字比對</th><th class="n">樣本</th></tr></thead><tbody id="weeks"></tbody></table></div>
+<h2>能不能開全自動</h2>
+<p class="muted">不到 <span class="enough"></span> 則只顯示「樣本不足」。門檻：近 <span id="g-weeks"></span> 週每週都 ≥<span id="g-rate"></span>%、每週至少 <span id="g-n"></span> 則、重大錯誤 0 次；數字達標後還要人工抽查內容才開。</p>
+<h3>依題目</h3>
+<div class="scroll"><table><thead><tr><th>題目</th><th class="n">首稿可用率</th><th class="n">重大錯誤</th><th class="n">樣本</th></tr></thead><tbody id="topics"></tbody></table></div>
+<h3>依客人來源（跟上面是同一批草稿，換個分法）</h3>
+<div class="scroll"><table><thead><tr><th>來源</th><th class="n">首稿可用率</th><th class="n">重大錯誤</th><th class="n">樣本</th></tr></thead><tbody id="who"></tbody></table></div>
+<h2>近 7 天的重大錯誤</h2>
+<p class="muted">AI 寫的金額、電話、連結被你改掉或拿掉；同樣的錯合併成一行。</p>
+<div id="problems"></div>
+<h2 id="flagged-h">數字比對發現</h2>
+<p class="muted">你原樣送出的草稿，自動跟正式資料（價格表、制式回覆、常見問答、工時表、門市清單）比對，找不到的數字列在這裡，看看是不是漏看了。<b>只比對數字有沒有，不會發現「價格對錯車款」。</b></p>
+<div id="flagged"></div>
+<p class="rule"><b>首稿可用率</b>：AI 第一版草稿直接送出、或只改語氣小地方（八成五以上沒動；兩三句的短回覆要九成五），而且沒叫 AI 重擬、沒改金額電話連結。<br><b>重大錯誤</b>：AI 寫的金額、電話、連結被你改掉或拿掉。你自己多補的不算錯，但那則不算「可用」。車款適用、功能、保固寫錯目前抓不到，要靠開全自動前的人工抽查。<br><b>數字比對通過率</b>：每週最多抽 30 則原樣送出的草稿，數字都在正式資料裡找得到的比例。不花 AI 費用。</p>
+</div>
+</main><script nonce="{{ g.nonce }}">
+const el=id=>document.getElementById(id);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const rate=(x,E)=>x.samples>=E?x.usable_pct+'%':(x.samples?`樣本不足（${x.samples}／${E}）`:'—');
+function tiles(c,E){
+ const enough=c.samples>=E;
+ return [
+  [enough?(c.usable_pct>=95?'ok':''):'', enough?c.usable_pct+'%':'樣本不足', '首稿可用率', enough?`AI 第一版不用改或只小改：${c.usable}／${c.samples} 則`:`要滿 ${E} 則才算，現在 ${c.samples} 則`, !enough,''],
+  [c.major?'bad':'ok', c.major+' 次', '重大錯誤', '金額、電話、連結被你改掉', false,'#problems'],
+  [c.spot_checked&&c.spot_pct<95?'bad':'', c.spot_checked?c.spot_pct+'%':'—', '數字比對通過率', c.spot_checked?`${c.spot_ok}／${c.spot_checked} 則數字對得上`:'還沒有原樣送出的草稿', !c.spot_checked,'#flagged-h'],
+  ['', c.samples+' 則', '樣本', `廣告客人 ${c.ads}、一般 ${c.samples-c.ads}`, false,'']
+ ].map(([cls,big,name,sub,small,href])=>`<${href?`a href="${href}"`:'div'} class="tile ${cls}"><span>${name}</span><b class="${small?'small':''}">${esc(big)}</b><small>${esc(sub)}</small></${href?'a':'div'}>`).join('');
+}
+function problem(p,spot){
+ const more=p.times>1?`<details><summary>看這 ${p.times} 次</summary><div>${p.more.map(esc).join('<br>')}</div></details>`:`<small>${esc(p.day)}・${esc(p.channel)}・${esc(p.name)}・${esc(p.intent)}</small>`;
+ return `<div class="prob${spot?' spot':''}">${esc(p.what)}${p.times>1?` <b class="times">共 ${p.times} 次</b>`:''}${more}</div>`}
+function catRow(c,E){return `<tr><td>${esc(c.name)}<small class="${c.gate.ok?'gate-ok':''}">${c.gate.ok?'✅ ':''}${esc(c.gate.text)}</small></td><td class="n">${esc(rate(c,E))}</td><td class="n">${c.major} 次</td><td class="n">${c.samples}</td></tr>`}
+async function load(){
+ const r=await fetch('/desk/api/quality');if(r.status===401){location.href='/desk/login';return}
+ const d=await r.json();if(!r.ok)throw Error(d.error||'讀取失敗');
+ const E=d.enough;el('baseline').textContent=d.baseline;document.querySelectorAll('.enough').forEach(x=>x.textContent=E);
+ el('g-weeks').textContent=d.gate.weeks;el('g-rate').textContent=d.gate.rate;el('g-n').textContent=d.gate.weekly;
+ el('tiles').innerHTML=tiles(d.card,E);
+ const weeks=d.weeks.filter(w=>!w.before);
+ el('weeks').innerHTML=weeks.map(w=>`<tr class="${w.current?'cur':''}"><td>${esc(w.label)}${w.current?'<small>本週進行中，還沒結束</small>':''}</td><td class="n">${esc(rate(w,E))}</td><td class="n">${w.major} 次</td><td class="n hide-m">${w.spot_checked?w.spot_ok+'／'+w.spot_checked:'—'}</td><td class="n">${w.samples}</td></tr>`).join('')||'<tr><td colspan="5" class="empty">還沒有資料</td></tr>';
+ el('topics').innerHTML=d.categories.filter(c=>c.kind==='topic').map(c=>catRow(c,E)).join('');
+ el('who').innerHTML=d.categories.filter(c=>c.kind==='who').map(c=>catRow(c,E)).join('');
+ el('problems').innerHTML=d.problems.map(p=>problem(p)).join('')||'<p class="empty">近 7 天沒有 👍</p>';
+ el('flagged').innerHTML=d.flagged.map(p=>problem(p,true)).join('')||'<p class="empty">近 7 天數字都對得上 👍</p>';
+}
+load().catch(x=>{el('tiles').innerHTML=`<p class="empty">${esc(x.message)}</p>`});
+</script>{% endblock %}

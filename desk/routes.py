@@ -12,6 +12,7 @@ from .worker import local_time,utc_time,timeline,line_on
 from .knowledge import can_review,require_reviewer,submit,review
 from . import basis
 from . import kb_conflicts
+from . import quality
 from werkzeug.wsgi import get_input_stream
 
 
@@ -131,6 +132,16 @@ def make_blueprint(store,notifier=None):
     def conflicts_page():
         require_reviewer(g.staff)
         return render_template('conflicts.html',staff=g.staff)  # Wayne 11/18: 知識庫衝突題
+
+    @bp.get('/quality')
+    def quality_page():
+        require_reviewer(g.staff)
+        return render_template('quality.html',staff=g.staff)  # Wayne 11/18: AI 學得如何（準確率）
+
+    @bp.get('/api/quality')
+    def quality_report():
+        require_reviewer(g.staff)
+        return jsonify(quality.report(store))
 
     @bp.get('/api/conflicts')
     def conflicts_list():
