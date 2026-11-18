@@ -912,6 +912,8 @@ def revise(store,staff,data):
             rule_id = cur.fetchone()['id']
         cur.execute("""UPDATE desk_fb_threads SET status='waiting',pending_instruction=%s,pending_original=%s,pending_rule=%s,
           draft_token=NULL,note='',updated_at=NOW() WHERE id=%s""",(instruction,original,rule_id,c['id']))
+        cur.execute("""INSERT INTO desk_fb_redrafts(thread_id,staff_id,instruction,original,remembered)
+          VALUES(%s,%s,%s,%s,%s)""",(c['id'],staff['id'],instruction,original[:4000],bool(rule_id)))
     return dict(ok=True,status='waiting',remembered=bool(rule_id),rule_id=rule_id)
 
 

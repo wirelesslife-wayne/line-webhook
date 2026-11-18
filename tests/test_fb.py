@@ -261,6 +261,8 @@ def test_routes_need_login_csrf_and_reviewer(db, logged):
     assert post(client, staff, 'cancel', dict(thread_id=tid(), version=version)).status_code == 200
     out = post(client, staff, 'redraft', dict(thread_id=tid(), version=version, instruction='語氣輕鬆一點', remember=True)).get_json()
     assert out['remembered'] is True
+    # 影子模式量測 (Wayne 11/18): every redraft instruction is kept
+    assert db.one('SELECT instruction,remembered FROM desk_fb_redrafts') == dict(instruction='語氣輕鬆一點', remembered=True)
     rule = db.one('SELECT id FROM desk_edit_rules')['id']
     assert post(client, staff, 'rules/%d' % rule, dict(active=False)).status_code == 200
     assert db.one('SELECT active FROM desk_edit_rules')['active'] is False

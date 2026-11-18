@@ -82,4 +82,11 @@ CREATE INDEX IF NOT EXISTS desk_meta_inbox_todo ON desk_meta_inbox(id) WHERE don
 ALTER TABLE desk_fb_attempts ADD COLUMN IF NOT EXISTS delivery TEXT;
 ALTER TABLE desk_fb_attempts ADD COLUMN IF NOT EXISTS delivery_at TIMESTAMPTZ;
 ALTER TABLE desk_fb_attempts ADD COLUMN IF NOT EXISTS message_ids JSONB;
+-- 影子模式量測 (Wayne 11/18): every 「修改指示」 is kept, remembered or not, so a draft he had redrafted and then sent
+-- unchanged is not counted as one the AI got right on its own.
+CREATE TABLE IF NOT EXISTS desk_fb_redrafts (
+ id BIGSERIAL PRIMARY KEY, thread_id TEXT NOT NULL REFERENCES desk_fb_threads(id), staff_id BIGINT NOT NULL REFERENCES desk_users(id),
+ instruction TEXT NOT NULL, original TEXT NOT NULL DEFAULT '', remembered BOOLEAN NOT NULL DEFAULT FALSE,
+ created_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
+CREATE INDEX IF NOT EXISTS desk_fb_redrafts_thread ON desk_fb_redrafts(thread_id,id);
 """
