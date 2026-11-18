@@ -392,6 +392,12 @@ class Engine:
                      '官網的安裝實例頁（網址有 install-cases）先一律不要附：頁面還沒整理好，客人要點好幾層才看得到。')
                   + '產品介紹、適用車型這類不分車款的連結照常附。')
         rules += FACTS
+        # Wayne 11/18: what he decided on 「衝突題」. Past replies said these things in different ways; his pick is the only one.
+        from .kb_conflicts import for_draft
+        settled = for_draft(self.store, convo + ' ' + post_context + ' ' + ' '.join(str(p) for p in (ex.get('products') or [])))
+        if settled:
+            rules += ('\n\nWayne 決定的統一說法（最高優先；過去回覆、範例、制式回覆、常見問答裡跟這裡不同的說法都是舊的，不要用。'
+                      '跟上面 Wayne 11/15 事實不同時，以這裡較新的為準。只在客人問到該題目時使用，不要主動多講）：\n' + '\n'.join(settled))
         comment = channel in ('fb_comment','ig_comment')
         if channel == 'line_message':
             rules += ('\n\n本次是 LINE 官方帳號的私訊（客人在 LINE 加了我們好友）。我方訊息標「自動回應」「自動（夜間AI）」的是系統自動送的，不算真人回過；'

@@ -11,6 +11,7 @@ from .service import send,mark_done,redraft,ActionError
 from .worker import local_time,utc_time,timeline,line_on
 from .knowledge import can_review,require_reviewer,submit,review
 from . import basis
+from . import kb_conflicts
 from werkzeug.wsgi import get_input_stream
 
 
@@ -125,6 +126,28 @@ def make_blueprint(store,notifier=None):
     def knowledge_page():
         require_reviewer(g.staff)
         return render_template('basis.html',staff=g.staff)  # Wayne 11/16: 「AI 回覆依據」 replaced the unused 知識審核
+
+    @bp.get('/conflicts')
+    def conflicts_page():
+        require_reviewer(g.staff)
+        return render_template('conflicts.html',staff=g.staff)  # Wayne 11/18: 知識庫衝突題
+
+    @bp.get('/api/conflicts')
+    def conflicts_list():
+        require_reviewer(g.staff)
+        try:
+            page = max(0,int(request.args.get('page',0)))
+        except ValueError:
+            raise ActionError('頁碼不正確',400)
+        return jsonify(kb_conflicts.listing(store,request.args.get('tab','open'),page))
+
+    @bp.post('/api/conflicts/decide')
+    def conflicts_decide():
+        return jsonify(kb_conflicts.decide(store,g.staff,request.get_json(silent=True)))
+
+    @bp.post('/api/conflicts/reopen')
+    def conflicts_reopen():
+        return jsonify(kb_conflicts.reopen(store,g.staff,request.get_json(silent=True)))
 
     @bp.get('/api/basis/rules')
     def basis_rules():

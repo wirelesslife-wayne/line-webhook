@@ -85,6 +85,8 @@ from .videos import SCHEMA as VIDEO_SCHEMA
 SCHEMA += VIDEO_SCHEMA
 from .fb_avatars import SCHEMA as AVATAR_SCHEMA
 SCHEMA += AVATAR_SCHEMA
+from .kb_conflicts import SCHEMA as CONFLICT_SCHEMA  # 知識庫衝突題 (Wayne 11/18)
+SCHEMA += CONFLICT_SCHEMA
 
 
 class Store:
