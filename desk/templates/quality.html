@@ -56,7 +56,7 @@ function tiles(c,E){
  const enough=c.samples>=E;
  return [
   [enough?(c.usable_pct>=95?'ok':''):'', enough?c.usable_pct+'%':'樣本不足', '首稿可用率', enough?`AI 第一版不用改或只小改：${c.usable}／${c.samples} 則`:`要滿 ${E} 則才算，現在 ${c.samples} 則`, !enough,''],
-  [c.major?'bad':'ok', c.major+' 次', '重大錯誤', '金額、電話、連結被你改掉', false,'#problems'],
+  [c.major?'bad':'ok', c.major+' 次', '重大錯誤', '金額、電話、連結被你改掉或拿掉', false,'#problems'],
   [c.spot_checked&&c.spot_pct<95?'bad':'', c.spot_checked?c.spot_pct+'%':'—', '數字比對通過率', c.spot_checked?`${c.spot_ok}／${c.spot_checked} 則數字對得上`:'還沒有原樣送出的草稿', !c.spot_checked,'#flagged-h'],
   ['', c.samples+' 則', '樣本', `廣告客人 ${c.ads}、一般 ${c.samples-c.ads}`, false,'']
  ].map(([cls,big,name,sub,small,href])=>`<${href?`a href="${href}"`:'div'} class="tile ${cls}"><span>${name}</span><b class="${small?'small':''}">${esc(big)}</b><small>${esc(sub)}</small></${href?'a':'div'}>`).join('');
