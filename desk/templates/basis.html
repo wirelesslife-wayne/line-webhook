@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 {% block subtitle %}FB／IG／LINE 客服審稿 · 核准後才送出{% endblock %}
 {% block user %}<form method="post" action="/desk/logout"><span>{{ staff.username }}</span><input name="csrf" type="hidden" value="{{ staff.csrf }}"><button>登出</button></form>{% endblock %}
-{% block body %}<main>
+{% block body %}{% import '_nav.html' as nav with context %}<main>
 <style nonce="{{ g.nonce }}">
 /* Wayne 11/16: 「AI 回覆依據」, the preview ChatGPT and Gemini reviewed and he approved */
 :root{--orange:#f08a24}header{background:linear-gradient(120deg,#0a2c46,#0f3d5c 55%,#14456b)}header form{margin-left:auto}main{max-width:1000px;margin:0 auto}
@@ -28,11 +28,15 @@
 header form button{white-space:nowrap}header form span{white-space:nowrap}
 @media(max-width:700px){header small{display:none}header{padding:10px 14px}header h1,header .title{font-size:17px}header form span{display:none}.nav.main a{font-size:16px}.kb .li{flex-wrap:wrap}.kb .li b{flex:1 1 100%}.kb .headrow{align-items:center}.kb td,.kb th{padding:6px 4px;font-size:14px}}
 </style>
-<nav class="nav main" aria-label="客服管道"><a href="/desk/fb">客服審稿</a><a href="/desk/knowledge" aria-current="page">AI 回覆依據</a><a href="/desk/conflicts">衝突題</a></nav>
+<nav class="nav main" aria-label="客服管道">{{ nav.links('knowledge') }}</nav>
 <div class="kb">
 <p id="feedback" role="status"></p>
 <p class="lead">AI 擬稿時，價格、工時、門市一律以<b>公司正式資料</b>為準，再照<b>我的回覆規則</b>和<b>過往核准的回覆</b>來寫。舊範例不會蓋過最新的價格。</p>
-<p class="jump"><a href="#rules">我的回覆規則 <span id="n-rules"></span></a><a href="#learned">過往核准的回覆 <span id="n-learned"></span></a><a href="#docs">公司正式資料 <span id="n-docs"></span></a></p>
+<p class="jump"><a href="#docs">公司正式資料 <span id="n-docs"></span></a><a href="#rules">我的回覆規則 <span id="n-rules"></span></a><a href="#learned">過往核准的回覆 <span id="n-learned"></span></a></p>
+
+<!-- 11/18 Gemini：AI 最先照的是正式資料，所以放最上面 -->
+<h2 id="docs">📋 公司正式資料</h2><p class="h2sub">這裡只能看。有錯按「回報資料有誤」，會傳 LINE 給你，轉給 Claude 修改</p>
+<div class="list" id="docs-list"><p class="muted">讀取中…</p></div>
 
 <div class="headrow"><div><h2 id="rules">✍️ 我的回覆規則</h2><p class="h2sub" id="rules-sub">每一則草稿都會照做</p></div><button class="primary" id="rule-add-open">＋ 新增規則</button></div>
 <div class="item newrule" id="rule-add" hidden><label for="rule-text">寫一句規則，之後每一則草稿都會照做</label><textarea id="rule-text" maxlength="500" placeholder="例如：客人問保固，一律說產品保固一年，不要寫兩年"></textarea><div class="actions"><button class="primary" id="rule-add-save">加入</button><button id="rule-add-cancel">取消</button></div></div>
@@ -44,8 +48,6 @@ header form button{white-space:nowrap}header form span{white-space:nowrap}
 <div id="learned-list"><p class="muted">讀取中…</p></div>
 <div class="pager"><button id="learned-prev">上一頁</button><button id="learned-next">下一頁</button><button id="learned-off">看已停用的</button></div>
 
-<h2 id="docs">📋 公司正式資料</h2><p class="h2sub">這裡只能看。有錯按「回報資料有誤」，會傳 LINE 給你，轉給 Claude 修改</p>
-<div class="list" id="docs-list"><p class="muted">讀取中…</p></div>
 </div>
 </main><script nonce="{{ g.nonce }}">
 const csrf={{ staff.csrf|tojson }};

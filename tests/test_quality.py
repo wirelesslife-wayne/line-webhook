@@ -60,7 +60,7 @@ def test_report_counts_from_the_baseline_and_says_when_there_are_too_few(db, log
     assert d['problems'][0]['what'] == '金額 12,800 被改掉' and d['problems'][0]['intent'] == '保固售後'
     cats = {x['name']: x for x in d['categories']}
     assert cats['廣告客人']['samples'] == 2 and cats['一般客人']['samples'] == 4
-    assert cats['報價']['gate']['ok'] is False and '樣本不足' in cats['報價']['gate']['text']
+    assert cats['報價']['gate']['ok'] is False and cats['報價']['gate']['text'].startswith('還差：')
     assert client.get('/desk/quality').status_code == 200
 
 
@@ -94,8 +94,8 @@ def test_short_replies_must_keep_more_and_same_errors_are_merged():
 
 def test_gate_needs_every_week_full_and_still_a_person_checks():
     w = lambda n, pct, major=0: dict(samples=n, usable_pct=pct, major=major)
-    assert quality.gate([w(100, 99)] * 3 + [w(10, 100)])['text'] == '樣本不足（1 週不到 25 則）'
+    assert quality.gate([w(100, 99)] * 3 + [w(10, 100)])['text'] == '還差：1 週不到 25 則（最近一週 10 則）'
     assert quality.gate([w(30, 99)] * 3 + [w(30, 99, 1)])['ok'] is False
-    assert quality.gate([w(30, 99)] * 3 + [w(30, 90)])['text'] == '還有 1 週沒到 95%'
+    assert quality.gate([w(30, 99)] * 3 + [w(30, 90)])['text'] == '還差：1 週可用率不到 95%（最低 90%）'
     ok = quality.gate([w(30, 96)] * 4)
     assert ok['ok'] is True and '人工抽查' in ok['text']

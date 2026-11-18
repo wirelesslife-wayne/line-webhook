@@ -2,7 +2,7 @@
 {% block title %}AI 學得如何・無限科技客服工作台{% endblock %}
 {% block subtitle %}FB／IG／LINE 客服審稿 · 核准後才送出{% endblock %}
 {% block user %}<form method="post" action="/desk/logout"><span>{{ staff.username }}</span><input name="csrf" type="hidden" value="{{ staff.csrf }}"><button>登出</button></form>{% endblock %}
-{% block body %}<main>
+{% block body %}{% import '_nav.html' as nav with context %}<main>
 <style nonce="{{ g.nonce }}">
 /* Wayne 11/18: 準確率，照 Claude／ChatGPT／Gemini 共識：四個數字、樣本不足就不給百分比、從 11/19 重新起算；畫面再經兩家審過 */
 :root{--orange:#f08a24;--good:#1f6b3a}header{background:linear-gradient(120deg,#0a2c46,#0f3d5c 55%,#14456b)}header form{margin-left:auto}main{max-width:900px;margin:0 auto}
@@ -28,7 +28,7 @@
 @media(max-width:700px){header small{display:none}header{padding:10px 14px}header form span{display:none}.nav.main{gap:16px}.nav.main a{font-size:16px}
 .qa .tiles{grid-template-columns:repeat(2,minmax(0,1fr))}.qa .tile b{font-size:26px}.qa table{font-size:14px}.qa th,.qa td{padding:7px 6px}.qa .hide-m{display:none}}
 </style>
-<nav class="nav main" aria-label="客服管道"><a href="/desk/fb">客服審稿</a><a href="/desk/knowledge">AI 回覆依據</a><a href="/desk/quality" aria-current="page">AI 學得如何</a></nav>
+<nav class="nav main" aria-label="客服管道">{{ nav.links('quality') }}</nav>
 <div class="qa">
 <p class="lead">看 AI 第一次擬的草稿，你要改多少。<b>從 <span id="baseline"></span> 起算</b>（之前叫 AI 重擬的沒有紀錄，數字會偏高）。每週一早上也會傳一則 LINE 給你。<br><b>注意：</b>這裡量的是「你要改多少」，不是「AI 一定答對」；你沒發現的錯，數字抓不到。</p>
 <div class="tiles" id="tiles"><p class="empty">讀取中…</p></div>
@@ -56,15 +56,15 @@ function tiles(c,E){
  const enough=c.samples>=E;
  return [
   [enough?(c.usable_pct>=95?'ok':''):'', enough?c.usable_pct+'%':'樣本不足', '首稿可用率', enough?`AI 第一版不用改或只小改：${c.usable}／${c.samples} 則`:`要滿 ${E} 則才算，現在 ${c.samples} 則`, !enough,''],
-  [c.major?'bad':'ok', c.major+' 次', '重大錯誤', '金額、電話、連結被你改掉或拿掉', false,'#problems'],
+  [!c.samples?'':c.major?'bad':'ok', c.samples?c.major+' 次':'—', '重大錯誤', c.samples?'金額、電話、連結被你改掉或拿掉':'還沒有資料，不代表沒出錯', !c.samples,'#problems'],  // 11/18：0 則時不顯示綠色「0 次」
   [c.spot_checked&&c.spot_pct<95?'bad':'', c.spot_checked?c.spot_pct+'%':'—', '數字比對通過率', c.spot_checked?`${c.spot_ok}／${c.spot_checked} 則數字對得上`:'還沒有原樣送出的草稿', !c.spot_checked,'#flagged-h'],
-  ['', c.samples+' 則', '樣本', `廣告客人 ${c.ads}、一般 ${c.samples-c.ads}`, false,'']
+  ['', c.samples+' 則', '樣本', c.samples?`廣告客人 ${c.ads}、一般 ${c.samples-c.ads}`:'從 '+document.getElementById('baseline').textContent+' 起，核准第一則就開始算', false,'']
  ].map(([cls,big,name,sub,small,href])=>`<${href?`a href="${href}"`:'div'} class="tile ${cls}"><span>${name}</span><b class="${small?'small':''}">${esc(big)}</b><small>${esc(sub)}</small></${href?'a':'div'}>`).join('');
 }
 function problem(p,spot){
  const more=p.times>1?`<details><summary>看這 ${p.times} 次</summary><div>${p.more.map(esc).join('<br>')}</div></details>`:`<small>${esc(p.day)}・${esc(p.channel)}・${esc(p.name)}・${esc(p.intent)}</small>`;
  return `<div class="prob${spot?' spot':''}">${esc(p.what)}${p.times>1?` <b class="times">共 ${p.times} 次</b>`:''}${more}</div>`}
-function catRow(c,E){return `<tr><td>${esc(c.name)}<small class="${c.gate.ok?'gate-ok':''}">${c.gate.ok?'✅ ':''}${esc(c.gate.text)}</small></td><td class="n">${esc(rate(c,E))}</td><td class="n">${c.major} 次</td><td class="n">${c.samples}</td></tr>`}
+function catRow(c,E){return `<tr><td>${esc(c.name)}<small class="${c.gate.ok?'gate-ok':''}">${c.gate.ok?'✅ ':''}${esc(c.gate.text)}</small></td><td class="n">${esc(rate(c,E))}</td><td class="n">${c.samples?c.major+' 次':'—'}</td><td class="n">${c.samples}</td></tr>`}
 async function load(){
  const r=await fetch('/desk/api/quality');if(r.status===401){location.href='/desk/login';return}
  const d=await r.json();if(!r.ok)throw Error(d.error||'讀取失敗');
@@ -72,11 +72,11 @@ async function load(){
  el('g-weeks').textContent=d.gate.weeks;el('g-rate').textContent=d.gate.rate;el('g-n').textContent=d.gate.weekly;
  el('tiles').innerHTML=tiles(d.card,E);
  const weeks=d.weeks.filter(w=>!w.before);
- el('weeks').innerHTML=weeks.map(w=>`<tr class="${w.current?'cur':''}"><td>${esc(w.label)}${w.current?'<small>本週進行中，還沒結束</small>':''}</td><td class="n">${esc(rate(w,E))}</td><td class="n">${w.major} 次</td><td class="n hide-m">${w.spot_checked?w.spot_ok+'／'+w.spot_checked:'—'}</td><td class="n">${w.samples}</td></tr>`).join('')||'<tr><td colspan="5" class="empty">還沒有資料</td></tr>';
+ el('weeks').innerHTML=weeks.map(w=>`<tr class="${w.current?'cur':''}"><td>${esc(w.label)}${w.current?'<small>本週進行中，還沒結束</small>':''}</td><td class="n">${esc(rate(w,E))}</td><td class="n">${w.samples?w.major+' 次':'—'}</td><td class="n hide-m">${w.spot_checked?w.spot_ok+'／'+w.spot_checked:'—'}</td><td class="n">${w.samples}</td></tr>`).join('')||'<tr><td colspan="5" class="empty">還沒有資料</td></tr>';
  el('topics').innerHTML=d.categories.filter(c=>c.kind==='topic').map(c=>catRow(c,E)).join('');
  el('who').innerHTML=d.categories.filter(c=>c.kind==='who').map(c=>catRow(c,E)).join('');
- el('problems').innerHTML=d.problems.map(p=>problem(p)).join('')||'<p class="empty">近 7 天沒有 👍</p>';
- el('flagged').innerHTML=d.flagged.map(p=>problem(p,true)).join('')||'<p class="empty">近 7 天數字都對得上 👍</p>';
+ el('problems').innerHTML=d.problems.map(p=>problem(p)).join('')||`<p class="empty">${d.card.samples?'近 7 天沒有 👍':'還沒有資料'}</p>`;
+ el('flagged').innerHTML=d.flagged.map(p=>problem(p,true)).join('')||`<p class="empty">${d.card.spot_checked?'近 7 天數字都對得上 👍':'還沒有原樣送出的草稿可以比對'}</p>`;
 }
 load().catch(x=>{el('tiles').innerHTML=`<p class="empty">${esc(x.message)}</p>`});
 </script>{% endblock %}

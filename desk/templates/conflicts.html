@@ -2,7 +2,7 @@
 {% block title %}知識庫衝突題・無限科技客服工作台{% endblock %}
 {% block subtitle %}FB／IG／LINE 客服審稿 · 核准後才送出{% endblock %}
 {% block user %}<form method="post" action="/desk/logout"><span>{{ staff.username }}</span><input name="csrf" type="hidden" value="{{ staff.csrf }}"><button>登出</button></form>{% endblock %}
-{% block body %}<main>
+{% block body %}{% import '_nav.html' as nav with context %}<main>
 <style nonce="{{ g.nonce }}">
 /* Wayne 11/18: 知識庫衝突題 */
 :root{--orange:#f08a24}header{background:linear-gradient(120deg,#0a2c46,#0f3d5c 55%,#14456b)}header form{margin-left:auto}main{max-width:820px;margin:0 auto}
@@ -25,9 +25,11 @@
 .cf .meta{font-size:13px;color:var(--muted)}.cf .pager{display:flex;gap:8px;margin:10px 0}.cf .done{background:#fff;border:1px solid var(--line);border-radius:12px;padding:22px;text-align:center;font-size:17px}
 .cf .off{background:#f4f8fb;border:1px solid #c9d8e4;border-radius:10px;padding:8px 12px;margin:4px 0 10px}.cf .off b{font-size:15px}.cf .off small{display:block;color:var(--muted);font-size:13px;margin-top:6px}.cf .off pre{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;font-size:15px;margin:2px 0 0}.cf .opt small.warn{color:#a3360f;font-weight:600}.cf .confirm{border:2px solid #e3a008;background:#fff8e6;border-radius:10px;padding:10px 12px;margin-top:10px}.cf .confirm p{margin:0 0 8px;color:#7a4b00;font-weight:600}.cf .confirm button{display:block;width:100%;text-align:left;margin:8px 0 0;font-size:16px}.cf .confirm button small{display:block;font-size:13px;color:var(--muted);font-weight:400}.cf .meta.eff{color:#1f6b3a;font-weight:600}.cf .confirm .warnbtn{border-color:#c2410c;color:#9a3412;font-weight:700}#feedback:empty{display:none}#feedback{position:sticky;top:0;z-index:5;background:#e8f5ec;border-radius:8px;padding:8px 12px}#feedback.bad{background:#fbe4e2;color:var(--bad)}
 header form button{white-space:nowrap}header form span{white-space:nowrap}
+/* 11/18 審查：手機上選完說法，「確定，下一題」固定在畫面底部，不用往下滑找 */
+@media(max-width:700px){.cf .q>.row{position:sticky;bottom:0;z-index:4;background:#fff;margin:10px -14px -14px;padding:10px 14px calc(10px + env(safe-area-inset-bottom));border-top:1px solid var(--line);box-shadow:0 -6px 12px #0f3d5c14;border-radius:0 0 12px 12px}.cf .row button.primary{margin-bottom:8px}}
 @media(max-width:700px){header small{display:none}header{padding:10px 14px}header h1,header .title{font-size:17px}header form span{display:none}.nav.main{gap:16px}.nav.main a{font-size:16px}.cf .row button{flex:1 1 40%}}
 </style>
-<nav class="nav main" aria-label="客服管道"><a href="/desk/fb">客服審稿</a><a href="/desk/knowledge">AI 回覆依據</a><a href="/desk/conflicts" aria-current="page">衝突題</a></nav>
+<nav class="nav main" aria-label="客服管道">{{ nav.links('conflicts') }}</nav>
 <div class="cf">
 <p id="feedback" role="status"></p>
 <p class="lead">這些題目以前回答過不同說法。<b>點現在正確的那個</b>，AI 之後照著寫。</p>

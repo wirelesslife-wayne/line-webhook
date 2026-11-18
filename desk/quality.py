@@ -140,14 +140,15 @@ def merged(problems):
 
 def gate(weeks):
     """Per category: may it be considered for full automation? weeks = the last GATE['weeks'] weekly summaries."""
+    # 11/18 ChatGPT＋Gemini review: say what is still missing, not only that it is missing
     thin = [w for w in weeks if w['samples'] < GATE['weekly']]
     if thin:
-        return dict(ok=False, text=f'樣本不足（{len(thin)} 週不到 {GATE["weekly"]} 則）')
+        return dict(ok=False, text=f'還差：{len(thin)} 週不到 {GATE["weekly"]} 則（最近一週 {weeks[-1]["samples"]} 則）')
     if any(w['major'] for w in weeks):
-        return dict(ok=False, text=f'近 {GATE["weeks"]} 週有重大錯誤 {sum(w["major"] for w in weeks)} 次')
+        return dict(ok=False, text=f'還差：近 {GATE["weeks"]} 週重大錯誤 {sum(w["major"] for w in weeks)} 次，要 0 次')
     low = [w for w in weeks if not w['samples'] or w['usable_pct'] < GATE['rate']]
     if low:
-        return dict(ok=False, text=f'還有 {len(low)} 週沒到 {GATE["rate"]}%')
+        return dict(ok=False, text=f'還差：{len(low)} 週可用率不到 {GATE["rate"]}%（最低 {min(w["usable_pct"] or 0 for w in low)}%）')
     # ChatGPT 11/18: the numbers only say Wayne rarely edits; a person still checks car fit, features and warranty first
     return dict(ok=True, text=f'數字連續 {GATE["weeks"]} 週達標，下一步：人工抽查內容（車款、功能、保固）')
 

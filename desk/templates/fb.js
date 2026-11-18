@@ -115,7 +115,7 @@ function card(d,i,closed){
   const mark=d.hold&&tab!=='hold'&&tab!=='search'?(d.hold==='ours'?'📌 ':'⏳ '):'';
   let h=`<article class="item${open?' open':''}${closed&&openId===d.id?' sel':''}" data-id="${esc(d.id)}"><button class="row" data-act="toggle" aria-expanded="${open}"><span class="avatar">${d.avatar?`<img src="/desk/api/fb/avatar?thread_id=${encodeURIComponent(d.id)}&t=${esc(d.avatar)}" alt="" decoding="async">`:USER_ICON}${(BRAND[d.channel]||'').split('<svg class="ic"')[0]}</span><span class="sep"></span><span class="who-said"><b>${mark}${esc(d.name)}</b><span>${esc((lastUser.text||'').replace(/\s+/g,' '))}</span></span>${tab==='todo'&&d.status==='ready'?`<span class="when wait${d.waited>=1?' late':''}" title="${esc(when(lastUser.time||''))}">${waitText(d.waited||0)}</span>`:`<span class="when">${esc(when(lastUser.time||''))}</span><span class="state-chip ${tone}">${esc(chip)}</span>`}${CHEV}</button>`;
   if(!open)return h+'</article>';
-  h+=`<div class="detail"><p class="muted">${esc(d.label)} · ${esc(STATUS[d.status]||d.status)}${d.note&&d.note!==STATUS[d.status]?' · '+esc(d.note):''}</p>`;
+  h+=`<div class="detail"><p class="muted">${esc(d.label)} · ${esc(STATUS[d.status]||d.status)}${d.note&&d.note!==STATUS[d.status]?' · '+esc(d.note):''}${d.status==='ready'?'<button class="link jumpdraft" data-act="jump-draft">⬇ 直接看草稿</button>':''}</p>`;
   h+=holdBlock(d);
   if(d.context){const long=d.context.length>60;h+=`<p class="context${long&&!more(d,'ctx')?' one':''}"><b>所屬貼文：</b><span>${esc(d.context.slice(0,200))}</span>${long?moreBtn(d,'ctx','展開 ▾','收合 ▴'):''}</p>`}
   // Wayne 11/15 23:50: only the last 12 come with the list; 顯示更早的對話 loads the whole conversation (Liang Hong's 11/26 booking)
@@ -175,7 +175,9 @@ async function libraryGrid(box){
 const REFS={},REFUSED={};let refsOpen=new Set(),lookupFor=null,lkKind='history';
 function refKey(d){return d.id+':'+d.version}
 const RISKY=/格式化|恢復原廠|原廠設定|重置|reset|刪除/i;  // ChatGPT and Gemini 11/14: steps that wipe a customer's videos
-function refCard(x,n,where){return `<div class="ref"><b>${x.kind==='canned'?'📘 制式回覆｜'+esc(x.title):'💬 真人案例｜'+esc(x.date||'')}</b>${x.question?`<p class="q">客人問：${esc(x.question)}</p>`:''}<p>${x.kind==='history'?'同事答：':''}${esc(x.text)}</p>${RISKY.test(x.text)?'<p class="warn">⚠️ 含格式化／重置等會清掉資料的步驟，只能參考，不能依此重寫（11/15 兩家 AI：只靠警告擋不住）</p>':`<button data-act="ref-use" data-where="${where}" data-n="${n}">依此重寫</button>`}</div>`}
+function refCard(x,n,where){return `<div class="ref"><b>${x.kind==='canned'?'📘 制式回覆｜'+esc(x.title):'💬 真人案例｜'+esc(x.date||'')}</b>${x.question?`<p class="q">客人問：${esc(x.question)}</p>`:''}<p>${x.kind==='history'?'同事答：':''}${esc(x.text)}</p>${RISKY.test(x.text)?'<p class="warn">⚠️ 含格式化／重置等會清掉資料的步驟，只能參考，不能依此重寫（11/15 兩家 AI：只靠警告擋不住）</p>':`<button data-act="ref-use" data-where="${where}" data-n="${n}">依此重寫</button>`}${x.kind==='canned'&&where==='auto'?refReport(n):''}</div>`}
+// 11/18 ChatGPT＋Gemini：審稿時看到參考資料寫錯，就地回報（不用跑去 AI 回覆依據頁）
+function refReport(n){return `<button class="link" data-act="ref-report">回報這筆有誤</button><div class="refrep" hidden><textarea data-rep-where maxlength="240" placeholder="哪裡錯？例如：價格寫 12,800，現在是 13,800"></textarea><input data-rep-should maxlength="300" placeholder="正確應該是？（不確定可以空著）"><div class="actions"><button class="primary" data-act="ref-report-send" data-n="${n}">送出回報</button><button data-act="ref-report-cancel">取消</button></div></div>`}
 function refsBlock(d){
   const r=REFS[refKey(d)];
   if(r===undefined){fetchRefs(d);return '<div class="refs"><p class="muted">參考資料：查詢中…</p></div>'}
@@ -268,10 +270,10 @@ document.addEventListener('click',async event=>{
     if(b.dataset.holdKind!==undefined&&holdFor){const d=holdFor,k=b.dataset.holdKind;f('hold').close();holdFor=null;busy=true;
       try{await api('hold',{thread_id:d.id,hold:k,note:d.hold_note||''});say(`已標「${HOLD[k]}」，會留在「待處理」，沒有傳訊息給客人。`)}catch(e){say(e.message,true)}finally{busy=false}await load(true);return}
     if(b.id==='fb-confirm-cancel'){f('confirm').close();confirmation=null;return}
-    if((b.id==='fb-confirm-ok'||b.id==='fb-confirm-pin')&&confirmation){
+    if(b.id==='fb-confirm-ok'&&confirmation){  // 11/18 ChatGPT：兩個「核准」按鈕會猶豫，改成一個主按鈕＋「送出後標記待處理」勾選
       const snap=confirmation;if(linkGate.pending||linkGate.bad)return;if(snap.is_public&&!f('public-check').checked)return;const lc=document.getElementById('fb-links-check');if(lc&&!lc.checked)return;
       busy=true;b.disabled=true;const nx=nextAfter(snap.thread_id);let flash=null;
-      try{const out=await api('send',{thread_id:snap.thread_id,version:snap.version,text:snap.text,retry_key:snap.retry_key,confirmed:true,hold:b.id==='fb-confirm-pin',public_confirmed:snap.is_public,links_confirmed:!!(lc&&lc.checked),media_ids:snap.media_ids});delete edits[snap.key];flash=out.live?`✓ ${snap.name} 已核准，正在即時送出`:`✓ ${snap.name} 已核准，等送出`}
+      try{const out=await api('send',{thread_id:snap.thread_id,version:snap.version,text:snap.text,retry_key:snap.retry_key,confirmed:true,hold:f('confirm-pin').checked&&!f('pin-label').hidden,public_confirmed:snap.is_public,links_confirmed:!!(lc&&lc.checked),media_ids:snap.media_ids});delete edits[snap.key];flash=out.live?`✓ ${snap.name} 已核准，正在即時送出`:`✓ ${snap.name} 已核准，等送出`}
       catch(e){say(e.message,true)}
       finally{busy=false;b.disabled=false;f('confirm').close();confirmation=null}
       await load(true);if(flash)goNext(nx,flash,'ok');return}
@@ -284,6 +286,10 @@ document.addEventListener('click',async event=>{
     if(act==='reopen'){busy=true;try{await api('reopen',{thread_id:d.id});say(`「${d.name}」已改回待審核，AI 會擬一則跟進。`)}catch(e){say(e.message,true)}finally{busy=false}await load(true);return}
     if(act==='older'){b.disabled=true;try{FULL[d.id]={sig:msgSig(d),list:(await api('history?thread_id='+encodeURIComponent(d.id))).messages};draw(lastData);const box=document.querySelector(`.item[data-id="${CSS.escape(d.id)}"] .messages`);if(box)box.scrollTop=0}catch(e){say(e.message,true);b.disabled=false}return}
     if(act==='hold-pick'){holdFor=d;f('hold').showModal();return}
+    if(act==='ref-report'||act==='ref-report-cancel'){const box=b.closest('.ref').querySelector('.refrep');box.hidden=act==='ref-report-cancel';if(!box.hidden)box.querySelector('textarea').focus();return}
+    if(act==='ref-report-send'){const ref=b.closest('.ref'),r=REFS[refKey(d)]||{},x=[...(r.canned||[]),...(r.history||[])][Number(b.dataset.n)]||{},w=ref.querySelector('[data-rep-where]').value.trim();if(w.length<2){say('請寫哪裡錯。',true);return}
+      b.disabled=true;try{const res=await fetch('/desk/api/basis/report',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify({key:'canned',where:('制式回覆「'+(x.title||'')+'」：'+w).slice(0,300),should:ref.querySelector('[data-rep-should]').value.trim()})});const out=await res.json().catch(()=>({}));if(!res.ok)throw Error(out.error||'回報沒送出，請稍後再試');ref.querySelector('.refrep').hidden=true;say('已回報，Claude 會核對後更新正式資料。')}catch(e){say(e.message,true)}finally{b.disabled=false}return}
+    if(act==='jump-draft'){el.querySelector('.drafthead')?.scrollIntoView({behavior:'smooth',block:'start'});return}
     if(act==='refs-toggle'){refsOpen.has(d.id)?refsOpen.delete(d.id):refsOpen.add(d.id);const box=el.querySelector('.refs');if(box)box.outerHTML=refsBlock(d);return}
     if(act==='ref-use'&&b.dataset.where==='auto'){const r=REFS[refKey(d)]||{},x=[...(r.canned||[]),...(r.history||[])][Number(b.dataset.n)];if(x){b.disabled=true;await useRef(d,el,x)}return}
     if(act==='lookup'){lookupFor=d;f('lk-q').value=((REFS[refKey(d)]||{}).query||'');f('lk-answer').value='';f('lk-submit').checked=false;f('lookup').showModal();lkShow(f('lk-q').value?'history':'canned');return}
@@ -300,7 +306,8 @@ document.addEventListener('click',async event=>{
       confirmation=Object.freeze({thread_id:d.id,version:d.version,text,name:d.name,is_public:d.is_public,live:!!d.live,key:editKey(d),retry_key:crypto.randomUUID(),media_ids:(d.media||[]).map(m=>m.id)});
       // Wayne 11/16 20:50: the AI no longer marks anything; when its note says something is still ours to do, ask once here
       const owe=!d.hold&&((d.result||{}).to_human===true||/對帳|確認營業|要確認|請確認|待公司確認/.test((d.result||{}).staff_note||''));
-      f('todo-note').hidden=!owe;f('todo-note').textContent=owe?`💡 這則送出後可能還有事要處理：${(d.result||{}).staff_note||'AI 判斷需要真人接手'}。要留著提醒自己，就按「📌 標記待處理並核准」。`:'';f('confirm-pin').hidden=!owe;
+      f('todo-note').hidden=!owe;f('todo-note').textContent=owe?`💡 這則送出後可能還有事要處理：${(d.result||{}).staff_note||'AI 判斷需要真人接手'}。要留著提醒自己，就勾下面的「📌 送出後標記待處理」。`:'';f('pin-label').hidden=!!d.hold;f('confirm-pin').checked=false;  // 11/18 ChatGPT＋Gemini：每次都能選，不只 AI 判斷時
+      
       f('links').hidden=true;f('links').innerHTML='';linkGate={pending:true,bad:false};
       // Grok 11/15: the confirm button worked before the link check came back, so a wrong link could slip through
       api('links',{text}).then(out=>{if(!confirmation||confirmation.text!==text)return;linkGate.pending=false;if(!out.links.length){gate();return}const bad=out.links.some(l=>l.state==='broken'),wrong=out.links.some(l=>l.verdict==='mismatch');
@@ -310,7 +317,7 @@ document.addEventListener('click',async event=>{
         gate()}).catch(()=>{if(!confirmation||confirmation.text!==text)return;linkGate.pending=false;
         f('links').innerHTML='<p class="error">⚠️ 連結檢查沒跑完（網路或伺服器問題），請自己點開連結確認。</p><label class="check"><input id="fb-links-check" type="checkbox">連結我自己點開確認過了</label>';f('links').hidden=false;gate()});
       f('refs-used').hidden=!REFUSED[d.id];f('refs-used').textContent=REFUSED[d.id]?`本稿參考：${REFUSED[d.id]}（只有你看得到，不會發給客人）`:'';f('attach-note').hidden=!(d.media||[]).length;f('attach-note').textContent=(d.media||[]).length?`另附 ${d.media.length} 個檔案：${d.media.map(m=>m.name).join('、')}`:'';
-      f('recipient').textContent=`回覆「${d.name}」（${d.label}）`;f('when').textContent=d.live?'按下確認後，會用 Meta 官方 API 立刻送出。':'按下確認後，下一輪排程會照這段文字送出（最慢約 '+(d.channel==='line_message'?10:30)+' 分鐘），送出前都可以在「即將送出」取消。';f('confirm-ok').textContent=d.live?'確認發送':'確認核准';const ps=partsOf(text);f('preview').textContent=ps.length>1?ps.map((x,n)=>`【第 ${n+1} 則】\n${x}`).join('\n\n'):text;f('public-warning').hidden=f('public-label').hidden=!d.is_public;f('public-check').checked=false;gate();f('confirm').showModal();return}
+      f('recipient').textContent=`回覆「${d.name}」（${d.label}）`;f('when').textContent=d.live?'按下確認後，會用 Meta 官方 API 立刻送出。':'按下確認後，下一輪排程會照這段文字送出（最慢約 '+(d.channel==='line_message'?10:30)+' 分鐘），送出前都可以在「即將送出」取消。';f('confirm-ok').textContent=d.live?'確認發送':'確認核准，排入發送';const ps=partsOf(text);f('preview').textContent=ps.length>1?ps.map((x,n)=>`【第 ${n+1} 則】\n${x}`).join('\n\n'):text;f('public-warning').hidden=f('public-label').hidden=!d.is_public;f('public-check').checked=false;gate();f('confirm').showModal();return}
     if(act==='lib-open'){const box=el.querySelector('.libgrid');box.hidden=!box.hidden;b.textContent=box.hidden?'從常用圖片挑':'收起常用圖片';if(!box.hidden&&!box.innerHTML){box.innerHTML='<p class="muted">讀取中…</p>';try{await libraryGrid(box)}catch(e){box.innerHTML='';say(e.message,true)}}return}
     if(act==='lib-attach'){busy=true;b.disabled=true;try{const out=await api('media/library',{thread_id:d.id,library_id:b.dataset.lib});say(`已附上「${out.media.name}」，會跟回覆一起送出。`)}catch(e){say(e.message,true);b.disabled=false}finally{busy=false}const box=el.querySelector('.libgrid');if(box)box.hidden=true;await load(true);return}
     if(act==='media-remove'){busy=true;b.disabled=true;try{await api('media/'+b.dataset.media+'/remove',{thread_id:d.id});say('已移除附件。')}catch(e){say(e.message,true)}finally{busy=false}await load(true);return}
@@ -341,8 +348,8 @@ async function endSearch(){q='';f('q').value='';tab=beforeSearch;page=0;document
   f('order').hidden=tab==='done'||tab==='hold';wipe();await load(true)}
 let linkGate={pending:false,bad:false};
 function gate(){const ok=f('confirm-ok'),lc=document.getElementById('fb-links-check');
-  ok.disabled=linkGate.pending||linkGate.bad||!!(lc&&!lc.checked)||!!(confirmation&&confirmation.is_public&&!f('public-check').checked);f('confirm-pin').disabled=ok.disabled;
-  ok.textContent=linkGate.pending?'連結檢查中…':confirmation&&confirmation.live?'確認發送':'確認核准'}
+  ok.disabled=linkGate.pending||linkGate.bad||!!(lc&&!lc.checked)||!!(confirmation&&confirmation.is_public&&!f('public-check').checked);
+  ok.textContent=linkGate.pending?'連結檢查中…':confirmation&&confirmation.live?'確認發送':'確認核准，排入發送'}
 f('public-check').addEventListener('change',gate);
 document.addEventListener('change',e=>{if(e.target.id==='fb-links-check')gate()});
 f('confirm').addEventListener('cancel',e=>{if(busy)e.preventDefault();else confirmation=null});

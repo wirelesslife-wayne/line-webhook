@@ -133,6 +133,16 @@ def make_blueprint(store,notifier=None):
         require_reviewer(g.staff)
         return render_template('conflicts.html',staff=g.staff)  # Wayne 11/18: 知識庫衝突題
 
+    @bp.context_processor
+    def nav_counts():
+        """衝突題 still open, shown next to the menu entry on every page (Wayne 11/18, ChatGPT＋Gemini review)."""
+        def count():
+            try:
+                return store.one("SELECT COUNT(*) AS n FROM desk_kb_conflicts WHERE status='open'")['n']
+            except Exception:
+                return None
+        return dict(nav_conflicts=count() if getattr(g, 'staff', None) and can_review(g.staff) else None)
+
     @bp.get('/quality')
     def quality_page():
         require_reviewer(g.staff)
