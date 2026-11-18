@@ -351,6 +351,24 @@ def test_refused_ai_request_is_retried_later(db):
     assert c['status'] == 'ready' and 'retry' not in c['draft']
 
 
+def test_drafts_stopped_by_the_monthly_limit_resume_when_it_is_raised(db, monkeypatch):
+    """Wayne 11/18: 「調到 150」 — the drafts already stopped this month must not wait until next month."""
+    from desk.provider import BudgetExceeded, month_key
+    fb.push(db, [thread()])
+    db.execute("INSERT INTO desk_ai_usage(id,month,model,usd,status) VALUES(gen_random_uuid(),%s,'gpt-6.1-sol',60,'settled')", (month_key(),))
+    monkeypatch.setenv('DESK_MONTHLY_USD', '60')
+    full = Mock()
+    full.draft.side_effect = BudgetExceeded('本月 AI 額度已用完，請手動回覆')
+    fb.draft_once(db, lambda store: full)
+    assert fb.conversation(db, tid())['status'] == 'blocked'
+    db.execute("UPDATE desk_fb_threads SET updated_at=NOW()-INTERVAL '31 minutes'")
+    ready(db)
+    assert fb.conversation(db, tid())['status'] == 'blocked'  # still over the limit: stays stopped
+    monkeypatch.setenv('DESK_MONTHLY_USD', '150')
+    ready(db)
+    assert fb.conversation(db, tid())['status'] == 'ready'
+
+
 def test_ad_lead_gets_the_product_reply_without_naming_the_product(db):
     """11/11: tailgate-ad leads who only typed their car ("cc 2026") got drafts with no price."""
     provider = Mock(side_effect=[dict(brand='Toyota', model=None, products=[]), dict(draft='您好～')])

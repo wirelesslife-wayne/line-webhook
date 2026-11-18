@@ -918,14 +918,18 @@ def revise(store,staff,data):
 
 
 def draft_once(store,engine_factory=None):
-    from .provider import month_key
+    from .provider import month_key, budget_status
     with store.lock('desk-fb-draft') as acquired:
         if not acquired:
             return
+        # Wayne 11/18: after the month's AI limit is raised, drafts stopped by it this month are drafted again
+        # (at most every 30 minutes, so a limit that is still too tight does not retry them every minute)
+        raised = not budget_status(store)['blocked']
         store.execute("""UPDATE desk_fb_threads SET status='waiting',draft_token=NULL WHERE
           (status='drafting' AND draft_started_at<NOW()-INTERVAL '10 minutes') OR
           (status='blocked' AND draft->>'budget_month' IS NOT NULL AND draft->>'budget_month'<>%s) OR
-          (status='blocked' AND draft->>'retry'='true' AND updated_at<NOW()-INTERVAL '30 minutes')""",(month_key(),))
+          (status='blocked' AND draft->>'budget_month'=%s AND %s AND updated_at<NOW()-INTERVAL '30 minutes') OR
+          (status='blocked' AND draft->>'retry'='true' AND updated_at<NOW()-INTERVAL '30 minutes')""",(month_key(),month_key(),raised))
         # Webhook conversations arrive message by message: wait for a quiet minute instead of drafting every line.
         for c in store.all("""SELECT * FROM desk_fb_threads WHERE status='waiting' AND (NOT (key LIKE 'psid:%%' OR key LIKE 'igsid:%%')
           OR last_at < NOW()-INTERVAL '60 seconds') ORDER BY last_at LIMIT 20"""):
