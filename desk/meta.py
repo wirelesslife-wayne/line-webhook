@@ -38,6 +38,7 @@ STUCK = timedelta(minutes=10)
 CANNED = ('客服團隊不在線上', '喜歡無限的影音產品', '施工時間約 3 小時，完工後', '該如何為你提供協助', '營業時間如下',
           '非常感謝您對我們產品的興趣')
 HOLDING = ('稍等', '幫您查', '幫您確認', '確認一下', '查一下', '晚點回覆', '稍後回覆')
+SYSTEM_NOTICE = '回覆了你的自動歡迎訊息'
 
 
 def mode():
@@ -355,7 +356,15 @@ class Client:
                 at = datetime.strptime(m.get('created_time', ''), '%Y-%m-%dT%H:%M:%S%z').astimezone(TAIPEI).isoformat()
             except (TypeError, ValueError):
                 at = ''
+            if role == 'page' and SYSTEM_NOTICE in text:
+                continue  # 「某某回覆了你的自動歡迎訊息。若要變更…」 is Meta talking to the page, not a message
             out.append(dict(role=role, text=text[:10000], at=at, note=page_note(text) if role == 'page' else ''))
+        # Wayne 11/19 (first live customer): what the page said before the customer's first word is the ad's welcome
+        # message, never a colleague
+        for m in out:
+            if m['role'] == 'user':
+                break
+            m['note'] = m['note'] or '自動回覆'
         return out
 
     def send(self, recipient, message, tag=False):

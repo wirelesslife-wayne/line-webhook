@@ -243,11 +243,14 @@ def test_graph_history_is_read_oldest_first(monkeypatch):
                 {'message': '那要多久？', 'from': {'id': PSID}, 'created_time': '2026-11-19T07:00:00+0000'},
                 {'message': '', 'from': {'id': PSID}, 'created_time': '2026-11-19T06:59:00+0000', 'attachments': {'data': [{'mime_type': 'image/jpeg'}, {'mime_type': 'image/jpeg'}]}},
                 {'message': '', 'from': {'id': PSID}, 'created_time': '2026-11-19T06:58:00+0000'},
-                {'message': '感謝您的訊息！我們的客服團隊不在線上', 'from': {'id': PAGE}, 'created_time': '2026-11-19T06:00:00+0000'}]}}]}
+                {'message': '感謝您的訊息！我們的客服團隊不在線上', 'from': {'id': PAGE}, 'created_time': '2026-11-19T06:00:00+0000'},
+                {'message': '合成客人  您好，車上的行車紀錄器只錄前後，真的夠嗎？', 'from': {'id': PAGE}, 'created_time': '2026-11-19T05:59:00+0000'},
+                {'message': '合成客人回覆了你的自動歡迎訊息。若要變更或移除此問候語，請前往「訊息設定」。', 'from': {'id': PAGE}, 'created_time': '2026-11-19T05:59:00+0000'}]}}]}
     seen = {}
     monkeypatch.setattr(meta.requests, 'get', lambda url, **kw: seen.update(url=url, params=kw['params']) or R())
     out = meta.Client().history(PSID, 'fb_message')
-    assert [(m['role'], m['text'], m['note']) for m in out] == [
+    assert [(m['role'], m['text'], m['note']) for m in out] == [   # Meta's notice dropped, the ad welcome is not a person
+        ('page', '合成客人  您好，車上的行車紀錄器只錄前後，真的夠嗎？', '自動回覆'),
         ('page', '感謝您的訊息！我們的客服團隊不在線上', '自動回覆'), ('user', '[圖片] [圖片]', ''), ('user', '那要多久？', '')]
     assert out[-1]['at'].startswith('2026-11-19T15:00') and seen['params']['user_id'] == PSID and seen['params']['platform'] == 'messenger'
 
