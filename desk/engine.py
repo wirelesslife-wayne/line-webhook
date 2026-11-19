@@ -522,6 +522,10 @@ class Engine:
                 if url.rstrip('.,;:!?') not in known:
                     out['flags'].append(tag + '草稿用了資料裡沒有的連結，請確認：' + url)
             out['flags'] += [tag + x for x in self.wrong_links(v['draft'])]
+            # 11/19 AI 實測：重寫後草稿第一行就是 Wayne 的指示原文，畫面沒擋
+            flat = re.sub(r'\W', '', instruction)
+            if len(flat) >= 8 and flat[:12] in re.sub(r'\W', '', v['draft']):
+                out['flags'].append(tag + '草稿裡出現你下給 AI 的指示原文，請刪掉再送出')
             if comment and (len([s for s in v['draft'].splitlines() if s.strip()]) > 10 or len(v['draft']) > 700):
                 out['flags'].append(tag + '公開留言草稿偏長，建議精簡後再發送')
         out.pop('images',None)

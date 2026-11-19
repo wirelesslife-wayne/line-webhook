@@ -10,6 +10,8 @@ async function api(path,body){const r=await fetch('/desk/api/fb/'+path,{method:b
 function say(text,bad,tone){const e=f('feedback');e.textContent=text||'';e.hidden=!text;e.classList.toggle('bad',!!bad);e.classList.toggle('ok',tone==='ok');e.classList.toggle('skip',tone==='skip')}
 // Wayne 11/17 (ChatGPT, Gemini reviewed the preview): after 核准送出 or 不發送 the next customer opens at its top, with one
 // line saying what happened to the last one; only when the action worked. 請 AI 重寫 stays.
+let coolUntil=0,rewriting=null;
+function cool(){coolUntil=Date.now()+2000;document.body.classList.add('cooling');setTimeout(()=>document.body.classList.remove('cooling'),2000)}
 function nextAfter(id){const i=items.findIndex(x=>x.id===id);const n=items[i+1]||items[i-1];return n?{id:n.id,name:n.name}:null}
 function goNext(nx,text,tone){
   if(tab==='todo'&&nx&&items.some(x=>x.id===nx.id)){openId=nx.id;if(lastData)draw(lastData);text+=`・已開啟下一位：${nx.name}`}
@@ -251,6 +253,8 @@ function draw(d){syncDraw(d.sync);
   f('prev').hidden=f('next').hidden=page===0&&f('next').disabled;  // 11/19：只有一頁就不顯示上一頁／下一頁
   document.querySelectorAll('[data-draft]').forEach(grow);
   const pane=document.querySelector('.split .pane');if(keep&&pane&&pane.dataset.id===openId)pane.scrollTop=keep;
+  // 11/19 AI 實測：重寫好了，上面還一直寫「AI 正在重寫」
+  if(rewriting){const r=items.find(x=>x.id===rewriting.id);if(!r||!['waiting','drafting'].includes(r.status)){say(r&&r.status==='ready'?`✓ ${rewriting.name} 的草稿已重寫好，請再看一次`:'',false,'ok');rewriting=null}}
 }
 function wipe(){items=[];shown='';openId=null;f('list').innerHTML='<p class="muted">讀取中…</p>'}
 async function load(force){
@@ -295,11 +299,14 @@ document.addEventListener('click',async event=>{
     if(b.id==='fb-confirm-cancel'){f('confirm').close();confirmation=null;return}
     if(b.id==='fb-confirm-ok'&&confirmation){  // 11/18 ChatGPT：兩個「核准」按鈕會猶豫，改成一個主按鈕＋「送出後標記待處理」勾選
       const snap=confirmation;if(linkGate.pending||linkGate.bad)return;if(snap.is_public&&!f('public-check').checked)return;const lc=document.getElementById('fb-links-check');if(lc&&!lc.checked)return;
-      busy=true;b.disabled=true;const nx=nextAfter(snap.thread_id);let flash=null;
+      busy=true;b.disabled=true;b.textContent='核准中…';const nx=nextAfter(snap.thread_id);let flash=null;
       try{const out=await api('send',{thread_id:snap.thread_id,version:snap.version,text:snap.text,retry_key:snap.retry_key,confirmed:true,hold:f('confirm-pin').checked&&!f('pin-label').hidden,public_confirmed:snap.is_public,links_confirmed:!!(lc&&lc.checked),media_ids:snap.media_ids});delete edits[snap.key];flash=out.live?`✓ ${snap.name} 已核准，正在即時送出`:`✓ ${snap.name} 已核准，等送出`}
       catch(e){say(e.message,true)}
       finally{busy=false;b.disabled=false;f('confirm').close();confirmation=null}
-      await load(true);if(flash)goNext(nx,flash,'ok');return}
+      // 11/19 AI 實測：確認框關掉後卡片要等十幾秒才變，下一位的「核准送出」剛好在同一個位置，多按一下就送錯人。
+      // 先在原地鎖住、顯示已核准，跳到下一位後按鈕再鎖 2 秒
+      if(flash){say(flash,false,'ok');document.querySelector(`.item[data-id="${CSS.escape(snap.thread_id)}"]`)?.classList.add('locked')}
+      await load(true);if(flash){goNext(nx,flash,'ok');cool()}return}
     if(b.dataset.ruleId){const active=b.dataset.active!=='true';b.disabled=true;await api('rules/'+b.dataset.ruleId,{active});b.dataset.active=String(active);b.textContent=active?'停用':'重新啟用';b.closest('.rule').classList.toggle('off',!active);b.disabled=false;return}
     const act=b.dataset.act;if(!act)return;const p=pick(b);if(!p)return;const {d,el}=p;
     if(act==='toggle'&&WIDE.matches){if(openId!==d.id){openId=d.id;if(lastData)draw(lastData);document.querySelector('.pane')?.scrollTo(0,0)}return}
@@ -328,8 +335,10 @@ document.addEventListener('click',async event=>{
       else if(act==='part-add')ps.push('');
       else{const t=lastCaret.id&&el.querySelector('#'+CSS.escape(lastCaret.id));if(!t){say('先在框裡點一下要切開的位置，再按「從游標處分成下一則」。',true);return}const n=Number(t.dataset.n),pos=lastCaret.pos;if(!ps[n].slice(0,pos).trim()||!ps[n].slice(pos).trim()){say('游標要放在文字中間（前後都要有字）才能切開。',true);return}ps.splice(n,1,ps[n].slice(0,pos),ps[n].slice(pos))}
       edits[editKey(d)]=ps.map(x=>x.replace(/^\n+|\n+$/g,'')).join(SPLIT);lastCaret={};draw(lastData);return}
+    if(Date.now()<coolUntil&&['send','skip','skip-why'].includes(act))return;  // 剛換到下一位：先看清楚是誰
     if(act==='send'){
-      const text=joined(el);if(partsOf(text).some(x=>!x.trim())){say('有一則是空的，請填內容或按「併回上一則」。',true);return}if(!text.trim()){say('草稿是空的，請先寫內容或按「請 AI 重寫」。',true);return}
+      const text=joined(el);
+      if(/[（(]已依(你的|您的)?指示|依指示重寫/.test(text)||(d.result&&(d.result.flags||[]).some(x=>x.includes('指示原文'))&&!edits[editKey(d)])){say('草稿裡有你給 AI 的指示原文（不是給客人的話），請刪掉再核准。',true);return}if(partsOf(text).some(x=>!x.trim())){say('有一則是空的，請填內容或按「併回上一則」。',true);return}if(!text.trim()){say('草稿是空的，請先寫內容或按「請 AI 重寫」。',true);return}
       confirmation=Object.freeze({thread_id:d.id,version:d.version,text,name:d.name,is_public:d.is_public,live:!!d.live,key:editKey(d),retry_key:crypto.randomUUID(),media_ids:(d.media||[]).map(m=>m.id)});
       // Wayne 11/16 20:50: the AI no longer marks anything; when its note says something is still ours to do, ask once here
       const owe=!d.hold&&((d.result||{}).to_human===true||/對帳|確認營業|要確認|請確認|待公司確認/.test((d.result||{}).staff_note||''));
@@ -358,7 +367,7 @@ document.addEventListener('click',async event=>{
       const warn=el.querySelector('.factwarn');
       if(remember&&warn&&warn.hidden&&/\d{3,}|\d,\d{3}|\$|元|電話|地址|門市在/.test(instruction)){warn.hidden=false;b.textContent='還是要記住，照這樣重寫';warn.scrollIntoView({block:'nearest'});return}
       busy=true;b.disabled=true;
-      try{const out=await api('redraft',{thread_id:d.id,version:d.version,instruction,original_draft:joined(el),remember});delete edits[editKey(d)];if(out.rule_id)remember_rule(out.rule_id,instruction);say(out.remembered?'已記住這條指示，AI 正在重寫，約 1 分鐘。':'AI 正在重寫，約 1 分鐘。')}
+      try{const out=await api('redraft',{thread_id:d.id,version:d.version,instruction,original_draft:joined(el),remember});delete edits[editKey(d)];if(out.rule_id)remember_rule(out.rule_id,instruction);say(out.remembered?'已記住這條指示，AI 正在重寫，約 1 分鐘。':'AI 正在重寫，約 1 分鐘。');rewriting={id:d.id,name:d.name}}
       catch(e){say(e.message,true)}
       finally{busy=false}
       await load(true);return}
@@ -368,10 +377,14 @@ document.addEventListener('click',async event=>{
     if(act==='skip-why'||act==='cancel'){
       const kind=act==='cancel'?'cancel':'skip';
       busy=true;b.disabled=true;const nx=kind==='skip'?nextAfter(d.id):null;let flash=null;
-      try{await api(kind,kind==='skip'?{thread_id:d.id,version:d.version,reason:b.dataset.why}:{thread_id:d.id,version:d.version});delete edits[editKey(d)];if(kind==='skip')flash=`— ${d.name} 已結案（沒有發送）`+(b.dataset.why==='bad_draft'?'・記得自己回客人':'');else say('已取消核准，回到待審核。')}
+      // 11/19 AI 實測：取消核准後，Wayne 改過的字不見了、變回 AI 原稿；改成放回他核准的那段
+      const was=kind==='cancel'?(d.attempts||[]).find(x=>x.status==='approved'):null;
+      try{await api(kind,kind==='skip'?{thread_id:d.id,version:d.version,reason:b.dataset.why}:{thread_id:d.id,version:d.version});
+        if(was&&was.text)edits[editKey(d)]=was.text;else delete edits[editKey(d)];
+        if(kind==='skip')flash=`— ${d.name} 已結案（沒有發送）`+(b.dataset.why==='bad_draft'?'・記得自己回客人':'');else say('已取消核准，回到待審核（你改過的字還在）。')}
       catch(e){say(e.message,true)}
       finally{busy=false}
-      await load(true);if(flash)goNext(nx,flash,'skip');return}
+      await load(true);if(flash){goNext(nx,flash,'skip');cool()}return}
   }catch(e){say(e.message,true);b.disabled=false}
 });
 f('lk-form').addEventListener('submit',e=>{e.preventDefault();void lkSearch()});
