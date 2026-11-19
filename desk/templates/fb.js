@@ -103,6 +103,7 @@ let undoTimer=null;
 function toast(text,undo){const t=f('toast');clearTimeout(undoTimer);t.innerHTML=`<span>${esc(text)}</span>${undo?'<button id="fb-undo">復原</button>':''}`;t.hidden=false;t._undo=undo||null;undoTimer=setTimeout(()=>{t.hidden=true;t._undo=null},10000)}
 // Wayne 11/15 20:35 picked option A: one grey button under 發送, two choices in a bottom sheet, nothing is sent
 // 11/19 第二批：不發送的原因（鍵值和 desk/fb.py SKIP_REASONS 一致）
+const POLITE=/^(?:謝謝|感謝|感恩|多謝|thanks?|thx|ok+|好的?|了解|收到|[您你喔囉了啦唷]|[\s~～!！。.，,、]|[👍🙏😊])+$/iu;
 const SKIP_WHY=[['answered','我回過了'],['no_need','不用回'],['bad_draft','AI 寫不好'],['other','其他']];
 function skipWhy(){return '<div class="skipwhy" hidden><p><b>結案原因</b>（不會傳訊息給客人）</p>'+SKIP_WHY.map(([k,v])=>`<button data-act="skip-why" data-why="${k}">${v}</button>`).join('')+'<button class="skipcancel" data-act="skip-cancel">取消</button></div>'}
 function holdPick(d){return canReview&&!d.hold?'<div class="holdpick"><button class="holdbtn" data-act="hold-pick" aria-haspopup="dialog">📌 標記待處理 ▾</button></div>':''}
@@ -110,13 +111,16 @@ function card(d,i,closed){
   const todo=TODO.includes(d.status),waiting=d.status==='waiting'||d.status==='drafting',r=d.result||{};
   const draft=edits[editKey(d)]??r.draft??'';
   const lastUser=[...d.messages].reverse().find(m=>m.role!=='assistant')||d.messages[d.messages.length-1]||{};
+  // 11/19 Wayne (陳雪莉)：客人連傳「請問安裝價格多少呢」「謝謝」，列表只顯示「謝謝」看起來像道謝收尾；最後一句是客套話時連前一句一起顯示
+  const run=[];for(let i=d.messages.length-1;i>=0&&d.messages[i].role!=='assistant';i--)run.unshift(d.messages[i]);
+  const said=run.length>1&&POLITE.test((lastUser.text||'').trim())?run.slice(-2).map(m=>m.text||'').join(' ／ '):(lastUser.text||'');
   let [chip,tone]=CHIP[d.status]||[d.status,'off'];const open=openId===d.id&&!closed;
   if(TODO.includes(d.status)&&d.waited>=24){chip=`未回覆 ${Math.floor(d.waited/24)} 天`;tone='late'}
   // Wayne 11/15: in 待處理 (and search) the chip says what we are waiting for, not that the reply went out
   if((tab==='hold'||tab==='search')&&d.hold){chip=d.hold==='ours'?`📌 待確認 ${(d.hold_days||0)+1} 天`:'⏳ 等客人回';tone=d.hold==='ours'?'hold':'wait'}
   if(d.auto){chip='🤖 不用回・沒發送';tone='off'}  // 11/19 第二批（ChatGPT）：「自動處理」會被看成 AI 已經回了
   const mark=d.hold&&tab!=='hold'&&tab!=='search'?(d.hold==='ours'?'📌 ':'⏳ '):'';
-  let h=`<article class="item${open?' open':''}${closed&&openId===d.id?' sel':''}" data-id="${esc(d.id)}"><button class="row" data-act="toggle" aria-expanded="${open}"><span class="avatar">${d.avatar?`<img src="/desk/api/fb/avatar?thread_id=${encodeURIComponent(d.id)}&t=${esc(d.avatar)}" alt="" decoding="async">`:USER_ICON}${(BRAND[d.channel]||'').split('<svg class="ic"')[0]}</span><span class="sep"></span><span class="who-said"><b>${mark}${esc(d.name)}</b><span>${esc((lastUser.text||'').replace(/\s+/g,' '))}</span></span>${tab==='todo'&&d.status==='ready'?`<span class="when wait${d.waited>=1?' late':''}" title="${esc(when(lastUser.time||''))}">${waitText(d.waited||0)}</span>`:`<span class="when">${esc(when(lastUser.time||''))}</span><span class="state-chip ${tone}">${esc(chip)}</span>`}${CHEV}</button>`;
+  let h=`<article class="item${open?' open':''}${closed&&openId===d.id?' sel':''}" data-id="${esc(d.id)}"><button class="row" data-act="toggle" aria-expanded="${open}"><span class="avatar">${d.avatar?`<img src="/desk/api/fb/avatar?thread_id=${encodeURIComponent(d.id)}&t=${esc(d.avatar)}" alt="" decoding="async">`:USER_ICON}${(BRAND[d.channel]||'').split('<svg class="ic"')[0]}</span><span class="sep"></span><span class="who-said"><b>${mark}${esc(d.name)}</b><span>${esc(said.replace(/\s+/g,' '))}</span></span>${tab==='todo'&&d.status==='ready'?`<span class="when wait${d.waited>=1?' late':''}" title="${esc(when(lastUser.time||''))}">${waitText(d.waited||0)}</span>`:`<span class="when">${esc(when(lastUser.time||''))}</span><span class="state-chip ${tone}">${esc(chip)}</span>`}${CHEV}</button>`;
   if(!open)return h+'</article>';
   h+=`<div class="detail"><p class="muted">${esc(d.label)} · ${esc(STATUS[d.status]||d.status)}${d.note&&d.note!==STATUS[d.status]?' · '+esc(d.note):''}${d.status==='ready'?'<button class="link jumpdraft" data-act="jump-draft">⬇ 直接看草稿</button>':''}</p>`;
   h+=holdBlock(d);
