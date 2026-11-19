@@ -252,6 +252,22 @@ def test_graph_history_is_read_oldest_first(monkeypatch):
     assert out[-1]['at'].startswith('2026-11-19T15:00') and seen['params']['user_id'] == PSID and seen['params']['platform'] == 'messenger'
 
 
+def test_name_falls_back_to_the_conversation_participants(monkeypatch):
+    monkeypatch.setenv('FB_PAGE_ACCESS_TOKEN', 'x')
+    monkeypatch.setenv('FB_PAGE_ID', PAGE)
+
+    class R:
+        def __init__(self, code, body):
+            self.status_code, self.body = code, body
+
+        def json(self):
+            return self.body
+    answers = [R(400, {'error': {'code': 100}}),
+               R(200, {'data': [{'participants': {'data': [{'id': PAGE, 'name': '無限科技'}, {'id': PSID, 'name': '合成客人'}]}}]})]
+    monkeypatch.setattr(meta.requests, 'get', lambda url, **kw: answers.pop(0))
+    assert meta.Client().profile(PSID, 'fb_message') == '合成客人'
+
+
 def test_first_contact_from_ad_buttons_only_still_gets_a_draft(db, api):
     """Wayne 11/15 13:19 replaced 11/12: a lead who only pressed the ad's buttons gets a person's follow-up too."""
     receive(db, incoming('多少錢？安裝要多久？', quick_reply={'payload': 'ad'}))

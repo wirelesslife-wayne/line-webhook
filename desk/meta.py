@@ -308,8 +308,22 @@ class Client:
                              timeout=(5, 10), allow_redirects=False)
             data = r.json() if r.status_code == 200 else {}
         except Exception:
+            data = {}
+        return str(data.get('name') or data.get('username') or '') or self.participant(user, channel)
+
+    def participant(self, user, channel):
+        """Wayne 11/19: the profile lookup gave no name (it needs an extra Meta permission), but the conversation's
+        participants list carries it, so cards read 「黃義智」 instead of 「FB 客人 1234」."""
+        try:
+            r = requests.get(f'{GRAPH}/{self.version}/{self.page}/conversations', timeout=(5, 10), allow_redirects=False,
+                             params=dict(platform='instagram' if channel == 'ig_message' else 'messenger', user_id=user,
+                                         fields='participants', access_token=self.token))
+            data = r.json() if r.status_code == 200 else {}
+            people = ((data.get('data') or [{}])[0].get('participants') or {}).get('data') or []
+        except Exception:
             return ''
-        return str(data.get('name') or data.get('username') or '')
+        me = next((p for p in people if isinstance(p, dict) and str(p.get('id')) == str(user)), {})
+        return str(me.get('name') or me.get('username') or '')
 
     def history(self, user, channel, limit=30):
         """The conversation with this customer as Meta keeps it, oldest first (Wayne 11/19: new cards had no past)."""
