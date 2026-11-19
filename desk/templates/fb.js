@@ -177,8 +177,8 @@ function card(d,i,closed){
       if(sug.length)h+=`<div class="suggest"><b>AI 建議附圖</b><div class="files">${sug.map(c=>`<figure><img src="/desk/api/fb/library/${esc(c.id)}" alt="" loading="lazy"><span>${esc(c.name)}</span><button data-act="lib-attach" data-lib="${esc(c.id)}">附上</button></figure>`).join('')}</div></div>`;
       h+=`<div class="actions"><label class="pick"><input type="file" data-file accept="image/jpeg,image/png,video/mp4"${d.is_public?'':' multiple'} hidden>＋ 加圖片／影片</label><button data-act="lib-open">從常用圖片挑</button></div><div class="libgrid" hidden></div><details class="spec"><summary>格式限制 ›</summary><small class="muted">${d.is_public?'會跟留言回覆一起送出，所有人都看得到。Facebook 留言只能附 1 個：JPEG／PNG 10MB 或 MP4 影片 25MB 以內。':'會跟文字一起送出（分成多則時，跟最後一則一起送）。JPEG／PNG 每張 10MB、MP4 影片 25MB 以內，最多 3 個。'}</small></details></div>`;  // 11/19：規格一大段收起來
     }
+    h+=`<div class="editbox" hidden><label for="fb-ins-${i}" class="edtitle">✨ 請 AI 重寫</label><p class="muted">打一句要改的，或直接貼上正確答案。</p><p class="edlink"><a href="https://notebooklm.google.com/" target="_blank" rel="noopener noreferrer">NotebookLM 查資料 ↗</a></p><textarea id="fb-ins-${i}" data-instruction maxlength="2000" placeholder="例如：價格寫 18,000／不要問縣市"></textarea>${canReview?'<label class="check"><input type="checkbox" data-remember>記住這個寫法</label><div class="factwarn" hidden><p>⚠️ 這句有金額、電話或地址。記住的指示只適合放<b>寫法</b>（語氣、要不要問縣市）；價格、電話、門市要改<b>正式資料</b>，不然正式資料一改，這條舊指示還會蓋過去。要改正式資料：在參考資料按「回報這筆有誤」。</p><button data-act="revise-once">只改這次，不記住</button></div>':''}<div class="actions"><button class="primary" data-act="revise">照這樣重寫</button><button data-act="edit-cancel">取消</button></div></div>`;
     h+=`<div class="actions mainacts"><button class="primary" data-act="send" ${canReview&&!waiting&&!(focusMode&&d.id in focusSeen&&d.version>focusSeen[d.id])?'':'disabled'}>✓ 核准送出</button><button data-act="edit" ${waiting?'disabled':''}>請 AI 重寫</button><button data-act="skip" ${canReview?'':'disabled'} aria-expanded="false">不發送</button>${canReview?skipWhy():''}</div>${canReview&&!waiting?'<p class="actshint">在 FB／LINE 前台已經回過的，也按「不發送」</p>':''}`+holdPick(d);
-    h+=`<div class="editbox" hidden><label for="fb-ins-${i}">要改哪裡？</label><p class="muted">由原本擬稿的 AI 重寫：它讀過價格表、制式回覆、你核准過的回覆和你記住的指示，會照你這句話改。</p><textarea id="fb-ins-${i}" data-instruction maxlength="2000" placeholder="例如：不要問縣市、價格寫 18,000、語氣再輕鬆一點"></textarea>${canReview?'<label class="check"><input type="checkbox" data-remember>以後都照這樣寫（記住這條寫法，會影響之後所有草稿；價格、電話、門市請改正式資料）</label><div class="factwarn" hidden><p>⚠️ 這句有金額、電話或地址。記住的指示只適合放<b>寫法</b>（語氣、要不要問縣市）；價格、電話、門市要改<b>正式資料</b>，不然正式資料一改，這條舊指示還會蓋過去。要改正式資料：在參考資料按「回報這筆有誤」。</p><button data-act="revise-once">只改這次，不記住</button></div>':''}<div class="actions"><button class="primary" data-act="revise">照這樣重寫</button><button data-act="edit-cancel">取消</button></div></div>`;
   }else if(d.status==='approved'){
     const a=d.attempts.find(x=>x.status==='approved');
     h+=`<p class="closed-by">${a?`${esc(a.staff)} 核准 · ${esc(a.time.slice(5,16))}・`:''}<b>尚未送出</b></p><label>已核准的內容</label><div class="preview">${esc(a?a.text:'')}</div>${(d.media||[]).length?`<div class="attach"><div class="files">${files(d.media,false)}</div></div>`:''}<p class="muted">${d.live?'正在用 Meta 官方 API 送出，幾秒內完成；送不出去會退回待審並寫原因。':'下一輪排程會照這段文字送出（最慢約 '+(d.channel==='line_message'?10:30)+' 分鐘）。'}</p><div class="actions"><button data-act="cancel" ${canReview?'':'disabled'}>取消核准</button></div>`;
@@ -210,7 +210,7 @@ document.addEventListener('change',async e=>{
   catch(x){say(x.message,true)}
   finally{busy=false;e.target.value=''}
   await load(true)});
-function editing(){const a=document.activeElement;return busy||f('confirm').open||f('lookup').open||(a&&a.tagName==='TEXTAREA')||!!document.querySelector('.editbox:not([hidden]),.libgrid:not([hidden])')}
+function editing(){const a=document.activeElement;return busy||f('confirm').open||(a&&a.tagName==='TEXTAREA')||!!document.querySelector('.editbox:not([hidden]),.libgrid:not([hidden])')}
 let library=null;
 async function libraryGrid(box){
   if(!library)library=(await api('library')).cards;
@@ -219,38 +219,33 @@ async function libraryGrid(box){
   box.innerHTML=Object.entries(groups).map(([t,list])=>`<h3>${esc(t)}</h3><div class="files">${list.map(c=>`<figure title="${esc(c.use_when)}"><img src="/desk/api/fb/library/${esc(c.id)}" alt="" loading="lazy"><span>${esc(c.name)}</span><small class="muted">${esc(c.use_when)}</small><button data-act="lib-attach" data-lib="${esc(c.id)}">附上</button></figure>`).join('')}</div>`).join('');
 }
 // Wayne 11/14: what the draft could lean on, found automatically; 依此重寫 is one more tap
-const REFS={},REFUSED={};let refsOpen=new Set(),lookupFor=null,lkKind='history';
+const REFS={},REFUSED={};let refsOpen=new Set();const refsHidden=new Set();
 function refKey(d){return d.id+':'+d.version}
 const RISKY=/格式化|恢復原廠|原廠設定|重置|reset|刪除/i;  // ChatGPT and Gemini 11/14: steps that wipe a customer's videos
-function refCard(x,n,where){return `<div class="ref"><b>${x.kind==='canned'?'📘 制式回覆｜'+esc(x.title):'💬 真人案例｜'+esc(x.date||'')}</b>${x.question?`<p class="q">客人問：${esc(x.question)}</p>`:''}<p>${x.kind==='history'?'同事答：':''}${esc(x.text)}</p>${RISKY.test(x.text)?'<p class="warn">⚠️ 含格式化／重置步驟，只能參考</p>':`<button data-act="ref-use" data-where="${where}" data-n="${n}">依此重寫</button>`}${x.kind==='canned'&&where==='auto'?refReport(n):''}</div>`}
+function refCard(x,n,where){return `<div class="ref"><b>${x.kind==='canned'?'📘 制式回覆｜'+esc(x.title):'💬 真人案例｜'+esc(x.date||'')}</b>${x.question?`<p class="q">客人問：${esc(x.question)}</p>`:''}<p>${x.kind==='history'?'同事答：':''}${esc(x.text)}</p>${RISKY.test(x.text)?'<p class="warn">⚠️ 含格式化／重置步驟，只能參考</p>':''}<div class="refacts">${x.kind==='canned'&&where==='auto'?'<button class="ghost" data-act="ref-report">回報有誤</button>':''}<button class="ghost" data-act="ref-hide" data-n="${n}">不相關</button>${RISKY.test(x.text)?'':`<button class="solid" data-act="ref-use" data-where="${where}" data-n="${n}">依此重寫</button>`}</div>${x.kind==='canned'&&where==='auto'?refReport(n):''}</div>`}
 // 11/18 ChatGPT＋Gemini：審稿時看到參考資料寫錯，就地回報（不用跑去 AI 回覆依據頁）
-function refReport(n){return `<button class="link" data-act="ref-report">回報這筆有誤</button><div class="refrep" hidden><textarea data-rep-where maxlength="240" placeholder="哪裡錯？例如：價格寫 12,800，現在是 13,800"></textarea><input data-rep-should maxlength="300" placeholder="正確應該是？（不確定可以空著）"><div class="actions"><button class="primary" data-act="ref-report-send" data-n="${n}">送出回報</button><button data-act="ref-report-cancel">取消</button></div></div>`}
+function refReport(n){return `<div class="refrep" hidden><textarea data-rep-where maxlength="240" placeholder="哪裡錯？例如：價格寫 12,800，現在是 13,800"></textarea><input data-rep-should maxlength="300" placeholder="正確應該是？（不確定可以空著）"><div class="actions"><button class="primary" data-act="ref-report-send" data-n="${n}">送出回報</button><button data-act="ref-report-cancel">取消</button></div></div>`}
 function refsBlock(d){
   const r=REFS[refKey(d)];
   // null = still loading (fetchRefs marks it); a redraw meanwhile (phone turned, list refresh) must not crash the whole list
   if(r==null){if(r===undefined)fetchRefs(d);return '<div class="refs"><p class="muted">參考資料：查詢中…</p></div>'}
-  const list=[...(r.canned||[]),...(r.history||[])],shut=!refsOpen.has(d.id);
-  if(!list.length)return '<div class="refs"><p class="muted">參考資料 ⚪ 目前沒有合適的參考資料</p><button class="link" data-act="lookup">查資料 ›</button></div>';
-  return `<div class="refs"><button class="link refs-head" data-act="refs-toggle" aria-expanded="${!shut}">${shut?'▶':'▼'} 參考資料 ✅ 找到 ${list.length} 筆</button>${shut?'':list.map((x,n)=>refCard(x,n,'auto')).join('')}<button class="link" data-act="lookup">查資料 ›</button></div>`}
+  // 11/20 ChatGPT＋Gemini: no separate 查資料 window; a reference that doesn't fit is hidden with 不相關
+  const list=[...(r.canned||[]),...(r.history||[])].map((x,n)=>[x,n]).filter(([,n])=>!refsHidden.has(d.id+':'+n)),shut=!refsOpen.has(d.id);
+  if(!list.length)return '<div class="refs"><p class="muted">參考資料：沒有找到</p></div>';
+  return `<div class="refs"><button class="link refs-head" data-act="refs-toggle" aria-expanded="${!shut}">${shut?'▶':'▼'} 參考資料 ${list.length} 筆</button>${shut?'':list.map(([x,n])=>refCard(x,n,'auto')).join('')}</div>`}
 async function fetchRefs(d){
   const k=refKey(d);if(REFS[k]===null)return;REFS[k]=null;
   try{REFS[k]=await api('references?thread_id='+encodeURIComponent(d.id))}catch(e){REFS[k]={canned:[],history:[]}}
   const box=document.querySelector(`.item[data-id="${CSS.escape(d.id)}"] .detail .refs`);if(box)box.outerHTML=refsBlock(d)}
-async function useRef(d,el,x){
-  if(x.kind!=='paste'&&!confirm('用這筆參考資料請 AI 重寫草稿嗎？框裡現在的草稿會被換掉。'))return;  // Grok 11/15: one stray tap rewrote with the wrong reference
-  const label=x.kind==='canned'?'制式回覆〈'+x.title+'〉':x.kind==='history'?'真人案例 '+(x.date||''):'你貼上的答案';
+async function useRef(d,el,x,btn){
+  if(!confirm('用這筆請 AI 重寫？現在的草稿會被換掉。'))return;  // Grok 11/15: one stray tap rewrote with the wrong reference
+  if(btn){btn.disabled=true;btn.textContent='重寫中…'}say('AI 重寫中，約 1 分鐘…');  // 11/20 test: 5–10 s with no sign it was tapped
+  const label=x.kind==='canned'?'制式回覆〈'+x.title+'〉':'真人案例 '+(x.date||'');
   const body=(x.question?'客人問：'+x.question+'\n':'')+(x.kind==='history'?'同事答：':'')+x.text;
   const instruction=('請依照這份參考資料重寫草稿（價格、連結仍以價格表和制式回覆為準；參考資料裡的舊價格、舊活動不要照抄'+(RISKY.test(body)?'；格式化、重置這類會清掉資料的步驟，不要叫客人直接做，要先請客人備份重要影片，客人還想保留影片時優先教他保存的方法':'')+'）：\n【'+label+'】\n'+body).slice(0,2000);
   busy=true;try{await api('redraft',{thread_id:d.id,version:d.version,instruction,original_draft:el?joined(el):'',remember:false});delete edits[editKey(d)];REFUSED[d.id]=label;say(`AI 正在依「${label}」重寫，約 1 分鐘。`)}
   catch(e){say(e.message,true)}finally{busy=false}
   await load(true)}
-function lkShow(kind){lkKind=kind;document.querySelectorAll('[data-lk]').forEach(x=>x.setAttribute('aria-pressed',String(x.dataset.lk===kind)));
-  f('lk-form').hidden=f('lk-results').hidden=kind==='paste';f('lk-paste').hidden=kind!=='paste';if(kind!=='paste')void lkSearch()}
-let lkItems=[];
-async function lkSearch(){const q=f('lk-q').value.trim(),box=f('lk-results');if(!q){box.innerHTML='<p class="muted">輸入車款或產品再按搜尋。</p>';return}
-  box.innerHTML='<p class="muted">搜尋中…</p>';
-  try{lkItems=(await api(`lookup?kind=${lkKind}&q=${encodeURIComponent(q)}`)).items;box.innerHTML=lkItems.length?lkItems.map((x,n)=>refCard(x,n,'panel')).join(''):'<p class="muted">沒找到。換個關鍵字（車款、產品名稱），或改用「貼上答案」。</p>'}
-  catch(e){box.innerHTML=`<p class="error">${esc(e.message)}</p>`}}
 let syncMore=false;
 function syncDraw(s){const b=f('sync');if(!b||!s)return;const busy=s.state!=='idle';b.disabled=busy||s.wait>0;b.classList.toggle('busy',busy);
   const lbl=b.querySelector('.lbl');if(lbl)lbl.textContent=s.state==='running'?'同步中…':s.state==='queued'?'已排入':'立即同步';
@@ -322,15 +317,6 @@ document.addEventListener('click',async event=>{
     if(b.dataset.fbTab!==undefined){q='';f('search').hidden=true;f('search-open').setAttribute('aria-expanded','false');tab=b.dataset.fbTab;page=0;late=false;autoOnly=false;document.querySelectorAll('[data-fb-tab]').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));f('order').hidden=tab==='done'||tab==='hold';say('');wipe();await load(true);return}
     if(b.dataset.fbChannel!==undefined){channel=b.dataset.fbChannel;page=0;document.querySelectorAll('[data-fb-channel]').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));wipe();await load(true);return}
     if(b.id==='fb-prev'||b.id==='fb-next'){page=Math.max(0,page+(b.id==='fb-prev'?-1:1));wipe();await load(true);window.scrollTo(0,0);return}
-    if(b.dataset.lk){lkShow(b.dataset.lk);return}
-    if(b.id==='fb-lookup-close'){f('lookup').close();return}
-    if(b.dataset.act==='ref-use'&&b.dataset.where==='panel'&&lookupFor){const x=lkItems[Number(b.dataset.n)],d=lookupFor;if(!x)return;f('lookup').close();await useRef(d,document.querySelector(`.item[data-id="${CSS.escape(d.id)}"]`),x);return}
-    if(b.id==='fb-lk-copy'&&lookupFor){const last=[...lookupFor.messages].reverse().find(m=>m.role!=='assistant');try{await navigator.clipboard.writeText(last?last.text:'');say('已複製客人問題，可以貼到 NotebookLM。')}catch(e){say('手機不讓網頁複製，請長按客人訊息自己複製。',true)}return}
-    if(b.id==='fb-lk-use-paste'&&lookupFor){const text=f('lk-answer').value.trim(),d=lookupFor;if(!text){say('請先貼上查到的答案。',true);return}
-      if(f('lk-submit').checked){const last=[...d.messages].reverse().find(m=>m.role!=='assistant');
-        try{await api('knowledge',{user_id:d.id,question:(last?last.text:'').slice(0,5000)||'（客人問題）',answer:text,summary:text.split('\n')[0].slice(0,120),scope:''})}catch(e){say('送交知識審核失敗：'+e.message,true);return}}
-      f('lookup').close();await useRef(d,document.querySelector(`.item[data-id="${CSS.escape(d.id)}"]`),{kind:'paste',title:'貼上的答案',text});
-      if(f('lk-submit').checked)say('已送交知識審核，AI 也正在依這個答案重寫，約 1 分鐘。');return}
     if(b.id==='fb-hold-cancel'){f('hold').close();holdFor=null;return}
     if(b.dataset.holdKind!==undefined&&holdFor){const d=holdFor,k=b.dataset.holdKind;f('hold').close();holdFor=null;busy=true;
       try{await api('hold',{thread_id:d.id,hold:k,note:d.hold_note||''});say(`已標「${HOLD[k]}」，會留在「待處理」，沒有傳訊息給客人。`)}catch(e){say(e.message,true)}finally{busy=false}await load(true);return}
@@ -365,8 +351,8 @@ document.addEventListener('click',async event=>{
     if(act==='fmore'){const k=d.id+':fall';MORE.has(k)?MORE.delete(k):MORE.add(k);draw(lastData);return}
     if(act==='jump-draft'){el.querySelector('.drafthead')?.scrollIntoView({behavior:'smooth',block:'start'});return}
     if(act==='refs-toggle'){refsOpen.has(d.id)?refsOpen.delete(d.id):refsOpen.add(d.id);const box=el.querySelector('.refs');if(box)box.outerHTML=refsBlock(d);return}
-    if(act==='ref-use'&&b.dataset.where==='auto'){const r=REFS[refKey(d)]||{},x=[...(r.canned||[]),...(r.history||[])][Number(b.dataset.n)];if(x){b.disabled=true;await useRef(d,el,x)}return}
-    if(act==='lookup'){lookupFor=d;f('lk-q').value=((REFS[refKey(d)]||{}).query||'');f('lk-answer').value='';f('lk-submit').checked=false;f('lookup').showModal();lkShow(f('lk-q').value?'history':'canned');return}
+    if(act==='ref-use'&&b.dataset.where==='auto'){const r=REFS[refKey(d)]||{},x=[...(r.canned||[]),...(r.history||[])][Number(b.dataset.n)];if(x)await useRef(d,el,x,b);return}
+    if(act==='ref-hide'){refsHidden.add(d.id+':'+b.dataset.n);const box=el.querySelector('.refs');if(box)box.outerHTML=refsBlock(d);return}
     if(act==='more'){const k=d.id+':'+b.dataset.k;MORE.has(k)?MORE.delete(k):MORE.add(k);if(lastData)draw(lastData);
       // 11/19 Wayne：按「看其他版本」直接捲到版本那裡，不用自己找
       if(b.dataset.k==='ver'&&MORE.has(k))setTimeout(()=>{const v=document.querySelector(`${WIDE.matches?'.pane ':''}.item[data-id="${CSS.escape(d.id)}"] .versions`);if(!v)return;
@@ -380,6 +366,7 @@ document.addEventListener('click',async event=>{
       else{const t=lastCaret.id&&el.querySelector('#'+CSS.escape(lastCaret.id));if(!t){say('先在框裡點一下要切開的位置，再按「從游標處分成下一則」。',true);return}const n=Number(t.dataset.n),pos=lastCaret.pos;if(!ps[n].slice(0,pos).trim()||!ps[n].slice(pos).trim()){say('游標要放在文字中間（前後都要有字）才能切開。',true);return}ps.splice(n,1,ps[n].slice(0,pos),ps[n].slice(pos))}
       edits[editKey(d)]=ps.map(x=>x.replace(/^\n+|\n+$/g,'')).join(SPLIT);lastCaret={};draw(lastData);return}
     if(Date.now()<coolUntil&&['send','skip','skip-why'].includes(act))return;  // 剛換到下一位：先看清楚是誰
+    if(act==='send'&&el.querySelector('.editbox:not([hidden])')){say('重寫框還開著：先按「照這樣重寫」或「取消」。',true);return}
     if(act==='send'&&focusMode&&d.id in focusSeen&&d.version>focusSeen[d.id]){say('客人剛傳了新訊息，請先看最新對話，按「我看過了」再核准。',true);return}
     if(act==='send'){
       const text=joined(el);
@@ -437,7 +424,6 @@ document.addEventListener('click',async event=>{
       await load(true);if(flash){goNext(nx,flash,'skip');cool()}return}
   }catch(e){say(e.message,true);b.disabled=false}
 });
-f('lk-form').addEventListener('submit',e=>{e.preventDefault();void lkSearch()});
 // Wayne 11/15: find a customer by name in every tab and channel
 f('search').addEventListener('submit',async e=>{e.preventDefault();const v=f('q').value.trim();if(!v)return;q=v;if(tab!=='search')beforeSearch=tab;tab='search';page=0;late=false;
   document.querySelectorAll('[data-fb-tab]').forEach(x=>x.setAttribute('aria-pressed','false'));f('order').hidden=true;say('');wipe();await load(true)});
