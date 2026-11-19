@@ -73,10 +73,11 @@ FACTS = ('\n\nWayne 11/15 確認的事實（最高優先，優先於價格表、
          '外縣市經銷商沒有刷卡、也沒有刷卡分期，只能先線上辦無卡分期（另收 10% 手續費），申請通過後才能安排施工。'
          '還不知道客人在哪個縣市就先問。不要寫無卡分期 0 利率或不收手續費。\n'
          # Wayne 11/19: replaces 11/15 「不要主動提到府施工」
-         '- 到府施工（Wayne 11/19）：苗栗以北（基隆、台北、新北、桃園、新竹、苗栗）可以到府施工。客人問能不能到府、說沒空去門市、'
+         '- 到府施工（Wayne 11/19）：基隆、台北、新北、桃園、新竹、苗栗、宜蘭可以到府施工。客人問能不能到府、說沒空去門市、'
          '或問在哪裡裝而且人在這些縣市時，就說可以到府施工，cards 一定要附「到府安裝條件.png」那張圖卡；'
-         '還不知道縣市就先問。客人在苗栗以南或東部、離島，不提到府，照經銷商門市寫。'
-         '到府要不要另外收費、哪天能去，資料沒寫就不要自己寫，staff_note 寫「到府施工，請確認時間與費用」。\n'
+         '還不知道縣市就先問。客人在台中以南、花蓮、台東、離島，不提到府，照經銷商門市寫。'
+         '車馬費：宜蘭、新竹、苗栗另收車馬費 $500；基隆、台北、新北、桃園不收車馬費。舊回覆裡其他的車馬費金額不要用。'
+         '哪天能去資料沒寫就不要自己寫，staff_note 寫「到府施工，請確認時間」。\n'
          '- 營業日：照下面「門市營業日」表回答（11/28（六）投票日公休，11 月營業月曆圖卡漏標，不要附那張圖說那天有開）。'
          '表上沒有、或寫「請跟門市確認」的日子（颱風、下個月的週六等），才寫「跟門市確認後馬上回覆您」，staff_note 寫「要確認營業日」。\n'
          '- 行車記錄器（Wayne 11/15 確認）：客人自己買的行車記錄器，我們可以代工安裝；請客人提供車款和記錄器型號（前後雙鏡頭或單鏡頭），方便估安裝費和時間。客人只問有沒有裝、還沒說要哪一款時，不附產品圖。\n'
@@ -119,9 +120,9 @@ FACTS = ('\n\nWayne 11/15 確認的事實（最高優先，優先於價格表、
 
 SPECIAL_DAY = re.compile(r'投票|選舉|颱風|國定假日|連假')
 
-# Wayne 11/19: 苗栗以北 can be installed at the customer's place, always with the 到府安裝條件 card.
+# Wayne 11/19: 苗栗以北 and 宜蘭 can be installed at the customer's place, always with the 到府安裝條件 card.
 HOME = re.compile(r'到府|到您府上|上門(?:安裝|施工)')
-NORTH = re.compile(r'基隆|[台臺]北|新北|桃園|新竹|苗栗')
+NORTH = re.compile(r'基隆|[台臺]北|新北|桃園|新竹|苗栗|宜蘭')
 HOME_CARD = '到府安裝條件'
 NO_HOME = re.compile(r'(?:不|沒有|無法|未)(?:提供|能|可以|方便)?\s*(?:到府|上門)')
 
@@ -529,7 +530,7 @@ class Engine:
             out['cards'] = with_home_card(out['cards'], numbered)
             where = str((ex.get('location') if isinstance(ex, dict) else '') or '')
             if where and not NORTH.search(where):
-                out['flags'].append(f'草稿提到到府施工，但客人在「{where}」：到府只到苗栗以北，請確認')
+                out['flags'].append(f'草稿提到到府施工，但客人在「{where}」：到府只到苗栗以北和宜蘭，請確認')
         points = [p for p in out.get('points') or [] if isinstance(p, dict) and isinstance(p.get('q'), str)]
         out['points'] = [dict(q=p['q'][:80], status=str(p.get('status') or '')[:4]) for p in points[:8]]
         if '（建議不回覆）' not in out.get('draft', ''):
