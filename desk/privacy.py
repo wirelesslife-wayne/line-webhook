@@ -5,6 +5,8 @@ import re
 PLATE = re.compile(r'(?i)(?<![A-Z0-9])(?:([A-Z]{2,3})[- ]?(\d{3,4})|(\d{3,4})[- ]?([A-Z]{2,3}))(?![A-Z0-9])')
 # Our own published product codes look like plates; masked, the AI wrote 「四錄電子後視鏡 [車牌]」 (11/20 trial).
 OURS = {'WRM418', 'AP101', 'DT102', 'CMC1506'}
+# Sizes and units written after a number (「256GB」 記憶卡, 「2000CC」, 「300HP」) are not plates either (11/20).
+UNITS = {'GB', 'TB', 'MB', 'CC', 'HP', 'KM', 'KG', 'MAH'}
 
 
 def plate(models):
@@ -13,6 +15,8 @@ def plate(models):
     def replace(m):
         letters, digits = (m.group(1), m.group(2)) if m.group(1) else (m.group(4), m.group(3))
         if re.sub(r'[- ]', '', m.group(0)).upper() in OURS:
+            return m.group(0)
+        if not m.group(1) and m.group(4).upper() in UNITS:
             return m.group(0)
         year = 1990 <= int(digits) <= 2035
         engine = bool(m.group(1)) and len(digits) == 3 and digits.endswith('0')
