@@ -1,13 +1,16 @@
 const f=id=>document.getElementById('fb-'+id);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const STATUS={waiting:'AI 擬稿中，約 1 分鐘',drafting:'AI 擬稿中，約 1 分鐘',ready:'草稿好了',blocked:'AI 暫停，請直接在框裡寫',error:'擬稿失敗，請按「請 AI 重寫」重試或直接寫',approved:'已核准，等送出',done:'已結案',skip:'不回覆'};
+const STATUS={waiting:'AI 擬稿中，約 1 分鐘',drafting:'AI 擬稿中，約 1 分鐘',ready:'草稿好了',blocked:'AI 暫停，請直接在框裡寫',error:'擬稿失敗，請按「請 AI 重寫」重試或直接寫',approved:'已核准，等送出',done:'已結案',skip:'沒發送'};
 const TODO=['waiting','drafting','ready','blocked','error'];
 const CHIP={waiting:['AI 擬稿中','wait'],drafting:['AI 擬稿中','wait'],ready:['待審核',''],blocked:['需人工回覆','manual'],error:['擬稿失敗',''],approved:['已核准','ok'],done:['已結案','off'],skip:['沒發送','off']};
 const BRAND={};document.getElementById('fb-brands').content.querySelectorAll('span').forEach(s=>BRAND[s.dataset.ch]=s.innerHTML);
 let openId=null,lastData=null,autoOnly=false;
 let q='',beforeSearch='todo',tab='todo',channel='',page=0,order='old',late=false,items=[],edits={},confirmation=null,busy=false,shown='',listVersion=0,polling=false;
 async function api(path,body){const r=await fetch('/desk/api/fb/'+path,{method:body?'POST':'GET',headers:body?{'Content-Type':'application/json','X-CSRF-Token':csrf}:{},body:body?JSON.stringify(body):undefined});let d={};try{d=await r.json()}catch(e){}if(r.status===401){location.href='/desk/login';throw Error('請重新登入')}if(!r.ok)throw Error(d.error||'暫時無法處理，請重新載入');return d}
-function say(text,bad,tone){const e=f('feedback');e.textContent=text||'';e.hidden=!text;e.classList.toggle('bad',!!bad);e.classList.toggle('ok',tone==='ok');e.classList.toggle('skip',tone==='skip')}
+// 11/19 AI 實測：成功提示一直黏在頂端蓋住客人名字 → 成功的 3 秒後自己消失，錯誤的留著
+let sayTimer=null;
+function say(text,bad,tone){const e=f('feedback');clearTimeout(sayTimer);e.textContent=text||'';e.hidden=!text;e.classList.toggle('bad',!!bad);e.classList.toggle('ok',tone==='ok');e.classList.toggle('skip',tone==='skip');
+  if(text&&!bad&&(tone==='ok'||tone==='skip'||/^✓|已取消核准|已標|已結案|已附上|已加入|已移除|已回報|已排入/.test(text)))sayTimer=setTimeout(()=>{if(e.textContent===text)e.hidden=true},3000)}
 // Wayne 11/17 (ChatGPT, Gemini reviewed the preview): after 核准送出 or 不發送 the next customer opens at its top, with one
 // line saying what happened to the last one; only when the action worked. 請 AI 重寫 stays.
 let coolUntil=0,rewriting=null;
@@ -88,7 +91,8 @@ const FULL={};const msgSig=d=>{const l=d.messages[d.messages.length-1]||{};retur
 // post's text are folded, the list shows how long the customer has waited instead of 「待審核」 on every card.
 const MORE=new Set();const more=(d,k)=>MORE.has(d.id+':'+k);
 const moreBtn=(d,k,open,shut)=>`<button class="link morebtn" data-act="more" data-k="${k}">${more(d,k)?shut:open}</button>`;
-function waitText(h){return h<1?`等 ${Math.max(1,Math.round(h*60))} 分鐘`:h<24?`等 ${Math.floor(h)} 小時`:`等 ${Math.floor(h/24)} 天`}
+// 11/19 AI 實測＋ChatGPT、Gemini：只寫「等 8 天」分不出誰先，超過 1 天也寫小時
+function waitText(h){if(h<1)return `等 ${Math.max(1,Math.round(h*60))} 分鐘`;if(h<24)return `等 ${Math.floor(h)} 小時`;const d=Math.floor(h/24),r=Math.floor(h-d*24);return `等 ${d} 天${r?` ${r} 小時`:''}`}
 function holdBlock(d){
   if(!d.hold)return '';
   const ours=d.hold==='ours',day=(d.hold_days||0)+1;
@@ -124,7 +128,7 @@ function card(d,i,closed){
   const mark=d.hold&&tab!=='hold'&&tab!=='search'?(d.hold==='ours'?'📌 ':'⏳ '):'';
   let h=`<article class="item${open?' open':''}${closed&&openId===d.id?' sel':''}" data-id="${esc(d.id)}"><button class="row" data-act="toggle" aria-expanded="${open}"><span class="avatar">${d.avatar?`<img src="/desk/api/fb/avatar?thread_id=${encodeURIComponent(d.id)}&t=${esc(d.avatar)}" alt="" decoding="async">`:USER_ICON}${(BRAND[d.channel]||'').split('<svg class="ic"')[0]}</span><span class="sep"></span><span class="who-said"><b>${mark}${esc(d.name)}</b><span>${esc(said.replace(/\s+/g,' '))}</span></span>${tab==='todo'&&d.status==='ready'?`<span class="when wait${d.waited>=1?' late':''}" title="${esc(when(lastUser.time||''))}">${waitText(d.waited||0)}</span>`:`<span class="when">${esc(when(lastUser.time||''))}</span><span class="state-chip ${tone}">${esc(chip)}</span>`}${CHEV}</button>`;
   if(!open)return h+'</article>';
-  h+=`<div class="detail"><p class="muted">${esc(d.label)} · ${esc(STATUS[d.status]||d.status)}${d.note&&d.note!==STATUS[d.status]?' · '+esc(d.note):''}${d.status==='ready'?'<button class="link jumpdraft" data-act="jump-draft">⬇ 直接看草稿</button>':''}</p>`;
+  h+=`<div class="detail"><p class="muted">${esc(d.label)} · ${d.auto?'🤖 AI 判斷不用回':esc(STATUS[d.status]||d.status)}${d.note&&!d.auto&&d.note!==STATUS[d.status]?' · '+esc(d.note==='取消核准'?'你剛取消核准':d.note):''}${d.status==='ready'?'<button class="link jumpdraft" data-act="jump-draft">⬇ 直接看草稿</button>':''}</p>`;
   h+=holdBlock(d);
   if(d.context){const long=d.context.length>60;h+=`<p class="context${long&&!more(d,'ctx')?' one':''}"><b>所屬貼文：</b><span>${esc(d.context.slice(0,200))}</span>${long?moreBtn(d,'ctx','展開 ▾','收合 ▴'):''}</p>`}
   // Wayne 11/15 23:50: only the last 12 come with the list; 顯示更早的對話 loads the whole conversation (Liang Hong's 11/26 booking)
@@ -147,7 +151,7 @@ function card(d,i,closed){
       const have=new Set((d.media||[]).map(m=>m.name)),sug=(r.cards||[]).filter(c=>!have.has(c.name));
       h+=`<div class="attach"><div class="files">${files(d.media,true)}</div>`;
       if(sug.length)h+=`<div class="suggest"><b>AI 建議附圖</b><div class="files">${sug.map(c=>`<figure><img src="/desk/api/fb/library/${esc(c.id)}" alt="" loading="lazy"><span>${esc(c.name)}</span><button data-act="lib-attach" data-lib="${esc(c.id)}">附上</button></figure>`).join('')}</div></div>`;
-      h+=`<div class="actions"><label class="pick"><input type="file" data-file accept="image/jpeg,image/png,video/mp4"${d.is_public?'':' multiple'} hidden>＋ 加圖片／影片</label><button data-act="lib-open">從常用圖片挑</button></div><div class="libgrid" hidden></div><small class="muted">${d.is_public?'會跟留言回覆一起送出，所有人都看得到。Facebook 留言只能附 1 個：JPEG／PNG 10MB 或 MP4 影片 25MB 以內。':'會跟文字一起送出（分成多則時，跟最後一則一起送）。JPEG／PNG 每張 10MB、MP4 影片 25MB 以內，最多 3 個。'}</small></div>`;
+      h+=`<div class="actions"><label class="pick"><input type="file" data-file accept="image/jpeg,image/png,video/mp4"${d.is_public?'':' multiple'} hidden>＋ 加圖片／影片</label><button data-act="lib-open">從常用圖片挑</button></div><div class="libgrid" hidden></div><details class="spec"><summary>格式限制 ›</summary><small class="muted">${d.is_public?'會跟留言回覆一起送出，所有人都看得到。Facebook 留言只能附 1 個：JPEG／PNG 10MB 或 MP4 影片 25MB 以內。':'會跟文字一起送出（分成多則時，跟最後一則一起送）。JPEG／PNG 每張 10MB、MP4 影片 25MB 以內，最多 3 個。'}</small></details></div>`;  // 11/19：規格一大段收起來
     }
     h+=`<div class="actions mainacts"><button class="primary" data-act="send" ${canReview&&!waiting?'':'disabled'}>✓ 核准送出</button><button data-act="edit" ${waiting?'disabled':''}>請 AI 重寫</button><button data-act="skip" ${canReview?'':'disabled'} aria-expanded="false">不發送</button>${canReview?skipWhy():''}</div>${canReview&&!waiting?'<p class="actshint">在 FB／LINE 前台已經回過的，也按「不發送」</p>':''}`+holdPick(d);
     h+=`<div class="editbox" hidden><label for="fb-ins-${i}">要改哪裡？</label><p class="muted">由原本擬稿的 AI 重寫：它讀過價格表、制式回覆、你核准過的回覆和你記住的指示，會照你這句話改。</p><textarea id="fb-ins-${i}" data-instruction maxlength="2000" placeholder="例如：不要問縣市、價格寫 18,000、語氣再輕鬆一點"></textarea>${canReview?'<label class="check"><input type="checkbox" data-remember>以後都照這樣寫（記住這條寫法，會影響之後所有草稿；價格、電話、門市請改正式資料）</label><div class="factwarn" hidden><p>⚠️ 這句有金額、電話或地址。記住的指示只適合放<b>寫法</b>（語氣、要不要問縣市）；價格、電話、門市要改<b>正式資料</b>，不然正式資料一改，這條舊指示還會蓋過去。要改正式資料：在參考資料按「回報這筆有誤」。</p><button data-act="revise-once">只改這次，不記住</button></div>':''}<div class="actions"><button class="primary" data-act="revise">照這樣重寫</button><button data-act="edit-cancel">取消</button></div></div>`;
@@ -156,7 +160,7 @@ function card(d,i,closed){
     h+=`<p class="closed-by">${a?`${esc(a.staff)} 核准 · ${esc(a.time.slice(5,16))}・`:''}<b>尚未送出</b></p><label>已核准的內容</label><div class="preview">${esc(a?a.text:'')}</div>${(d.media||[]).length?`<div class="attach"><div class="files">${files(d.media,false)}</div></div>`:''}<p class="muted">${d.live?'正在用 Meta 官方 API 送出，幾秒內完成；送不出去會退回待審並寫原因。':'下一輪排程會照這段文字送出（最慢約 '+(d.channel==='line_message'?10:30)+' 分鐘）。'}</p><div class="actions"><button data-act="cancel" ${canReview?'':'disabled'}>取消核准</button></div>`;
   }else{
     const a=d.attempts.find(x=>x.status==='sent');
-    if(d.auto)h+=`<div class="autobox"><p class="closed-by">🤖 沒有回覆客人・AI 判斷不用回（${d.auto==='noreply'?'AI 判斷不用回覆':d.auto==='asked'?'同事已問客人需求':d.auto==='thanks'?'客人道謝收尾':'只點廣告按鈕'+(d.auto==='thumb'?'，最後只回 👍':'')}）· ${esc(d.closed_at||'')}</p><p class="muted">${d.auto==='noreply'?'AI 判斷這則不用回覆（例如跟產品無關的玩笑留言、只點了門市電話、只是說會晚到）':d.auto==='asked'?'同事已經問客人需要什麼服務，在等客人說明':d.auto==='thanks'?'同事已經回答，客人只回了道謝、好的或貼圖':'客人只點了廣告的預設問題，粉專自動回覆都答完了'}。沒有傳任何訊息；客人之後再傳訊息會自動回到待審核。</p>${canReview?'<div class="actions"><button data-act="reopen">改回待審核</button></div>':''}</div>`;
+    if(d.auto)h+=`<div class="autobox"><p class="closed-by">🤖 沒有傳訊息${d.auto==='noreply'?'':`（${d.auto==='asked'?'同事已問客人需求':d.auto==='thanks'?'客人道謝收尾':'只點廣告按鈕'+(d.auto==='thumb'?'，最後只回 👍':'')}）`} · ${esc(d.closed_at||'')}</p><p class="muted">${d.auto==='noreply'?'AI 判斷這則不用回覆（例如跟產品無關的玩笑留言、只點了門市電話、只是說會晚到）':d.auto==='asked'?'同事已經問客人需要什麼服務，在等客人說明':d.auto==='thanks'?'同事已經回答，客人只回了道謝、好的或貼圖':'客人只點了廣告的預設問題，粉專自動回覆都答完了'}。沒有傳任何訊息；客人之後再傳訊息會自動回到待審核。</p>${canReview?'<div class="actions"><button data-act="reopen">改回待審核</button></div>':''}</div>`;
     else h+=`<p class="closed-by">${d.status==='skip'?esc(/^不回覆/.test(d.note||'')?d.note.replace(/^不回覆：?/,'不發送'+(d.note.length>3?'：':'')):'不發送'):a?`已送出 · ${esc(a.staff)} 核准`:'已結案'} · ${esc(d.closed_at||'')}</p>`;
     if(a)h+=`<label>已送出的內容（${esc(a.time)}）</label><div class="preview">${esc(a.text)}</div>`;
   }
@@ -231,7 +235,10 @@ function syncDraw(s){const b=f('sync');if(!b||!s)return;const busy=s.state!=='id
   const bad=/失敗|沒送出|沒有正常|過期/.test(s.text||'');
   n.innerHTML=s.text?`上次同步 ${esc((s.at||'').slice(-5))} ${bad?'⚠':'✓'}<button class="link" data-sync-more>${syncMore?'收合 ▴':'詳情 ›'}</button>${syncMore?`<span class="full">${esc(s.text)}</span>`:''}`:''}
 document.addEventListener('click',e=>{if(e.target.closest('[data-sync-more]')){syncMore=!syncMore;if(lastData)syncDraw(lastData.sync)}});
-f('sync')?.addEventListener('click',async()=>{f('sync').disabled=true;try{await api('sync',{});say('已排入，約 1 分鐘內開始：送出已核准的回覆、抓最新訊息，跑完會用 LINE 通知你')}catch(e){say(e.message,true)}void load(true)});
+f('sync')?.addEventListener('click',async()=>{
+  // 11/19 AI 實測＋ChatGPT、Gemini：圖示像重新整理，其實會把已核准的回覆送出；有待送的就先講清楚
+  const n=Number((lastData&&lastData.approved)||0);if(n&&!confirm(`會送出 ${n} 則已核准的回覆，並抓最新訊息。要現在同步嗎？`))return;
+  f('sync').disabled=true;try{await api('sync',{});say('已排入，約 1 分鐘內開始：送出已核准的回覆、抓最新訊息，跑完會用 LINE 通知你')}catch(e){say(e.message,true)}void load(true)});
 function draw(d){syncDraw(d.sync);
   lastData=d;items=d.items;f('n-todo').textContent=d.todo||'';f('n-approved').textContent=d.approved||'';f('n-hold').textContent=d.hold||'';const per=d.per_channel||{},all=Object.values(per).reduce((a,b)=>a+b,0);document.querySelectorAll('[data-cnt]').forEach(x=>{const n=x.dataset.cnt?per[x.dataset.cnt]:all;x.textContent=n?` ${n}`:''});
   f('prev').disabled=page===0;f('next').disabled=!d.has_more;
@@ -240,7 +247,7 @@ function draw(d){syncDraw(d.sync);
   f('manual').textContent=d.manual?`${d.manual} 則需人工回覆`:'';
   f('autobar').hidden=tab!=='done'||!(d.auto_total||autoOnly);f('auto').setAttribute('aria-pressed',String(autoOnly));
   f('auto').textContent=autoOnly?`🤖 只看 AI 判斷不用回的（${d.total||0}）・顯示全部`:`🤖 AI 判斷不用回、沒發送 ${d.auto_total||0} 則`;f('auto-today').textContent=`今天 ${d.auto_today||0} 則`;
-  const empty={todo:'🎉 待審核全部處理完了',approved:'目前沒有即將送出的回覆。',hold:'目前沒有待處理的對話。',done:'還沒有結案的紀錄。',search:`沒有找到名字含「${esc(q)}」的客人。`}[tab];
+  const empty={todo:'🎉 待審核全部處理完了',approved:'目前沒有即將送出的回覆。',hold:'目前沒有待處理的對話。',done:'還沒有結案的紀錄。',search:`沒有找到名字或對話含「${esc(q)}」的客人。`}[tab];
   if(tab==='search')f('total').textContent=`搜尋「${q}」：${d.total||0} 位`;
   const sec=(x,i)=>tab==='hold'&&(i===0||items[i-1].hold!==x.hold)?`<h3 class="holdsec">${x.hold==='ours'?`📌 待我們確認（${d.hold_ours||0}）`:`⏳ 等客人回（${d.hold_customer||0}）`}</h3>`:'';
   // 11/19 Wayne：上傳照片後右邊那欄一直跳回最上面。重畫會換掉整個 .pane，同一位客人就把捲動位置放回去
@@ -256,7 +263,7 @@ function draw(d){syncDraw(d.sync);
   // 11/19 AI 實測：重寫好了，上面還一直寫「AI 正在重寫」
   if(rewriting){const r=items.find(x=>x.id===rewriting.id);if(!r||!['waiting','drafting'].includes(r.status)){say(r&&r.status==='ready'?`✓ ${rewriting.name} 的草稿已重寫好，請再看一次`:'',false,'ok');rewriting=null}}
 }
-function wipe(){items=[];shown='';openId=null;f('list').innerHTML='<p class="muted">讀取中…</p>'}
+function wipe(){items=[];shown='';openId=null;f('total').textContent='';f('list').innerHTML='<p class="muted">讀取中…</p>'}  // 11/19：讀取中不要先顯示「共 0 位」
 async function load(force){
   if(!force&&polling)return; // a slow answer must not be discarded by the next timer tick
   const v=++listVersion;polling=true;
@@ -376,12 +383,13 @@ document.addEventListener('click',async event=>{
     if(act==='skip'){const w=el.querySelector('.skipwhy');if(w){w.hidden=!w.hidden;b.setAttribute('aria-expanded',!w.hidden)}return}
     if(act==='skip-why'||act==='cancel'){
       const kind=act==='cancel'?'cancel':'skip';
-      busy=true;b.disabled=true;const nx=kind==='skip'?nextAfter(d.id):null;let flash=null;
+      busy=true;b.disabled=true;if(kind==='cancel')b.textContent='取消中…';const nx=kind==='skip'?nextAfter(d.id):null;let flash=null;
       // 11/19 AI 實測：取消核准後，Wayne 改過的字不見了、變回 AI 原稿；改成放回他核准的那段
       const was=kind==='cancel'?(d.attempts||[]).find(x=>x.status==='approved'):null;
       try{await api(kind,kind==='skip'?{thread_id:d.id,version:d.version,reason:b.dataset.why}:{thread_id:d.id,version:d.version});
         if(was&&was.text)edits[editKey(d)]=was.text;else delete edits[editKey(d)];
-        if(kind==='skip')flash=`— ${d.name} 已結案（沒有發送）`+(b.dataset.why==='bad_draft'?'・記得自己回客人':'');else say('已取消核准，回到待審核（你改過的字還在）。')}
+        if(kind==='skip')flash=`— ${d.name} 已結案（沒有發送）`+(b.dataset.why==='bad_draft'?'・記得自己回客人':'');
+        else{say('已取消核准，回到待審核（你改過的字還在）。');if(lastData&&tab==='approved'){lastData.items=lastData.items.filter(x=>x.id!==d.id);shown='';draw(lastData)}}}  // 11/19：卡片立刻離開「即將送出」，不再顯示已核准
       catch(e){say(e.message,true)}
       finally{busy=false}
       await load(true);if(flash){goNext(nx,flash,'skip');cool()}return}
@@ -400,5 +408,8 @@ function gate(){const ok=f('confirm-ok'),lc=document.getElementById('fb-links-ch
 f('public-check').addEventListener('change',gate);
 document.addEventListener('change',e=>{if(e.target.id==='fb-links-check')gate()});
 f('confirm').addEventListener('cancel',e=>{if(busy)e.preventDefault();else confirmation=null});
-void load(true);setInterval(()=>load(false),8000);
+// 11/19：AI 成績頁的「看對話 ›」用 ?q=名字 直接搜出那位客人
+const startQ=new URLSearchParams(location.search).get('q');
+if(startQ){f('q').value=startQ.slice(0,50);f('search').hidden=false;f('search').requestSubmit()}else void load(true);
+setInterval(()=>load(false),8000);
 f('hold').addEventListener('click',e=>{const r=f('hold').getBoundingClientRect();if(e.target===f('hold')&&(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)){f('hold').close();holdFor=null}});  // tap outside the sheet closes it

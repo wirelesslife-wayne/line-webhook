@@ -14,7 +14,7 @@
 .kb .item.off{background:#f1f3f5;color:#6b7785}.kb .rowx{display:flex;gap:10px;align-items:flex-start;justify-content:space-between}.kb .rowx>div{min-width:0;flex:1}
 .kb .q{color:var(--muted);font-size:14px;margin-bottom:4px!important}.kb button{min-height:38px;padding:6px 12px;font-size:14px;white-space:nowrap;flex:0 0 auto}
 .kb button.warn{color:#8a4b00;border-color:#f5d9a0;background:#fff8e6}.kb .headrow{display:flex;justify-content:space-between;align-items:flex-end;gap:10px}
-.kb .tag{font-size:12px;border-radius:999px;padding:1px 8px;background:var(--soft);color:var(--brand);margin-left:6px;white-space:nowrap}
+.kb .tag{font-size:13px;border-radius:999px;padding:1px 8px;background:var(--soft);color:var(--brand);margin-left:6px;white-space:nowrap}
 .kb .confirm{border:1px dashed #c9d3dc;border-radius:10px;padding:10px 12px;margin:8px 0 0;font-size:14px;background:#fafbfc}.kb .confirm .actions{margin-top:8px}
 .kb .search{width:100%;border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:16px;margin:4px 0 6px;box-sizing:border-box}
 .kb .hint{color:var(--muted);font-size:14px;margin:6px 0 0}.kb .hint button{min-height:0;border:0;background:none;padding:0;color:#0b5cab;text-decoration:underline;font-size:14px}
@@ -22,11 +22,13 @@
 .kb .li:last-of-type{border-bottom:0}.kb .li b{flex:1}.kb .li small{color:var(--muted);display:block;font-weight:400}
 .kb .doc{padding:0 0 12px;border-bottom:1px solid var(--line)}.kb table{width:100%;border-collapse:collapse;font-size:15px}.kb td,.kb th{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top}
 .kb th{color:var(--muted);font-weight:600;font-size:13px}.kb .doc details{border-bottom:1px solid var(--line);padding:8px 0}.kb .doc summary{cursor:pointer;font-weight:600}.kb .doc pre{white-space:pre-wrap;font:inherit;margin:6px 0 0}
-.kb .st{font-size:12px;border-radius:999px;padding:2px 9px;background:#fff1d6;color:#8a5300;white-space:nowrap}.kb .rep{padding:4px 0 12px;border-bottom:1px solid var(--line)}.kb .rep label{display:block;font-size:14px;margin:6px 0 2px}.kb .rep textarea,.kb .rep input{width:100%;box-sizing:border-box;font-size:16px;border:1px solid var(--line);border-radius:8px;padding:8px}
+.kb .st{font-size:13px;border-radius:999px;padding:2px 9px;background:#fff1d6;color:#8a5300;white-space:nowrap}.kb .rep{padding:4px 0 12px;border-bottom:1px solid var(--line)}.kb .rep label{display:block;font-size:14px;margin:6px 0 2px}.kb .rep textarea,.kb .rep input{width:100%;box-sizing:border-box;font-size:16px;border:1px solid var(--line);border-radius:8px;padding:8px}
 .kb .newrule textarea{width:100%;min-height:72px;box-sizing:border-box;font-size:16px}.kb .pager{display:flex;gap:8px;margin-top:8px}
 #feedback:empty{display:none}#feedback{position:sticky;top:0;z-index:5;background:#e8f5ec;border-radius:8px;padding:8px 12px}#feedback.bad{background:#fbe4e2;color:var(--bad)}
 header form button{white-space:nowrap}header form span{white-space:nowrap}
-@media(max-width:700px){header small{display:none}header{padding:10px 14px}header h1,header .title{font-size:17px}header form span{display:none}.nav.main a{font-size:16px}.kb .li{flex-wrap:wrap}.kb .li b{flex:1 1 100%}.kb .headrow{align-items:center}.kb td,.kb th{padding:6px 4px;font-size:14px}}
+@media(max-width:700px){header small{display:none}header{padding:10px 14px}header h1,header .title{font-size:17px}.nav.main a{font-size:16px}.kb .li{flex-wrap:wrap}.kb .li b{flex:1 1 100%}.kb .headrow{align-items:center}.kb td,.kb th{padding:6px 4px;font-size:14px}}
+
+/* 11/19 Gemini：頂端三個連結太擠，改成膠囊 */.jump{display:flex;flex-wrap:wrap;gap:6px 8px}.jump a{display:inline-flex;gap:4px;align-items:center;padding:5px 12px;border:1px solid var(--line);border-radius:16px;background:#fff;text-decoration:none;font-size:14px;color:var(--brand)}
 </style>
 <nav class="nav main" aria-label="客服管道">{{ nav.links('knowledge') }}</nav>
 <div class="kb">

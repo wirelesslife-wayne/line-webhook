@@ -18,14 +18,14 @@
 .qa .scroll{overflow-x:auto;border:1px solid var(--line);border-radius:12px;background:#fff}
 .qa table{width:100%;border-collapse:collapse;font-size:15px}
 .qa th,.qa td{padding:9px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}.qa tr:last-child td{border-bottom:0}.qa th{background:#f4f7f9;font-size:13px;color:var(--muted);font-weight:700}
-.qa td.n,.qa th.n{text-align:right;white-space:nowrap}.qa tr.cur td{background:#f6f7f9;color:#5b6670}.qa td small{display:block;font-size:12px;color:var(--muted);margin-top:2px}
+.qa td.n,.qa th.n{text-align:right;white-space:nowrap}.qa tr.cur td{background:#f6f7f9;color:#5b6670}.qa td small{display:block;font-size:13px;color:var(--muted);margin-top:2px}
 .qa td small.gate-ok{color:var(--good);font-weight:700}
 .qa .prob{background:#fff;border:1px solid var(--line);border-left:4px solid #b42318;border-radius:10px;padding:8px 12px;margin:8px 0;font-size:15px;overflow-wrap:anywhere}
 .qa .prob.spot{border-left-color:#e3a008}.qa .prob small{display:block;color:var(--muted);font-size:13px}.qa .prob b.times{color:#b42318;white-space:nowrap}
 .qa .prob details summary{cursor:pointer;color:var(--brand);font-size:13px;margin-top:2px}.qa .prob details div{font-size:13px;color:var(--muted);line-height:1.6}
 .qa .empty{color:var(--muted);font-size:15px;padding:6px 10px}
 .qa .rule{font-size:14px;color:var(--muted);background:#fafbfc;border:1px dashed #c9d3dc;border-radius:8px;padding:8px 12px;margin-top:12px;line-height:1.7}
-@media(max-width:700px){header small{display:none}header{padding:10px 14px}header form span{display:none}.nav.main{gap:16px}.nav.main a{font-size:16px}
+@media(max-width:700px){header small{display:none}header{padding:10px 14px}.nav.main{gap:16px}.nav.main a{font-size:16px}
 .qa .tiles{grid-template-columns:repeat(2,minmax(0,1fr))}.qa .tile b{font-size:26px}.qa table{font-size:14px}.qa th,.qa td{padding:7px 6px}.qa .hide-m{display:none}}
 .qa .skipline{background:#fff;border:1px solid var(--line);border-radius:10px;padding:8px 12px;margin:8px 0;font-size:15px}.qa .skipline small{display:block;color:var(--muted);font-size:13px;margin-top:2px}
 /* Wayne 11/19：字黏在一起、表格沒對齊、太多字。說明收進「怎麼算」，表格改成固定欄寬的格子，沒資料的類別併成一行 */
@@ -33,9 +33,9 @@
 .qa h2{margin-top:26px}.qa .tile small{line-height:1.4}
 .qa .grid{border:1px solid var(--line);border-radius:12px;background:#fff;overflow:hidden}
 .qa .gr{display:grid;grid-template-columns:minmax(0,1fr) 5.5em 4em 3.5em;gap:0 8px;align-items:baseline;padding:10px 12px;border-bottom:1px solid var(--line);font-size:15px}
-.qa .gr:last-child{border-bottom:0}.qa .gr.h{background:#f4f7f9;font-size:13px;color:var(--muted);font-weight:700;padding:7px 12px}
+.qa .openchat{font-size:14px;font-weight:600;color:var(--brand);white-space:nowrap}.qa .gr:last-child{border-bottom:0}.qa .gr.h{background:#f4f7f9;font-size:13px;color:var(--muted);font-weight:700;padding:7px 12px}
 .qa .gr>span{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}.qa .gr>span.few{font-size:13px;color:var(--muted)}
-.qa .gr>b{font-weight:600;min-width:0;overflow-wrap:anywhere}.qa .gr>b em{font-style:normal;font-size:12px;font-weight:400;color:var(--muted);margin-left:6px}
+.qa .gr>b{font-weight:600;min-width:0;overflow-wrap:anywhere}.qa .gr>b em{font-style:normal;font-size:13px;font-weight:400;color:var(--muted);margin-left:6px}
 .qa .gr>small{grid-column:1/-1;font-size:13px;color:var(--muted);margin-top:3px}.qa .gr>small.ok{color:var(--good);font-weight:700}
 .qa .nodata{font-size:13px;color:var(--muted);padding:9px 12px;margin:0;line-height:1.6}
 .qa details.rule summary{cursor:pointer;font-weight:700;color:var(--brand);min-height:32px}.qa details.rule dl{margin:6px 0 0}.qa details.rule dt{font-weight:700;color:var(--ink);margin-top:10px}.qa details.rule dd{margin:2px 0 0}
@@ -81,12 +81,16 @@ function tiles(c,E){
 }
 function problem(p,spot){
  const more=p.times>1?`<details><summary>看這 ${p.times} 次</summary><div>${p.more.map(esc).join('<br>')}</div></details>`:`<small>${esc(p.day)}・${esc(p.channel)}・${esc(p.name)}・${esc(p.intent)}</small>`;
- return `<div class="prob${spot?' spot':''}">${esc(p.what)}${p.times>1?` <b class="times">共 ${p.times} 次</b>`:''}${more}</div>`}
+ // 11/19 AI 實測＋ChatGPT、Gemini：高風險那筆要能直接點開那段對話
+ const open=p.name?` <a class="openchat" href="/desk/fb?q=${encodeURIComponent(p.name)}">看對話 ›</a>`:'';
+ return `<div class="prob${spot?' spot':''}">${esc(p.what)}${p.times>1?` <b class="times">共 ${p.times} 次</b>`:''}${open}${more}</div>`}
 // 固定四欄：名稱｜可用率｜高風險｜樣本，手機電腦都對齊
 const HEAD=first=>`<div class="gr h"><b>${first}</b><span>可用率</span><span>高風險</span><span>樣本</span></div>`;
 const cells=(x,E)=>`${x.samples>=E?`<span>${x.usable_pct}%</span>`:x.samples?'<span class="few">樣本不足</span>':'<span>—</span>'}<span>${x.samples?x.major+' 次':'—'}</span><span>${x.samples}</span>`;
 function cats(list,first,E){
  const has=list.filter(c=>c.samples),none=list.filter(c=>!c.samples);
+ // 11/19 AI 實測＋ChatGPT、Gemini：整張表都樣本不足等於沒內容，收成一行
+ if(!has.some(c=>c.samples>=E)){const n=has.reduce((a,c)=>a+c.samples,0);return `<p class="nodata">還在累積資料（目前 ${n} 則，每一類滿 ${E} 則才看得出差別）</p>`}
  return HEAD(first)+has.map(c=>`<div class="gr"><b>${esc(c.name)}</b>${cells(c,E)}${c.gate.kind==='thin'?'':`<small class="${c.gate.ok?'ok':''}">${c.gate.ok?'✅ ':''}${esc(c.gate.text)}</small>`}</div>`).join('')
   +(none.length?`<p class="nodata">還沒有資料：${none.map(c=>esc(c.name)).join('、')}</p>`:'')}
 async function load(){
@@ -98,9 +102,11 @@ async function load(){
  // 11/19 第二批（ChatGPT）：按「不發送」丟掉的草稿不在上面的數字裡，另外列
  const s=d.skipped;if(s&&s.total){el('skipped').innerHTML=`近 7 天按「不發送」<b>${s.total} 則</b>：${s.parts.map(p=>esc(p.label)+' '+p.n).join('、')}<small>不算進首稿可用率</small>`;el('skipped').hidden=false}
  const weeks=d.weeks.filter(w=>!w.before);
- el('weeks').innerHTML=HEAD('週')+(weeks.map(w=>`<div class="gr${w.current?' cur':''}"><b>${esc(w.label)}${w.current?'<em>本週，還沒結束</em>':''}</b>${cells(w,E)}</div>`).join('')||'<p class="nodata">還沒有資料</p>');
+ el('weeks').innerHTML=weeks.length&&!weeks.some(w=>w.samples>=E)?`<p class="nodata">還在累積資料（目前 ${weeks.reduce((a,w)=>a+w.samples,0)} 則，一週滿 ${E} 則才看得出變化）</p>`:HEAD('週')+(weeks.map(w=>`<div class="gr${w.current?' cur':''}"><b>${esc(w.label)}${w.current?'<em>本週，還沒結束</em>':''}</b>${cells(w,E)}</div>`).join('')||'<p class="nodata">還沒有資料</p>');
  el('topics').innerHTML=cats(d.categories.filter(c=>c.kind==='topic'),'題目',E);
  el('who').innerHTML=cats(d.categories.filter(c=>c.kind==='who'),'來源',E);
+ // 11/19 ChatGPT：兩張都還在累積就只留一行
+ if(el('topics').firstElementChild?.classList.contains('nodata')&&el('who').firstElementChild?.classList.contains('nodata')){el('who').hidden=el('who').previousElementSibling.hidden=true;el('topics').previousElementSibling.textContent='依題目、依客人來源'}
  el('problems').innerHTML=d.problems.map(p=>problem(p)).join('')||`<p class="empty">${d.card.samples?'近 7 天沒有 👍':'還沒有資料'}</p>`;
  el('flagged-sec').hidden=!d.flagged.length;
  el('flagged').innerHTML=d.flagged.map(p=>problem(p,true)).join('')||`<p class="empty">${d.card.spot_checked?'近 7 天數字都對得上 👍':'還沒有原樣送出的草稿可以比對'}</p>`;

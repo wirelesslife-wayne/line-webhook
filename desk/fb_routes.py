@@ -84,7 +84,7 @@ def register(bp,store):
             raise ActionError('分類不正確',400)
         q=request.args.get('q','').strip()[:50]
         if tab=='search' and not q:
-            raise ActionError('請輸入客人名字',400)
+            raise ActionError('請輸入客人名字或車款',400)
         try: page=max(0,int(request.args.get('page','0')))
         except ValueError: raise ActionError('頁碼不正確',400)
         order=request.args.get('order','old')
@@ -102,9 +102,13 @@ def register(bp,store):
             states,where=list(fb.TODO)+['approved','done','skip'],"t.hold<>'' AND t.status=ANY(%s) AND (%s='' OR t.channel=%s)"
         args=(states,channel,channel)
         if tab=='search':  # Wayne 11/15: a customer's name, in every tab and every channel
+            # 11/19 AI 實測＋ChatGPT、Gemini: he remembers the car (「RAV4」) more often than the name, so what the
+            # customer wrote counts too
             states=list(fb.TODO)+['approved','done','skip']
-            where="t.status=ANY(%s) AND (%s='' OR t.channel=%s) AND t.name ILIKE %s"
-            args=(states,channel,channel,'%'+q.replace('\\','\\\\').replace('%','\\%').replace('_','\\_')+'%')
+            where="""t.status=ANY(%s) AND (%s='' OR t.channel=%s) AND (t.name ILIKE %s OR EXISTS (SELECT 1 FROM desk_fb_events e
+              WHERE e.thread_id=t.id AND e.role='user' AND e.content ILIKE %s))"""
+            like='%'+q.replace('\\','\\\\').replace('%','\\%').replace('_','\\_')+'%'
+            args=(states,channel,channel,like,like)
         sort=f"{said} {'' if order=='old' else 'DESC'}" if tab!='done' else 't.updated_at DESC'  # Wayne 11/14: last closed first
         if tab=='hold':
             sort="CASE t.hold WHEN 'ours' THEN 0 ELSE 1 END,t.hold_at"  # ours first, longest waiting first

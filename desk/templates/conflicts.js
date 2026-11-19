@@ -34,7 +34,7 @@ function draw(d){
  el('bar').style.width=total?Math.round(d.decided*100/total)+'%':'0';
  el('prog').textContent=`已決定 ${d.decided}／共 ${total} 題`;
  const shown=tab==='decided'?ITEMS:ITEMS.slice(0,1);
- el('list').innerHTML=shown.map(card).join('')||`<div class="done">${tab==='open'?(d.later?'待決定的都做完了 👍 還有「之後再說」的題目。':'全部決定完了 👍'):tab==='later'?'沒有「之後再說」的題目。':'還沒有決定的題目。'}</div>`;
+ el('list').innerHTML=shown.map(card).join('')||`<div class="done">${tab==='open'?(d.product?'這個產品的題目都決定了 👍':d.open?'讀取中…':d.later?'待決定的都做完了 👍 還有「之後再說」的題目。':'全部決定完了 👍'):tab==='later'?'沒有「之後再說」的題目。':'還沒有已決定的題目。'}</div>`;  // 11/19 AI 實測：沒資料時不要說「全部決定完了」
  el('prev').hidden=page===0;el('next').hidden=!d.has_more;el('prev').parentElement.hidden=tab!=='decided'||(page===0&&!d.has_more);
 }
 let LAST=null;

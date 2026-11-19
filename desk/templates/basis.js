@@ -75,7 +75,12 @@ document.addEventListener('click',async e=>{
    await loadDocs();say('已回報，約 1 分鐘內會傳 LINE 給你，轉給 Claude 修改就好。');return}
   if(b.dataset.doc){const k=b.dataset.doc,box=el('doc-'+k),open=box.hidden;
    document.querySelectorAll('.kb .doc').forEach(x=>x.hidden=true);document.querySelectorAll('[data-doc]').forEach(x=>{x.textContent='查看';x.setAttribute('aria-expanded','false')});
-   if(open){box.hidden=false;b.textContent='收合 ▴';b.setAttribute('aria-expanded','true');if(!box.dataset.loaded){box.innerHTML='<p class="muted">讀取中…</p>';drawDoc(k,await api('basis/doc?key='+k));box.dataset.loaded='1'}}
+   if(open){box.hidden=false;b.textContent='收合 ▴';b.setAttribute('aria-expanded','true');if(!box.dataset.loaded){box.innerHTML='<p class="muted">讀取中…</p>';
+     // 11/19 AI 實測：讀不到時卡片裡一直「讀取中…」，錯誤卻在頁面最上面；改成直接寫在卡片裡，可以再按一次
+     try{drawDoc(k,await api('basis/doc?key='+k));box.dataset.loaded='1'}catch(x){box.innerHTML=`<p class="error">${esc(x.message)}　<button class="link" data-doc-retry="${esc(k)}">再試一次</button></p>`}}}
+   return}
+  if(b.dataset.docRetry){const k=b.dataset.docRetry,box=el('doc-'+k);box.innerHTML='<p class="muted">讀取中…</p>';
+   try{drawDoc(k,await api('basis/doc?key='+k));box.dataset.loaded='1'}catch(x){box.innerHTML=`<p class="error">${esc(x.message)}　<button class="link" data-doc-retry="${esc(k)}">再試一次</button></p>`}
    return}
  }catch(x){say(x.message,true);b.disabled=false}
 });

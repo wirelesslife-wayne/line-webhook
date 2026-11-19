@@ -1,6 +1,6 @@
 {# Wayne 11/18 (ChatGPT＋Gemini 審查)：每一頁上方都是同樣 4 個入口；衝突題顯示還剩幾題；11/19 兩家：手機電腦用同一組短名稱 #}
 {% macro links(current, reviewer=True, line_on=False) -%}
-<style nonce="{{ g.nonce }}">.nav.main .s{display:none}.nav.main .navbadge{background:var(--orange,#f08a24);color:#fff;border-radius:20px;padding:0 7px;font-size:12px;line-height:18px;font-weight:700;margin-left:4px}
+<style nonce="{{ g.nonce }}">.nav.main .s{display:none}.nav.main .navbadge{background:var(--orange,#f08a24);color:#fff;border-radius:20px;padding:0 7px;font-size:13px;line-height:18px;font-weight:700;margin-left:4px}
 @media(max-width:700px){.nav.main{gap:10px!important;overflow-x:auto;scrollbar-width:none;flex-wrap:nowrap}.nav.main::-webkit-scrollbar{display:none}.nav.main a{white-space:nowrap;font-size:14px!important;flex:0 0 auto;padding-left:0!important;padding-right:0!important;min-width:0!important}.nav.main .navbadge{margin-left:2px;padding:0 5px}.nav.main .syncbtn,.nav.main .searchbtn{width:34px!important;min-width:34px!important}.nav.main .l{display:none}.nav.main .s{display:inline}}</style>
 {%- if line_on %}<a href="/desk/">LINE</a>{% endif -%}
 <a href="/desk/fb"{% if current == 'fb' %} aria-current="page"{% endif %}>審稿</a>
