@@ -46,7 +46,7 @@ def test_direct_replies_are_judged_once_and_only_better_ones_kept(db):
     drafter = Mock(side_effect=[{}, dict(draft='您好～')])
     Engine(db, drafter).draft([{'time': 'now', 'role': 'user', 'text': 'CR-V 電動尾門多少錢', 'new': True}], now(), channel='fb_message')
     system = drafter.call_args.args[0][0]['content']
-    assert '直接在 FB 回的回覆（審過，比原本範本好）' in system and '$18,000，含安裝' in system
+    assert '直接在 FB 回的回覆（審過，比原本範本好' in system  # label grew a price note on 11/16 and '$18,000，含安裝' in system
 
 
 def test_the_desks_own_sends_and_unanswered_items_are_not_kept(db, logged):

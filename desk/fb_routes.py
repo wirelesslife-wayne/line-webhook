@@ -267,6 +267,12 @@ def register(bp,store):
         if not row: raise ActionError('找不到截圖',404)
         return Response(bytes(row['data']),mimetype=row['content_type'],headers={'Content-Disposition':'inline','Cache-Control':'private, max-age=86400'})  # the page adds the shot time to the URL
 
+    @bp.post('/api/fb/check')
+    def fb_check():  # Wayne 11/19: the draft's key facts as chips (desk/checks.py)
+        from .checks import for_thread
+        data=request.get_json(silent=True) or {}
+        return jsonify(chips=for_thread(store,data.get('thread_id') if isinstance(data,dict) else None,data.get('text') if isinstance(data,dict) else None))
+
     @bp.post('/api/fb/links')
     def fb_links():
         from .links import audit

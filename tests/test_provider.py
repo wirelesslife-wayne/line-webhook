@@ -170,7 +170,7 @@ def test_preflight_never_calls_api(monkeypatch,configuration):
     if configuration=='bad_cap':monkeypatch.setenv('DESK_MONTHLY_USD','NaN')
     if configuration=='zero_cap':monkeypatch.setenv('DESK_MONTHLY_USD','0')
     if configuration=='tiny_cap':monkeypatch.setenv('DESK_MONTHLY_USD','.00001')
-    if configuration=='oversize':text='字'*30000
+    if configuration=='oversize':text='字'*45000  # over the 120KB cap (raised from 80KB on 11/19)
     if configuration=='busy':db.acquired=False
     provider=OpenAIProvider(db,post);provider.patience,provider.pause=2,0
     with pytest.raises(ProviderPending):provider([{'role':'user','content':text}])

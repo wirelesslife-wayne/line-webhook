@@ -381,6 +381,15 @@ def approve(store, staff, data):
     wrong = [complaint(l) for l in found if l['verdict'] == 'mismatch']
     if wrong and data.get('links_confirmed') is not True:  # Wayne 11/14: two short links pasted the wrong way round
         raise ActionError('連結和前面寫的產品對不上，請改掉；確定沒錯再勾「連結我核對過了」：' + '；'.join(wrong), 400)
+    if data.get('red_confirmed') is not True:  # 11/19 ChatGPT: the red-chip tick is checked here too, not only in the page
+        from .checks import for_thread
+        try:
+            reds = [c for c in for_thread(store, tid, text) if c['state'] == 'bad']
+        except Exception:
+            reds = []  # a broken check never blocks a send; the page already showed it
+        if reds:
+            raise ActionError('草稿有紅燈，請改掉或勾「紅字已確認」：'
+                              + '；'.join(f"{c['label']}：{c['why']}" for c in reds[:3]), 400)
     try:
         key = str(uuid.UUID(data.get('retry_key','')))
     except (ValueError,TypeError,AttributeError):

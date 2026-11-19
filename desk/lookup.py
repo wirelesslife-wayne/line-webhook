@@ -124,7 +124,17 @@ def search(store, query, kind, k, about=None, cars=None):
                  if fits_car(cars, rows[i]['title']) and same_product(about, rows[i]['title'])]
         return [dict(kind='canned', title=c['title'], text=c['text'][:1500]) for c in _pick(rows, order, k, lambda c: c['text'])]
     rows, index = history_rows(store)
-    order = [i for i in index.top(query) if same_product(about, rows[i]['question'] + ' ' + rows[i]['answer'][:200])]
+    # 11/20 test: a CR-V owner was shown a RAV4 case. A past answer about another car is dropped;
+    # one that names no car, or the customer's own, stays.
+    from .checks import _kb, cars_in
+    models = _kb(store)['models']
+    mine = set(cars_in(cars, models))
+
+    def car_ok(r):
+        theirs = set(cars_in(r['question'] + ' ' + r['answer'][:200], models)) if mine else set()
+        return not theirs or bool(theirs & mine)
+    # a generator: _pick stops after k, so the car check only runs on the few it looks at
+    order = (i for i in index.top(query) if same_product(about, rows[i]['question'] + ' ' + rows[i]['answer'][:200]) and car_ok(rows[i]))
     return [dict(kind='history', title='同事回答', question=r['question'][:300], text=r['answer'][:1500], date=local_time(r['asked_at'])[:10].replace('-', '/'))
             for r in _pick(rows, order, k, lambda r: r['answer'])]
 
