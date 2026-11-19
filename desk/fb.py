@@ -202,12 +202,17 @@ def push(store, payload):
                       auto_at=NOW(),unstar='todo',updated_at=NOW() WHERE id=%s""",
                       (note, Json(dict(draft=NO_REPLY, flags=[], staff_note=note, auto=why)), tid))
                     counts['auto_closed'] += 1
-            if (seen != old and not users and state in ('done','skip') and c['status'] in ('done','skip')
-                    and row['channel'] in ('fb_message','ig_message')):
+            if (not users and state in ('done','skip') and c['status'] in ('done','skip')
+                    and row['channel'] in ('fb_message','ig_message') and c.get('unstar') != 'todo'):
                 # Wayne 11/17 (陳裕隆, 王英寬): an old, closed customer pressed more ad buttons; the FB round stars any
-                # button press, and nothing here asked it to take the star off again. All answered by the ad -> unstar.
-                cur.execute('SELECT role,note,content FROM desk_fb_events WHERE thread_id=%s ORDER BY id',(tid,))
-                if ad_only(cur.fetchall()):
+                # button press, and nothing here asked it to take the star off again.
+                # Wayne 11/19 (許中興): also when nothing changed - a later round starred him again after the star was
+                # removed, and 'done' meant it was never queued again. A closed conversation the round brings back
+                # was starred: take the star off again (the round still checks the last line before it does).
+                # A button press the ad has not answered yet keeps its star: somebody should look.
+                cur.execute('SELECT role,note,content FROM desk_fb_events WHERE thread_id=%s ORDER BY id DESC LIMIT 1',(tid,))
+                last = cur.fetchone()
+                if not (last and last['role'] == 'user' and '廣告預設問題' in (last['note'] or '')):
                     unstar_later(cur, tid)
             if state in ('waiting','ready','blocked','error') and line_closable(dict(c, pending_instruction='' if users else c['pending_instruction'])):
                 cur.execute('SELECT role,note,content FROM desk_fb_events WHERE thread_id=%s ORDER BY id',(tid,))
