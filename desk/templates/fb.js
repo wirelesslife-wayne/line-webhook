@@ -241,13 +241,16 @@ function draw(d){syncDraw(d.sync);
   const empty={todo:'🎉 待審核全部處理完了',approved:'目前沒有即將送出的回覆。',hold:'目前沒有待處理的對話。',done:'還沒有結案的紀錄。',search:`沒有找到名字含「${esc(q)}」的客人。`}[tab];
   if(tab==='search')f('total').textContent=`搜尋「${q}」：${d.total||0} 位`;
   const sec=(x,i)=>tab==='hold'&&(i===0||items[i-1].hold!==x.hold)?`<h3 class="holdsec">${x.hold==='ours'?`📌 待我們確認（${d.hold_ours||0}）`:`⏳ 等客人回（${d.hold_customer||0}）`}</h3>`:'';
+  // 11/19 Wayne：上傳照片後右邊那欄一直跳回最上面。重畫會換掉整個 .pane，同一位客人就把捲動位置放回去
+  const oldPane=document.querySelector('.split .pane'),keep=oldPane&&oldPane.dataset.id===openId?oldPane.scrollTop:0;
   if(WIDE.matches&&items.length){
     if(!items.some(x=>x.id===openId))openId=items[0].id;  // two columns always show one conversation
     const n=items.findIndex(x=>x.id===openId);
-    f('list').innerHTML=`<div class="split"><div class="rows">${items.map((x,i)=>sec(x,i)+card(x,i,true)).join('')}</div><div class="pane">${card(items[n],n)}</div></div>`;
+    f('list').innerHTML=`<div class="split"><div class="rows">${items.map((x,i)=>sec(x,i)+card(x,i,true)).join('')}</div><div class="pane" data-id="${esc(openId)}">${card(items[n],n)}</div></div>`;
   }else f('list').innerHTML=items.length?items.map((x,i)=>sec(x,i)+card(x,i)).join(''):tab==='todo'&&!late&&!channel?'<div class="alldone"><b>🎉 全部審核完成！</b><p class="muted">目前沒有待審核的訊息，有新訊息會自動出現。</p></div>':`<p class="muted">${empty}</p>`;
   f('prev').hidden=f('next').hidden=page===0&&f('next').disabled;  // 11/19：只有一頁就不顯示上一頁／下一頁
   document.querySelectorAll('[data-draft]').forEach(grow);
+  const pane=document.querySelector('.split .pane');if(keep&&pane&&pane.dataset.id===openId)pane.scrollTop=keep;
 }
 function wipe(){items=[];shown='';openId=null;f('list').innerHTML='<p class="muted">讀取中…</p>'}
 async function load(force){
