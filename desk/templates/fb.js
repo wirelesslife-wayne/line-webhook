@@ -145,7 +145,7 @@ function card(d,i,closed){
       const have=new Set((d.media||[]).map(m=>m.name)),sug=(r.cards||[]).filter(c=>!have.has(c.name));
       h+=`<div class="attach"><div class="files">${files(d.media,true)}</div>`;
       if(sug.length)h+=`<div class="suggest"><b>AI 建議附圖</b><div class="files">${sug.map(c=>`<figure><img src="/desk/api/fb/library/${esc(c.id)}" alt="" loading="lazy"><span>${esc(c.name)}</span><button data-act="lib-attach" data-lib="${esc(c.id)}">附上</button></figure>`).join('')}</div></div>`;
-      h+=`<div class="actions"><label class="pick"><input type="file" data-file accept="image/jpeg,image/png,video/mp4" hidden>＋ 加圖片／影片</label><button data-act="lib-open">從常用圖片挑</button></div><div class="libgrid" hidden></div><small class="muted">${d.is_public?'會跟留言回覆一起送出，所有人都看得到。Facebook 留言只能附 1 個：JPEG／PNG 10MB 或 MP4 影片 25MB 以內。':'會跟文字一起送出（分成多則時，跟最後一則一起送）。JPEG／PNG 每張 10MB、MP4 影片 25MB 以內，最多 3 個。'}</small></div>`;
+      h+=`<div class="actions"><label class="pick"><input type="file" data-file accept="image/jpeg,image/png,video/mp4"${d.is_public?'':' multiple'} hidden>＋ 加圖片／影片</label><button data-act="lib-open">從常用圖片挑</button></div><div class="libgrid" hidden></div><small class="muted">${d.is_public?'會跟留言回覆一起送出，所有人都看得到。Facebook 留言只能附 1 個：JPEG／PNG 10MB 或 MP4 影片 25MB 以內。':'會跟文字一起送出（分成多則時，跟最後一則一起送）。JPEG／PNG 每張 10MB、MP4 影片 25MB 以內，最多 3 個。'}</small></div>`;
     }
     h+=`<div class="actions mainacts"><button class="primary" data-act="send" ${canReview&&!waiting?'':'disabled'}>✓ 核准送出</button><button data-act="edit" ${waiting?'disabled':''}>請 AI 重寫</button><button data-act="skip" ${canReview?'':'disabled'} aria-expanded="false">不發送</button>${canReview?skipWhy():''}</div>${canReview&&!waiting?'<p class="actshint">在 FB／LINE 前台已經回過的，也按「不發送」</p>':''}`+holdPick(d);
     h+=`<div class="editbox" hidden><label for="fb-ins-${i}">要改哪裡？</label><p class="muted">由原本擬稿的 AI 重寫：它讀過價格表、制式回覆、你核准過的回覆和你記住的指示，會照你這句話改。</p><textarea id="fb-ins-${i}" data-instruction maxlength="2000" placeholder="例如：不要問縣市、價格寫 18,000、語氣再輕鬆一點"></textarea>${canReview?'<label class="check"><input type="checkbox" data-remember>以後都照這樣寫（記住這條寫法，會影響之後所有草稿；價格、電話、門市請改正式資料）</label><div class="factwarn" hidden><p>⚠️ 這句有金額、電話或地址。記住的指示只適合放<b>寫法</b>（語氣、要不要問縣市）；價格、電話、門市要改<b>正式資料</b>，不然正式資料一改，這條舊指示還會蓋過去。要改正式資料：在參考資料按「回報這筆有誤」。</p><button data-act="revise-once">只改這次，不記住</button></div>':''}<div class="actions"><button class="primary" data-act="revise">照這樣重寫</button><button data-act="edit-cancel">取消</button></div></div>`;
@@ -162,15 +162,23 @@ function card(d,i,closed){
   return h+'</div></article>';
 }
 document.addEventListener('change',async e=>{
-  if(!e.target.matches('[data-file]'))return;const p=pick(e.target),file=e.target.files[0];if(!p||!file)return;
-  const limit=file.type==='video/mp4'?25e6:10e6;if(!['image/jpeg','image/png','video/mp4'].includes(file.type)){say('只接受 JPEG、PNG 圖片或 MP4 影片。',true);return}
-  if(file.size>limit){say(file.type==='video/mp4'?'影片超過 25MB，請改貼 YouTube 連結。':'圖片超過 10MB，請先壓縮。',true);return}
-  busy=true;say('上傳中，請稍候…');
-  try{const body=new FormData();body.append('thread_id',p.d.id);body.append('file',file);
-    const r=await fetch('/desk/api/fb/media',{method:'POST',headers:{'X-CSRF-Token':csrf},body});let d={};try{d=await r.json()}catch(x){}
-    if(!r.ok)throw Error(d.error||'上傳失敗，請再試一次');say(`已加入「${file.name}」，會跟回覆一起送出。`)}
+  // 11/19 Wayne：一次可以選好幾個（私訊最多 3 個；公開留言只能 1 個），一個一個依序上傳
+  if(!e.target.matches('[data-file]'))return;const p=pick(e.target),all=[...e.target.files];if(!p||!all.length)return;
+  const room=p.d.is_public?1:Math.max(0,3-(p.d.media||[]).length);
+  if(!room){say('已經有 3 個附件了，要換請先移除一個。',true);return}
+  const list=all.slice(0,room),done=[];
+  for(const file of list){
+    const limit=file.type==='video/mp4'?25e6:10e6;
+    if(!['image/jpeg','image/png','video/mp4'].includes(file.type)){say(`「${file.name}」不是 JPEG、PNG 圖片或 MP4 影片。`,true);return}
+    if(file.size>limit){say(`「${file.name}」`+(file.type==='video/mp4'?'超過 25MB，請改貼 YouTube 連結。':'超過 10MB，請先壓縮。'),true);return}}
+  busy=true;
+  try{for(const [n,file] of list.entries()){say(list.length>1?`上傳中 ${n+1}／${list.length}，請稍候…`:'上傳中，請稍候…');
+      const body=new FormData();body.append('thread_id',p.d.id);body.append('file',file);
+      const r=await fetch('/desk/api/fb/media',{method:'POST',headers:{'X-CSRF-Token':csrf},body});let d={};try{d=await r.json()}catch(x){}
+      if(!r.ok)throw Error((done.length?`已加入 ${done.length} 個；「${file.name}」沒加成：`:'')+(d.error||'上傳失敗，請再試一次'));done.push(file.name)}
+    say(`已加入 ${done.length>1?done.length+' 個檔案':'「'+done[0]+'」'}，會跟回覆一起送出。`+(all.length>list.length?`（最多 ${p.d.is_public?1:3} 個，多的 ${all.length-list.length} 個沒加）`:''))}
   catch(x){say(x.message,true)}
-  finally{busy=false}
+  finally{busy=false;e.target.value=''}
   await load(true)});
 function editing(){const a=document.activeElement;return busy||f('confirm').open||f('lookup').open||(a&&a.tagName==='TEXTAREA')||!!document.querySelector('.editbox:not([hidden]),.libgrid:not([hidden])')}
 let library=null;
@@ -252,6 +260,8 @@ async function load(force){
 function remember_rule(id,instruction){const box=f('rules');if(!box)return;const row=document.createElement('div');row.className='rule';row.innerHTML=`<p>${esc(instruction)}</p><small class="muted">剛剛記住</small><button data-rule-id="${Number(id)}" data-active="true">停用</button>`;box.querySelector('.rule')?box.insertBefore(row,box.querySelector('.rule')):box.appendChild(row);box.querySelector('.none')?.remove();box.querySelector('summary').textContent=`我記住的修改指示（${box.querySelectorAll('.rule').length} 條）`}
 function pick(button){const el=button.closest('article');const d=items.find(x=>x.id===el?.dataset.id);return d?{d,el}:null}
 document.addEventListener('click',e=>{const n=e.target.closest('.ainote');if(n)n.classList.toggle('full')});
+// 11/19 Wayne：所屬貼文展開後找不到怎麼收回 → 點整個框就能展開／收合（選取文字時不動）
+document.addEventListener('click',e=>{const c=e.target.closest('.detail .context');if(!c||e.target.closest('button,a')||String(getSelection()))return;c.querySelector('[data-act="more"]')?.click()});
 let lastCaret={};document.addEventListener('selectionchange',()=>{const t=document.activeElement;if(t&&t.matches&&t.matches('[data-draft]'))lastCaret={id:t.id,pos:t.selectionStart}});
 document.addEventListener('input',e=>{if(e.target.matches('[data-draft]')){grow(e.target);const p=pick(e.target);if(p)edits[editKey(p.d)]=joined(p.el)}});
 document.addEventListener('click',async event=>{
@@ -303,7 +313,11 @@ document.addEventListener('click',async event=>{
     if(act==='refs-toggle'){refsOpen.has(d.id)?refsOpen.delete(d.id):refsOpen.add(d.id);const box=el.querySelector('.refs');if(box)box.outerHTML=refsBlock(d);return}
     if(act==='ref-use'&&b.dataset.where==='auto'){const r=REFS[refKey(d)]||{},x=[...(r.canned||[]),...(r.history||[])][Number(b.dataset.n)];if(x){b.disabled=true;await useRef(d,el,x)}return}
     if(act==='lookup'){lookupFor=d;f('lk-q').value=((REFS[refKey(d)]||{}).query||'');f('lk-answer').value='';f('lk-submit').checked=false;f('lookup').showModal();lkShow(f('lk-q').value?'history':'canned');return}
-    if(act==='more'){const k=d.id+':'+b.dataset.k;MORE.has(k)?MORE.delete(k):MORE.add(k);if(lastData)draw(lastData);return}
+    if(act==='more'){const k=d.id+':'+b.dataset.k;MORE.has(k)?MORE.delete(k):MORE.add(k);if(lastData)draw(lastData);
+      // 11/19 Wayne：按「看其他版本」直接捲到版本那裡，不用自己找
+      if(b.dataset.k==='ver'&&MORE.has(k))setTimeout(()=>{const v=document.querySelector(`${WIDE.matches?'.pane ':''}.item[data-id="${CSS.escape(d.id)}"] .versions`);if(!v)return;
+        const top=v.getBoundingClientRect().top+scrollY-(f('feedback').offsetHeight||0)-12;WIDE.matches?v.scrollIntoView({block:'start'}):scrollTo({top})},120);  // not smooth: the redraw's textarea resize cancels a smooth scroll
+      return}
   if(act==='ver-more'){const pre=b.previousElementSibling,open=pre.classList.toggle('clamp');b.textContent=open?'展開全文':'收合';return}
     if(act==='version'){const r=d.result||{},vers=[{draft:r.draft},...(r.alternatives||[])],v=vers[Number(b.dataset.v)];if(!v)return;const cur=edits[editKey(d)];if(cur!==undefined&&!vers.some(x=>x.draft===cur)&&!confirm('框裡改過的字會被換掉，確定換版本嗎？'))return;edits[editKey(d)]=v.draft;draw(lastData);return}
     if(act==='part-cut'||act==='part-add'||act==='part-merge'){const ps=[...el.querySelectorAll('[data-draft]')].map(t=>t.value);
