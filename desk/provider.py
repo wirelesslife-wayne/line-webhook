@@ -20,7 +20,7 @@ MODEL = 'gpt-6.1-sol'
 # https://developers.openai.com/api/docs/models/gpt-6.1-sol
 RATES = (Decimal('2'), Decimal('0.10'), Decimal('10'))
 MAX_OUTPUT = 3000
-MAX_INPUT_BYTES = 80000
+MAX_INPUT_BYTES = 120000  # 11/19: Wayne's decided 衝突題 pushed ordinary drafts past 80000 (83522 on a 418 lead)
 EXHAUSTED = '本月 AI 額度已用完，請手動回覆'
 
 

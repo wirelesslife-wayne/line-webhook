@@ -248,7 +248,7 @@ def for_draft(store, text):
     """Lines for the drafting prompt: 「題目：Wayne 選的說法」 for each decided question that applies to this conversation."""
     rows = store.all("""SELECT grp,topic,options,choice,answer,override,scope FROM desk_kb_conflicts WHERE status='decided'
       ORDER BY rank,id""")
-    out = []
+    topics = {}  # 11/19: questions with the same answer share one line (the 10 到府 questions were 10 copies)
     for r in rows:
         product = r['grp'].split('×')[0]
         pat = PRODUCT_WORDS.get(product)
@@ -258,5 +258,5 @@ def for_draft(store, text):
         rule = said + ('（補充：' + r['answer'] + '）' if said and r['answer'] else r['answer'])
         if rule:
             mark = {'replace': OVERRIDE, 'add': ADDED, 'official': OFFICIAL_WINS}.get(r['scope'] or '', OVERRIDE if r['override'] else '')
-            out.append(f"- {plain(r['topic'])}：{rule}" + mark)
-    return out[:80]
+            topics.setdefault(rule + mark, []).append(plain(r['topic']))
+    return [f"- {'／'.join(t[:3])}{'等' if len(t) > 3 else ''}：{rule}" for rule, t in topics.items()][:150]  # was 80: a 418 lead already had 72
