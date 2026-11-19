@@ -64,6 +64,10 @@ document.addEventListener('click',e=>{const b=e.target.closest('.picbtn');if(!b)
   LB.list=[...box.querySelectorAll('.picbtn')].map(x=>x.dataset.pic);LB.i=Math.max(0,LB.list.indexOf(b.dataset.pic));
   LB.name=(item&&item.querySelector('.who-said b')?item.querySelector('.who-said b').textContent:'').replace(/^[📌⏳]\s*/u,'');LB.at=b.dataset.at||'';
   lbShow();f('lb').showModal();history.pushState({lb:1},'')});
+// the Meta screenshot opens in the same box: on the home-screen app a new page had no way back (Wayne 11/19)
+document.addEventListener('click',e=>{const b=e.target.closest('.shotbtn');if(!b)return;const img=b.querySelector('img');
+  LB.list=[];f('lb-vid').hidden=true;f('lb-img').hidden=false;f('lb-img').src=img.src;f('lb-cap').textContent='Meta 原始畫面截圖';
+  f('lb-hint').hidden=false;f('lb-hint').textContent='點黑色地方、✕ 或按返回關閉';f('lb').showModal();history.pushState({lb:1},'')});
 f('lb').addEventListener('click',e=>{if(e.target===f('lb')||e.target.id==='fb-lb-close')f('lb').close()});
 f('lb').addEventListener('close',()=>{f('lb-img').removeAttribute('src');const v=f('lb-vid');v.pause();v.removeAttribute('src');v.removeAttribute('poster');v.load();if(history.state&&history.state.lb)history.back()});
 window.addEventListener('popstate',()=>{if(f('lb').open)f('lb').close()});
@@ -134,7 +138,7 @@ function card(d,i,closed){
   // Wayne 11/15 23:50: only the last 12 come with the list; 顯示更早的對話 loads the whole conversation (Liang Hong's 11/26 booking)
   const full=FULL[d.id]&&FULL[d.id].sig===msgSig(d)?FULL[d.id].list:null,shown=full||d.messages;
   h+=`<div class="messages">${!full&&d.older?`<button class="link older" data-act="older">▲ 顯示更早的 ${d.older} 則對話</button>`:''}${talk(shown)||'<p class="muted">沒有訊息內容</p>'}</div>`;
-  if(d.shot)h+=`<details class="shot"><summary>原始畫面截圖 ${esc(d.shot.replace('-','/'))}</summary><a href="/desk/api/fb/shot?thread_id=${encodeURIComponent(d.id)}" target="_blank" rel="noopener"><img src="/desk/api/fb/shot?thread_id=${encodeURIComponent(d.id)}&t=${encodeURIComponent(d.shot)}" alt="Meta 收件匣這則對話的截圖" loading="lazy"></a></details>`;
+  if(d.shot)h+=`<details class="shot"><summary>原始畫面截圖 ${esc(d.shot.replace('-','/'))}</summary><button type="button" class="shotbtn" aria-label="放大截圖"><img src="/desk/api/fb/shot?thread_id=${encodeURIComponent(d.id)}&t=${encodeURIComponent(d.shot)}" alt="Meta 收件匣這則對話的截圖" loading="lazy"></button></details>`;
   if(/^https:\/\//.test(d.url||''))h+=`<p><a class="meta-link" href="${esc(d.url)}" target="_blank" rel="noopener noreferrer">${d.channel==='line_message'?'在 LINE 官方後台打開這則':'在 Meta 收件匣打開這則'}</a></p>`;
   if(todo){
     if(r.staff_note)h+=`<p class="note ainote">💡 ${esc(r.staff_note)}</p>`;
