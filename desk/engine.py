@@ -71,7 +71,12 @@ FACTS = ('\n\nWayne 11/15 確認的事實（最高優先，優先於價格表、
          '環景介紹不要用 https://reurl.cc/epxjQR（那是週邊配件頁）。\n'
          '- 付款：客人問到分期或刷卡才回答。板橋直營門市可以刷卡分期 3／6／12 期 0 利率，也可以辦無卡分期（另收 10% 手續費）。'
          '外縣市經銷商沒有刷卡、也沒有刷卡分期，只能先線上辦無卡分期（另收 10% 手續費），申請通過後才能安排施工。'
-         '還不知道客人在哪個縣市就先問。不要寫無卡分期 0 利率或不收手續費，也不要主動提到府施工。\n'
+         '還不知道客人在哪個縣市就先問。不要寫無卡分期 0 利率或不收手續費。\n'
+         # Wayne 11/19: replaces 11/15 「不要主動提到府施工」
+         '- 到府施工（Wayne 11/19）：苗栗以北（基隆、台北、新北、桃園、新竹、苗栗）可以到府施工。客人問能不能到府、說沒空去門市、'
+         '或問在哪裡裝而且人在這些縣市時，就說可以到府施工，cards 一定要附「到府安裝條件.png」那張圖卡；'
+         '還不知道縣市就先問。客人在苗栗以南或東部、離島，不提到府，照經銷商門市寫。'
+         '到府要不要另外收費、哪天能去，資料沒寫就不要自己寫，staff_note 寫「到府施工，請確認時間與費用」。\n'
          '- 營業日：照下面「門市營業日」表回答（11/28（六）投票日公休，11 月營業月曆圖卡漏標，不要附那張圖說那天有開）。'
          '表上沒有、或寫「請跟門市確認」的日子（颱風、下個月的週六等），才寫「跟門市確認後馬上回覆您」，staff_note 寫「要確認營業日」。\n'
          '- 行車記錄器（Wayne 11/15 確認）：客人自己買的行車記錄器，我們可以代工安裝；請客人提供車款和記錄器型號（前後雙鏡頭或單鏡頭），方便估安裝費和時間。客人只問有沒有裝、還沒說要哪一款時，不附產品圖。\n'
@@ -113,6 +118,25 @@ FACTS = ('\n\nWayne 11/15 確認的事實（最高優先，優先於價格表、
          '真的查不到答案才寫確認後回覆，並在 staff_note 寫要確認什麼。上面寫明要確認後回覆的情況（營業日表沒列的日子、轎車尾門）照舊。')
 
 SPECIAL_DAY = re.compile(r'投票|選舉|颱風|國定假日|連假')
+
+# Wayne 11/19: 苗栗以北 can be installed at the customer's place, always with the 到府安裝條件 card.
+HOME = re.compile(r'到府|到您府上|上門(?:安裝|施工)')
+NORTH = re.compile(r'基隆|[台臺]北|新北|桃園|新竹|苗栗')
+HOME_CARD = '到府安裝條件'
+NO_HOME = re.compile(r'(?:不|沒有|無法|未)(?:提供|能|可以|方便)?\s*(?:到府|上門)')
+
+
+def offers_home(text):
+    return bool(HOME.search(text)) and not NO_HOME.search(text)
+
+
+def with_home_card(cards, numbered):
+    """Puts the 到府安裝條件 card first when a draft offers to install at the customer's place."""
+    from .library import MAX_SUGGEST
+    card = next((dict(id=r['id'], name=r['filename']) for _, r in numbered if HOME_CARD in r['filename']), None)
+    if not card or any(c['id'] == card['id'] for c in cards):
+        return cards
+    return ([card] + cards)[:MAX_SUGGEST]
 
 
 def says_open_on_odd_day(draft, today=None):
@@ -428,7 +452,8 @@ class Engine:
                       '①「完整功能」（推薦，放 draft）：完工價＋全部功能＋選配＋保固；'
                       '②「精簡重點」：條列只留完工價、選配、保固；'
                       '③「貼心說明」：條列同②（完工價、選配、保固），再多一句最能讓客人放心的說明（例如無損安裝、原車功能保留）。'
-                      '任何版本都不要主動寫分期或到府施工（Wayne 11/15：外縣市經銷商沒有刷卡分期，固定寫會答錯；客人問到才照下面的付款規則回）。'
+                      '任何版本都不要主動寫分期（Wayne 11/15：外縣市經銷商沒有刷卡分期，固定寫會答錯；客人問到才照下面的付款規則回）；'
+                      '到府施工只在符合 Wayne 11/19 到府那條時寫。'
                       '還不知道客人在哪時，任何版本都不要提「新北」「板橋有展示車」，邀請只寫固定句「歡迎先到門市體驗參觀，滿意再安裝就可以囉！」'
                       '（Wayne 11/12：客人吃這套、沒壓力；人在屏東叫他來新北，他會直接說謝謝再聯絡）。'
                       '其他情境（售後、預約、問地址）給 2 個版本就好，例如一個直接回答、一個多一句貼心說明；不要為了湊版本拿掉必要資訊或編資料沒有的事。')
@@ -500,6 +525,11 @@ class Engine:
                 out['flags'].append(tag + '公開留言草稿偏長，建議精簡後再發送')
         out.pop('images',None)
         out['cards'] = suggestions(out.get('cards'), numbered)
+        if any(offers_home(v['draft']) for v in versions):
+            out['cards'] = with_home_card(out['cards'], numbered)
+            where = str((ex.get('location') if isinstance(ex, dict) else '') or '')
+            if where and not NORTH.search(where):
+                out['flags'].append(f'草稿提到到府施工，但客人在「{where}」：到府只到苗栗以北，請確認')
         points = [p for p in out.get('points') or [] if isinstance(p, dict) and isinstance(p.get('q'), str)]
         out['points'] = [dict(q=p['q'][:80], status=str(p.get('status') or '')[:4]) for p in points[:8]]
         if '（建議不回覆）' not in out.get('draft', ''):
