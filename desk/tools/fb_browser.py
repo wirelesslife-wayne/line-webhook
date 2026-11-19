@@ -23,6 +23,12 @@ def main(argv=None, store_factory=None):
     sub.add_parser('unstarred').add_argument('thread_id')
     sub.add_parser('recheck',help='closed by itself in the last 7 days (only ad buttons): compare the last line in Meta')
     sub.add_parser('pics',help='photos LINE customers sent that the desk still lacks, with a 40-minute upload ticket (Wayne 11/17)')
+    # Wayne 11/19: Meta's API gives real-time cards a name but no picture; the browser run captures it by name
+    sub.add_parser('faces-api',help='real-time (webhook) FB/IG cards of the last 7 days without a picture')
+    sub.add_parser('api-open',help='open real-time (webhook) cards the browser run must take over while real-time is off')
+    face=sub.add_parser('face',help='save one captured picture for a card')
+    face.add_argument('thread_id')
+    face.add_argument('file')
     for name in ('lock','unlock'):  # one round at a time per inbox (scheduled rounds and WL-DeskSync)
         p=sub.add_parser(name)
         p.add_argument('what',choices=('line','fb'))
@@ -47,6 +53,8 @@ def main(argv=None, store_factory=None):
                 skipped,data=len(data)-len(kept),kept
             out=fb.push(db,data)
             out['skipped_private']=skipped
+            if meta.stored_mode(db)=='off':
+                out['api_cards_moved']=meta.retire_api_copy(db,data)
             from .. import fb_shots
             saved=0
             for row in fb.validate(data):  # optional "shot": local screenshot of the conversation column
@@ -81,6 +89,21 @@ def main(argv=None, store_factory=None):
             fb_pics.cleanup(db);fb_vids.cleanup(db)
             todo=fb_pics.todo(db)+fb_vids.todo(db)
             out=dict(todo=todo,ticket=fb_pics.ticket(db) if todo else '')
+        elif args.command=='faces-api':
+            out=[dict(thread_id=r['id'],channel=r['channel'],name=r['name']) for r in db.all("""SELECT t.id,t.channel,t.name FROM desk_fb_threads t
+              LEFT JOIN desk_fb_avatars a ON a.thread_id=t.id WHERE a.thread_id IS NULL AND (t.key LIKE 'psid:%%' OR t.key LIKE 'igsid:%%')
+              AND t.updated_at > NOW()-INTERVAL '7 days' AND t.name NOT LIKE 'FB 客人 %%' AND t.name NOT LIKE 'IG 客人 %%'
+              ORDER BY (t.status=ANY(%s)) DESC, t.updated_at DESC LIMIT 15""",(list(fb.TODO),))]
+        elif args.command=='api-open':
+            out=[dict(thread_id=r['id'],channel=r['channel'],name=r['name'],last_customer_text=r['t'] or '') for r in db.all("""SELECT t.id,t.channel,t.name,
+              (SELECT e.content FROM desk_fb_events e WHERE e.thread_id=t.id AND e.role='user' ORDER BY e.id DESC LIMIT 1) t
+              FROM desk_fb_threads t WHERE (t.key LIKE 'psid:%%' OR t.key LIKE 'igsid:%%') AND t.status=ANY(%s) ORDER BY t.updated_at""",
+              (list(fb.TODO)+['approved'],))]
+        elif args.command=='face':
+            from .. import fb_avatars
+            if not str(args.thread_id).startswith(('fb:','ig:')):
+                raise ActionError('卡片編號不正確',400)
+            out=dict(saved=fb_avatars.save(db,args.thread_id,Path(args.file).read_bytes()))
         elif args.command=='lock': out=fb.run_lock(db,args.what,args.owner)
         elif args.command=='unlock': out=fb.run_unlock(db,args.what,args.owner)
         else: out=fb.record_result(db,args.attempt_id,args.outcome,args.reason)

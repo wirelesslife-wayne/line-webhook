@@ -262,6 +262,22 @@ def apply(store, ev, client):
         retire_browser_copy(store, channel, name, tid)
 
 
+def retire_api_copy(store, rows):
+    """Wayne 11/19 17:00: real-time sending was refused by Meta (permission not reviewed) and switched off. When the
+    browser run imports a customer whose webhook card is still open, that card closes so there is one card per person."""
+    moved = 0
+    for r in rows:
+        if not isinstance(r, dict) or r.get('channel') not in PREFIX or not r.get('name'):
+            continue
+        for c in store.all("""SELECT id FROM desk_fb_threads WHERE channel=%s AND name=%s AND key LIKE %s
+          AND status=ANY(%s)""", (r['channel'], r['name'], PREFIX[r['channel']] + '%', list(fb.TODO) + ['approved'])):
+            store.execute("""UPDATE desk_fb_attempts SET status='expired',reason='即時收發已暫停，改由排程的新卡片處理',updated_at=NOW()
+              WHERE thread_id=%s AND status='approved'""", (c['id'],))
+            moved += bool(store.execute("""UPDATE desk_fb_threads SET status='done',note='即時收發已暫停，改由排程的新卡片處理',
+              draft_token=NULL,updated_at=NOW() WHERE id=%s""", (c['id'],)))
+    return moved
+
+
 def earlier(history, user, channel, ev):
     """Messages before this event, oldest first, from the Graph API; [] when there is none or it cannot be read."""
     try:

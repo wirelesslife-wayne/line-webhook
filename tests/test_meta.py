@@ -271,6 +271,21 @@ def test_name_falls_back_to_the_conversation_participants(monkeypatch):
     assert meta.Client().profile(PSID, 'fb_message') == '合成客人'
 
 
+def test_browser_import_takes_over_an_open_webhook_card(db, api):
+    """Wayne 11/19 17:00: real-time was switched off; the browser run imports the customer again and the webhook
+    card (with its refused approval) closes."""
+    meta.enqueue(db, delivery(incoming('多少錢？')))
+    meta.process(db, WithHistory())
+    assert fb.conversation(db, tid())['status'] == 'waiting'
+    row = dict(channel='fb_message', key='100000999', name='合成客人', url='https://x.test/inbox', context='',
+               messages=[dict(role='user', text='多少錢？', at='近期', note='')])
+    fb.push(db, [row])
+    assert meta.retire_api_copy(db, [row, dict(channel='fb_comment', name='合成客人')]) == 1
+    c = fb.conversation(db, tid())
+    assert (c['status'], c['note']) == ('done', '即時收發已暫停，改由排程的新卡片處理')
+    assert fb.conversation(db, fb.thread_id('fb_message', '100000999'))['status'] == 'waiting'
+
+
 def test_first_contact_from_ad_buttons_only_still_gets_a_draft(db, api):
     """Wayne 11/15 13:19 replaced 11/12: a lead who only pressed the ad's buttons gets a person's follow-up too."""
     receive(db, incoming('多少錢？安裝要多久？', quick_reply={'payload': 'ad'}))
