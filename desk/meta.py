@@ -250,9 +250,43 @@ def apply(store, ev, client):
         context = ref['value'] if ref else ''
     old = store.all('SELECT role,content,at,note FROM desk_fb_events WHERE thread_id=%s ORDER BY id', (tid,)) if c else []
     snapshot = [dict(role=e['role'], text=e['content'], at=e['at'], note=e['note']) for e in old]
+    if not c:
+        # Wayne 11/19: a customer the browser run already imported who writes again gets a new card; without the
+        # earlier chat the AI asks again for the car he already gave. Meta's own conversation history fills it in.
+        snapshot = earlier(getattr(client, 'history', None), user, channel, ev)
     snapshot.append(dict(role=ev['role'], text=ev['text'][:10000], at=ev['at'], note=ev['note']))
     fb.push(store, [dict(channel=channel, key=key, name=name[:200], url=inbox_url(channel), context=context[:10000],
                          messages=snapshot[-2000:])])
+    if not c:
+        retire_browser_copy(store, channel, name, tid)
+
+
+def earlier(history, user, channel, ev):
+    """Messages before this event, oldest first, from the Graph API; [] when there is none or it cannot be read."""
+    try:
+        past = history(user, channel) if history else []
+    except Exception:
+        return []
+    # the event itself is usually already in Meta's history: drop it and anything after it
+    for i in range(len(past) - 1, max(-1, len(past) - 4), -1):
+        if past[i]['role'] == ev['role'] and fb.squash(past[i]['text']) == fb.squash(ev['text']):
+            return past[:i]
+    return past
+
+
+def retire_browser_copy(store, channel, name, new_tid):
+    """The same customer's open card from the browser run, if exactly one has this name: it moves to the new card."""
+    if not name or name.startswith(('FB 客人 ', 'IG 客人 ')):
+        return
+    rows = store.all("""SELECT id FROM desk_fb_threads WHERE channel=%s AND name=%s AND id<>%s AND status=ANY(%s)
+      AND NOT (key LIKE 'psid:%%' OR key LIKE 'igsid:%%') AND COALESCE(hold,'')=''""", (channel, name, new_tid, list(fb.TODO)))
+    if len(rows) != 1:
+        return  # none, or two people with the same name: leave them to Wayne
+    old = rows[0]['id']
+    store.execute("""UPDATE desk_fb_threads SET status='done',note='客人有新訊息，已移到即時收發的新卡片',draft_token=NULL,updated_at=NOW()
+      WHERE id=%s AND status=ANY(%s)""", (old, list(fb.TODO)))
+    store.execute("""UPDATE desk_fb_attempts SET status='expired',reason='客人有新訊息，已移到新卡片',updated_at=NOW()
+      WHERE thread_id=%s AND status='approved'""", (old,))
 
 
 # ---------- Send API ----------
@@ -276,6 +310,39 @@ class Client:
         except Exception:
             return ''
         return str(data.get('name') or data.get('username') or '')
+
+    def history(self, user, channel, limit=30):
+        """The conversation with this customer as Meta keeps it, oldest first (Wayne 11/19: new cards had no past)."""
+        if not self.token or not self.page.isdigit():
+            return []
+        try:
+            r = requests.get(f'{GRAPH}/{self.version}/{self.page}/conversations', timeout=(5, 15), allow_redirects=False,
+                             params=dict(platform='instagram' if channel == 'ig_message' else 'messenger', user_id=user,
+                                         fields=f'messages.limit({limit}){{message,from,created_time,attachments{{mime_type}}}}',
+                                         access_token=self.token))
+            data = r.json() if r.status_code == 200 else {}
+        except Exception:
+            return []
+        convs = data.get('data') or []
+        msgs = ((convs[0].get('messages') or {}).get('data') or []) if convs and isinstance(convs[0], dict) else []
+        out = []
+        for m in reversed(msgs):  # Meta lists newest first
+            if not isinstance(m, dict):
+                continue
+            role = 'user' if str((m.get('from') or {}).get('id', '')) == str(user) else 'page'
+            atts = ((m.get('attachments') or {}).get('data') or [])
+            kinds = [str(a.get('mime_type') or '') for a in atts if isinstance(a, dict)]
+            mark = ' '.join('[圖片]' if k.startswith('image') else '[影片]' if k.startswith('video') else
+                            '[語音]' if k.startswith('audio') else '[附件]' for k in kinds)
+            text = ' '.join(x for x in (str(m.get('message') or '').strip(), mark) if x)
+            if not text:
+                continue  # a sticker or like
+            try:
+                at = datetime.strptime(m.get('created_time', ''), '%Y-%m-%dT%H:%M:%S%z').astimezone(TAIPEI).isoformat()
+            except (TypeError, ValueError):
+                at = ''
+            out.append(dict(role=role, text=text[:10000], at=at, note=page_note(text) if role == 'page' else ''))
+        return out
 
     def send(self, recipient, message, tag=False):
         if not self.token or not self.page.isdigit():

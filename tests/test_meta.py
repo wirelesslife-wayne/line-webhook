@@ -185,6 +185,73 @@ def test_messages_append_and_follow_the_push_rules(db, api):
     assert len(fb.messages(db, tid())) == 5
 
 
+class WithHistory(FakeMeta):
+    def __init__(self, past=None, boom=False):
+        super().__init__()
+        self.past, self.boom, self.asked = past or [], boom, 0
+
+    def history(self, user, channel):
+        self.asked += 1
+        if self.boom:
+            raise RuntimeError('network')
+        return list(self.past)
+
+
+def test_new_card_brings_the_earlier_chat_and_retires_the_browser_copy(db, api):
+    """Wayne 11/19: a customer the browser run imported writes again through the webhook. The new card must carry
+    what was said before (his car), and the old browser card must not stay open as a second 合成客人."""
+    fb.push(db, [dict(channel='fb_message', key='100000134976682', name='合成客人', url='https://x.test/inbox', context='',
+                      messages=[dict(role='user', text='我是 2018 NX200，尾門壞了', at='近期', note='')])])
+    old = fb.thread_id('fb_message', '100000134976682')
+    assert fb.conversation(db, old)['status'] == 'waiting'
+    past = [dict(role='user', text='我是 2018 NX200，尾門壞了', at='2026-11-19T04:20:00+08:00', note=''),
+            dict(role='page', text='您好，撐桿更換完工價 NT$16,000', at='2026-11-19T09:51:00+08:00', note=''),
+            dict(role='user', text='那要多久？', at='2026-11-19T15:00:00+08:00', note='')]
+    client = WithHistory(past)
+    meta.enqueue(db, delivery(incoming('那要多久？')))
+    meta.process(db, client)
+    assert client.asked == 1
+    assert [m['text'] for m in fb.messages(db, tid())] == ['我是 2018 NX200，尾門壞了', '您好，撐桿更換完工價 NT$16,000', '那要多久？']
+    assert fb.conversation(db, tid())['status'] == 'waiting'
+    o = fb.conversation(db, old)
+    assert (o['status'], o['note']) == ('done', '客人有新訊息，已移到即時收發的新卡片')
+    meta.enqueue(db, delivery(incoming('週六可以嗎？')))
+    meta.process(db, client)
+    assert client.asked == 1 and len(fb.messages(db, tid())) == 4   # only a brand-new card asks Meta for the past
+
+
+def test_history_failure_or_same_names_change_nothing_else(db, api):
+    for key in ('1001', '1002'):  # two different people called 合成客人: neither old card is touched
+        fb.push(db, [dict(channel='fb_message', key=key, name='合成客人', url='https://x.test/inbox', context='',
+                          messages=[dict(role='user', text='問價 ' + key, at='近期', note='')])])
+    meta.enqueue(db, delivery(incoming('請問價格')))
+    meta.process(db, WithHistory(boom=True))
+    assert [m['text'] for m in fb.messages(db, tid())] == ['請問價格']
+    assert all(fb.conversation(db, fb.thread_id('fb_message', k))['status'] == 'waiting' for k in ('1001', '1002'))
+
+
+def test_graph_history_is_read_oldest_first(monkeypatch):
+    monkeypatch.setenv('FB_PAGE_ACCESS_TOKEN', 'x')
+    monkeypatch.setenv('FB_PAGE_ID', PAGE)
+
+    class R:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {'data': [{'messages': {'data': [
+                {'message': '那要多久？', 'from': {'id': PSID}, 'created_time': '2026-11-19T07:00:00+0000'},
+                {'message': '', 'from': {'id': PSID}, 'created_time': '2026-11-19T06:59:00+0000', 'attachments': {'data': [{'mime_type': 'image/jpeg'}, {'mime_type': 'image/jpeg'}]}},
+                {'message': '', 'from': {'id': PSID}, 'created_time': '2026-11-19T06:58:00+0000'},
+                {'message': '感謝您的訊息！我們的客服團隊不在線上', 'from': {'id': PAGE}, 'created_time': '2026-11-19T06:00:00+0000'}]}}]}
+    seen = {}
+    monkeypatch.setattr(meta.requests, 'get', lambda url, **kw: seen.update(url=url, params=kw['params']) or R())
+    out = meta.Client().history(PSID, 'fb_message')
+    assert [(m['role'], m['text'], m['note']) for m in out] == [
+        ('page', '感謝您的訊息！我們的客服團隊不在線上', '自動回覆'), ('user', '[圖片] [圖片]', ''), ('user', '那要多久？', '')]
+    assert out[-1]['at'].startswith('2026-11-19T15:00') and seen['params']['user_id'] == PSID and seen['params']['platform'] == 'messenger'
+
+
 def test_first_contact_from_ad_buttons_only_still_gets_a_draft(db, api):
     """Wayne 11/15 13:19 replaced 11/12: a lead who only pressed the ad's buttons gets a person's follow-up too."""
     receive(db, incoming('多少錢？安裝要多久？', quick_reply={'payload': 'ad'}))
