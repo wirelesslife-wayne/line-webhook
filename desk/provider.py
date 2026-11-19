@@ -19,7 +19,7 @@ MODEL = 'gpt-6.1-sol'
 # Official standard, short-context USD / 1M tokens, checked 2026-11-09:
 # https://developers.openai.com/api/docs/models/gpt-6.1-sol
 RATES = (Decimal('2'), Decimal('0.10'), Decimal('10'))
-MAX_OUTPUT = 3000
+MAX_OUTPUT = 5000  # medium reasoning counts as output (11/20 trial: avg 378, room to spare)
 MAX_INPUT_BYTES = 120000  # 11/19: Wayne's decided 衝突題 pushed ordinary drafts past 80000 (83522 on a 418 lead)
 EXHAUSTED = '本月 AI 額度已用完，請手動回覆'
 
@@ -140,7 +140,7 @@ class OpenAIProvider:
             self.store.execute('''INSERT INTO desk_ai_usage(id,month,model,usd,status)
               VALUES(%s,%s,%s,%s,'reserved')''', (attempt,month,model,reserved))
             payload = {'model':model,'input':inputs,'store':False,'service_tier':'default',
-                       'max_output_tokens':MAX_OUTPUT,'reasoning':{'effort':'low'},
+                       'max_output_tokens':MAX_OUTPUT,'reasoning':{'effort':'medium'},  # Wayne 11/20: +4% cost in a 10-customer trial
                        'text':{'format':{'type':'json_object'}}}
             refused = False
             try:

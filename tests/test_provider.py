@@ -111,7 +111,7 @@ def test_adapter_redacts_entire_request_and_settles(monkeypatch):
     wire=json.dumps(payload)
     assert all(v not in wire for v in ['0912-345-678','ABC-1234','a@foo.tw','A123456789','DO_NOT_SEND','metadata'])
     assert payload['store'] is False and payload['model']=='gpt-6.1-sol'
-    assert payload['max_output_tokens']==3000 and payload['service_tier']=='default'
+    assert payload['max_output_tokens']==5000 and payload['service_tier']=='default' and payload['reasoning']=={'effort':'medium'}
     assert post.call_args.kwargs['allow_redirects'] is False
     assert db.rows[0]['status']=='settled' and db.rows[0]['usd']==Decimal('.00262')
     assert set(db.rows[0])=={'id','month','model','usd','status','input_tokens','cached_tokens','output_tokens'}
