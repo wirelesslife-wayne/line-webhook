@@ -983,6 +983,54 @@ def revise(store,staff,data):
     return dict(ok=True,status='waiting',remembered=bool(rule_id),rule_id=rule_id)
 
 
+# Wayne 11/20 (cost; ChatGPT, Gemini): in the last 7 days 1,545 drafts were written for 260 approvals. In opening hours
+# colleagues answer LINE in the LINE back office themselves (24% within 10 minutes, 30% within 15, median 42), and every
+# draft written before that was thrown away. A LINE message in opening hours now waits for a quiet 15 minutes first.
+LINE_WAIT, LINE_WAIT_MAX = 15, 30          # minutes after the last customer line / after the first unanswered one
+LINE_WAIT_ON = False                       # built and reviewed 11/20, not switched on: LINE drafting is paused (below)
+# Wayne 11/20 15:10: 「LINE 暫時不用擬稿，我會看客人的訊息」. LINE conversations still come in and show on the desk, and a
+# colleague's reply in LINE still closes them; the AI just is not called. 請 AI 重寫 still drafts one when he asks.
+LINE_DRAFTING = False
+LINE_PAUSED = '📖 LINE 暫停 AI 擬稿，只看訊息'
+DIGESTS = ((12, 0), (15, 0), (18, 30))     # Wayne's digest times: anything still waiting is drafted 5 minutes before
+URGENT = re.compile(r'急|客訴|投訴|退款|退費|退貨|壞|故障|不能用|沒反應|當機|黑屏|危險|冒煙|燒|撞|漏水|馬上|立刻|今天|今日|改期|取消|延期|等很久|沒人回|沒人接')
+
+
+def opening_hours(at):
+    """True while the store is open by the business calendar (Saturdays and holidays from business_days)."""
+    from .business_days import status
+    local = at.astimezone(TAIPEI)
+    state, hours = status(local.date())
+    if state != 'open':
+        return False
+    m = re.match(r'(\d+):(\d+)\D+(\d+):(\d+)', hours)
+    start, end = (int(m.group(1)) * 60 + int(m.group(2)), int(m.group(3)) * 60 + int(m.group(4))) if m else (600, 1200)
+    return start <= local.hour * 60 + local.minute < end
+
+
+def line_wait_until(store, c, at=None):
+    """When a waiting LINE conversation should be drafted, or None for now. Only in opening hours, only when nothing
+    asks for a draft at once (立即擬稿, Wayne's rewrite, an urgent word, a digest about to go out)."""
+    at = at or now()
+    if c.get('channel') != 'line_message' or c.get('draft_now') or c.get('pending_instruction') or not opening_hours(at):
+        return None
+    local = at.astimezone(TAIPEI)
+    for h, mm in DIGESTS:
+        due = local.replace(hour=h, minute=mm, second=0, microsecond=0)
+        if due - timedelta(minutes=5) <= local < due:
+            return None
+    rows = store.all('SELECT role,note,content,event_at,received_at FROM desk_fb_events WHERE thread_id=%s ORDER BY id', (c['id'],))
+    kinds = [kind(r['role'], r['note']) for r in rows]
+    last_ours = max((i for i, k in enumerate(kinds) if k == 'page'), default=-1)
+    unanswered = [r for r, k in zip(rows[last_ours + 1:], kinds[last_ours + 1:]) if k == 'user']
+    if not unanswered or any(URGENT.search(r['content'] or '') for r in unanswered):
+        return None
+    first = unanswered[0]['event_at'] or unanswered[0]['received_at']
+    last = unanswered[-1]['event_at'] or unanswered[-1]['received_at']
+    due = min(last + timedelta(minutes=LINE_WAIT), first + timedelta(minutes=LINE_WAIT_MAX))
+    return due if due > at else None
+
+
 def draft_once(store,engine_factory=None):
     from .provider import month_key, budget_status
     with store.lock('desk-fb-draft') as acquired:
@@ -998,9 +1046,16 @@ def draft_once(store,engine_factory=None):
           (status='blocked' AND draft->>'retry'='true' AND updated_at<NOW()-INTERVAL '30 minutes')""",(month_key(),month_key(),raised))
         # Webhook conversations arrive message by message: wait for a quiet minute instead of drafting every line.
         for c in store.all("""SELECT * FROM desk_fb_threads WHERE status='waiting' AND (NOT (key LIKE 'psid:%%' OR key LIKE 'igsid:%%')
-          OR last_at < NOW()-INTERVAL '60 seconds') ORDER BY last_at LIMIT 20"""):
+          OR last_at < NOW()-INTERVAL '60 seconds') ORDER BY last_at LIMIT 40"""):
+            if c['channel'] == 'line_message' and not LINE_DRAFTING and not c.get('pending_instruction') and not c.get('draft_now'):
+                store.execute("""UPDATE desk_fb_threads SET status='blocked',note=%s,draft=%s,drafted_version=version,
+                  draft_token=NULL,updated_at=NOW() WHERE id=%s AND version=%s AND status='waiting'""",
+                  (LINE_PAUSED, Json(dict(draft='', flags=[], staff_note=LINE_PAUSED, paused=True)), c['id'], c['version']))
+                continue
+            if LINE_WAIT_ON and line_wait_until(store, c):
+                continue  # a colleague may still answer it in the LINE back office
             c['draft_token'] = str(uuid.uuid4())
-            if store.execute("UPDATE desk_fb_threads SET status='drafting',draft_token=%s,draft_started_at=NOW() WHERE id=%s AND version=%s AND status='waiting'",(c['draft_token'],c['id'],c['version'])):
+            if store.execute("UPDATE desk_fb_threads SET status='drafting',draft_token=%s,draft_started_at=NOW(),draft_now=FALSE WHERE id=%s AND version=%s AND status='waiting'",(c['draft_token'],c['id'],c['version'])):
                 draft_thread(store,c,engine_factory,c['pending_instruction'],c['pending_original'],c['pending_rule'])
 
 

@@ -63,3 +63,17 @@ def test_meta_run_and_line_run_each_get_only_their_own_approvals(db, logged):
 def test_line_chat_ids_written_in_groups_of_four_are_joined_back(db):
     fb.push(db, [line([dict(role='user', text='RAV4 電動尾門多少錢', at='2026-11-13T10:05:00+08:00')], key='Ute-stc-hat1')])
     assert fb.conversation(db, fb.thread_id('line_message', 'Utestchat1'))['key'] == 'Utestchat1'
+
+
+def test_paused_line_is_shown_to_read_and_not_drafted(db, monkeypatch):
+    """Wayne 11/20: 「LINE 暫時不用擬稿，我會看客人的訊息」. No AI call; a colleague's reply still closes it."""
+    monkeypatch.setattr(fb, 'LINE_DRAFTING', False)
+    msgs = [dict(role='user', text='RAV4 電動尾門多少錢', at='2026-11-13T10:05:00+08:00')]
+    fb.push(db, [line(msgs)])
+    engine = Mock(side_effect=AssertionError('no AI call while LINE drafting is paused'))
+    fb.draft_once(db, engine)
+    c = fb.conversation(db, fb.thread_id('line_message', 'Utestchat1'))
+    assert c['status'] == 'blocked' and c['draft']['paused'] and c['note'] == fb.LINE_PAUSED
+    msgs.append(dict(role='page', text='您好～RAV4 電動尾門完工價 $18,000（含安裝），安裝約 3 小時。', at='2026-11-13T10:20:00+08:00'))
+    fb.push(db, [line(msgs)])
+    assert fb.conversation(db, fb.thread_id('line_message', 'Utestchat1'))['status'] == 'done'

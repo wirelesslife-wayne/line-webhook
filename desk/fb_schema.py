@@ -20,6 +20,8 @@ ALTER TABLE desk_fb_threads ADD COLUMN IF NOT EXISTS unstar TEXT NOT NULL DEFAUL
 -- Wayne 11/16 11:03: only ad buttons, all answered by the ad's automatic reply -> closed by itself (auto_at);
 -- 「改回待審核」 sets no_auto so it is never closed by itself again.
 ALTER TABLE desk_fb_threads ADD COLUMN IF NOT EXISTS auto_at TIMESTAMPTZ;
+-- Wayne 11/20: a LINE message in opening hours waits 15 minutes for a colleague before the AI drafts; 立即擬稿 skips it
+ALTER TABLE desk_fb_threads ADD COLUMN IF NOT EXISTS draft_now BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE desk_fb_threads ADD COLUMN IF NOT EXISTS no_auto BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE desk_fb_threads DROP CONSTRAINT IF EXISTS desk_fb_threads_channel_check;
 ALTER TABLE desk_fb_threads ADD CONSTRAINT desk_fb_threads_channel_check

@@ -72,6 +72,7 @@ def register(bp,store):
                 auto=(c['draft'] or {}).get('auto','') if c['status']=='skip' and c.get('auto_at') else '',
                 messages=timeline[-12:],older=max(0,len(timeline)-12),is_public=c['channel'].endswith('_comment'),
                 media=[fb_media.describe(m) for m in media],shot=shots.get(c['id']),avatar=faces.get(c['id']),live=meta.live(c),
+                wait_until=(lambda w: local_time(w)[11:16] if w else '')(fb.line_wait_until(store,c) if c['status']=='waiting' and fb.LINE_WAIT_ON else None),
                 attempts=[dict(status=a['status'],time=local_time(a['approved_at']),staff=a['username'],text=a['content'],reason=a['reason']) for a in attempts]))
         return out
 
@@ -266,6 +267,14 @@ def register(bp,store):
         row=fb_shots.read(store,request.args.get('thread_id'))
         if not row: raise ActionError('找不到截圖',404)
         return Response(bytes(row['data']),mimetype=row['content_type'],headers={'Content-Disposition':'inline','Cache-Control':'private, max-age=86400'})  # the page adds the shot time to the URL
+
+    @bp.post('/api/fb/draft-now')
+    def fb_draft_now():  # Wayne 11/20: skip the 15 minutes a LINE message waits for a colleague
+        data=request.get_json(silent=True) or {}
+        tid=data.get('thread_id') if isinstance(data,dict) else None
+        if not isinstance(tid,str) or not store.execute("UPDATE desk_fb_threads SET draft_now=TRUE WHERE id=%s AND status='waiting'",(tid,)):
+            raise ActionError('這位客人已經不在等候中，請重新整理',409)
+        return jsonify(ok=True)
 
     @bp.post('/api/fb/check')
     def fb_check():  # Wayne 11/19: the draft's key facts as chips (desk/checks.py)
