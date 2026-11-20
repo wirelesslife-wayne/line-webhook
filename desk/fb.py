@@ -216,8 +216,13 @@ def push(store, payload):
                     unstar_later(cur, tid)
             if state in ('waiting','ready','blocked','error') and line_closable(dict(c, pending_instruction='' if users else c['pending_instruction'])):
                 cur.execute('SELECT role,note,content FROM desk_fb_events WHERE thread_id=%s ORDER BY id',(tid,))
-                if asked_back(cur.fetchall()):  # Wayne 11/16: a colleague asked what they need; the customer is next
-                    close_line(cur, dict(c, version=c['version']+int(users)), 'asked', None, (state,), False)
+                rows_now = cur.fetchall()
+                why = 'asked' if asked_back(rows_now) else '' if c.get('hold') else sticker_close(rows_now)
+                if why:  # Wayne 11/16: a colleague asked what they need; 11/20: or closed it with a sticker
+                    close_line(cur, dict(c, version=c['version']+int(users)), why, None, (state,), False)
+                    if why != 'asked':
+                        cur.execute("""UPDATE desk_fb_attempts SET status='cancelled',reason='同事已用貼圖收尾',updated_at=NOW()
+                          WHERE thread_id=%s AND status='approved'""",(tid,))
             counts['new_customer_messages'] += int(users)
         counts['threads'] = len({r['id'] for r in rows})
     return counts
@@ -667,7 +672,8 @@ def close_ad_only(store, c):
 ASK_BACK = re.compile(r'請問有什麼(地方)?(需要|可以)|有什麼(地方)?需要(為您|幫您|我們)?(服務|協助|幫忙)|需要什麼(協助|服務|幫忙)')
 COLLEAGUE = ('', '暫回', '自動回覆')  # LINE notes for what a colleague sent (自動回覆 = a saved reply, 暫回 = a sticker)
 LINE_AUTO = {'noreply': '🤖 自動處理：AI 判斷不用回覆', 'asked': '🤖 自動處理：同事已問客人需求，等客人回',
-             'thanks': '🤖 自動處理：客人道謝收尾，不用回覆'}
+             'thanks': '🤖 自動處理：客人道謝收尾，不用回覆',
+             'sticker': '🤖 自動處理：同事已用貼圖收尾', 'sticker_booking': '🤖 自動處理：同事已用貼圖收尾・有約時間，記得登記排程'}
 # 'thanks' (Wayne 11/16 17:50, 自動結案不傳訊息): a colleague answered and the customer only said 好的／謝謝／a sticker.
 # Of 41 such turns in the LINE history a third still had business afterwards (deposit, booking), so nothing is sent
 # and it only applies when our last messages asked nothing and promised nothing, and no 📌 is on the conversation.
@@ -700,6 +706,43 @@ def thanks_only(rows):
             return False  # we asked something (「明天 13:00 方便嗎？」→「好的」is an answer) or promised to come back
         i -= 1
     return True
+
+
+# Wayne 11/20 (劉俊毅, Jex): 「那就下星期一下午一點，謝謝」→ a colleague's sticker. The desk took the sticker for a
+# holding reply (「收到，查一下」) and drafted a second, repeated confirmation. In the LINE history (188 stickers after a
+# customer) a sticker after a closing line ended the matter (the later colleague texts were days-later news), while after a
+# question or a fault it was a holding reply 63% of the time. ChatGPT and Gemini: close only the clear closings.
+CLOSING = re.compile(r'謝|感恩|感謝|^(?:好|ok|可以|沒問題|收到|了解|嗯)|到時見|晚點見|晚一點見|再見|掰|那就|就這樣|^\[貼圖\]$', re.I)
+OPEN_ASK = re.compile(r'[?？]|嗎|呢|怎麼|如何|多少|幾點|哪|是否|可不可以|能不能|有沒有')
+NOT_DONE = re.compile(r'但|不過|順便|對了|另外|再看看|考慮|不確定|可能|如果|再說|改天|再約|取消|改期|延期|算了|不用了|先不'
+                      r'|幫我|請[寄送幫給]|訂一|訂購|寄到|寄給|給我|我要|要買|匯款|付款|轉帳')  # 11/20 Gemini, ChatGPT: still business
+OWED = re.compile(r'稍後|稍等|確認後|再回覆|再跟您|幫您(?:查|確認|詢問|問)|回覆您|通知您|聯[繫絡]您')
+WHEN = re.compile(r'\d{1,2}\s*[/月]\s*\d{1,2}|星期|週[一二三四五六日]|禮拜|[上下]午|\d{1,2}\s*[:：點]|明天|後天|下週|下星期')
+
+
+def sticker_close(rows):
+    """'sticker' or 'sticker_booking' when a colleague's sticker answers a customer's plain closing line, else ''."""
+    rows = list(rows)
+    if not rows or rows[-1]['role'] != 'page' or (rows[-1]['content'] or '').strip() != '[貼圖]':
+        return ''
+    kinds = [kind(r['role'], r['note']) for r in rows]
+    i, said = len(rows) - 2, []
+    while i >= 0 and kinds[i] != 'page':
+        if kinds[i] == 'user':
+            said.append(rows[i])
+        elif rows[i]['role'] == 'page' and (rows[i]['content'] or '').strip() != '[貼圖]' and '暫回' in (rows[i]['note'] or ''):
+            return ''  # 「稍等，幫您查」: we still owe the answer
+        i -= 1
+    if i < 0 or not said:
+        return ''
+    for r in said:
+        t = (r['content'] or '').strip()
+        if (t.startswith('[') and t != '[貼圖]') or len(t) > 30 or OPEN_ASK.search(t) or NOT_DONE.search(t)                 or COMPLAINT.search(t) or not CLOSING.search(t):
+            return ''  # a photo, a long message, a question, a 「不過…」 or a fault is still business
+    if OWED.search(rows[i]['content'] or ''):
+        return ''  # our last real reply promised to come back
+    window = ' '.join(r['content'] or '' for r in rows[max(0, i - 2):])
+    return 'sticker_booking' if WHEN.search(window) and re.search(r'預約|安排|到店|回店|施工|安裝|檢查|更換|見', window) else 'sticker'
 
 
 # Wayne 11/17 (志宏): the customer said the install broke a part and pressed 「呼叫客服」; a colleague answered with the
@@ -866,7 +909,7 @@ def draft_thread(store, c, engine_factory=None, instruction='', original='', rul
         return dict(ok=True,applied=True,status='skip',remembered=False)
     if not instruction and line_closable(c):
         rows = store.all('SELECT role,note,content FROM desk_fb_events WHERE thread_id=%s ORDER BY id', (c['id'],))
-        why = 'asked' if asked_back(rows) else 'thanks' if not c.get('hold') and thanks_only(rows) and not weak_after_complaint(rows) else ''
+        why = 'asked' if asked_back(rows) else '' if c.get('hold') else sticker_close(rows) or ('thanks' if thanks_only(rows) and not weak_after_complaint(rows) else '')
         with store.cursor() as cur:
             if why and close_line(cur, c, why):
                 return dict(ok=True,applied=True,status='skip',remembered=False)
