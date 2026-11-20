@@ -40,6 +40,18 @@ PRODUCT_TOPICS = [
     (r'cr-?v ?6|crv6', 'CRV6(P版)產品報價制式回覆'),
 ]
 
+
+def card_fits(card, about):
+    """11/20 (cost): a photo card is offered when it is about a product this customer talks about; payment, store and
+    calendar cards always are. All 52 cards were listed on every draft, a thank-you included."""
+    if '付款' in (card.get('topic') or '') or '門市' in (card.get('topic') or ''):
+        return True
+    said = [pat for pat, _ in PRODUCT_TOPICS if re.search(pat, about or '', re.I)]
+    if not said:
+        return True  # no product named yet (「多少錢」 on an ad): every card, as before
+    told = ' '.join(str(card.get(k) or '') for k in ('topic', 'filename', 'summary'))
+    return any(re.search(pat, told, re.I) for pat in said)
+
 HEAD_UNIT = re.compile(r'安卓|車機|主機|螢幕|導航|雙系統|環景|360|\b(?:T|A|H|EX|DX|MX|DS)\s?系列|\b(?:T3|T9|T10|A3\d|H2\d|EX\d|DX\d|MX\d|DS\d?)\b', re.I)
 
 LINE_BUILTIN = {
@@ -343,7 +355,10 @@ class Engine:
         from .cases import for_car
         from .videos import for_car as videos_for
         nearby, _county = dealers.for_customer(self.DEALERS, ex.get('location') if isinstance(ex, dict) else '', said)
-        context = json.dumps({'prices':prices,'canned':canned,'faq':faq,'hours':self.HOURS,'dealers':nearby,'history':hist,
+        # 11/20 (cost; ChatGPT, Gemini): the install-time rows and photo cards for this customer's products only
+        about = ' '.join([newtext, ' '.join(str(p) for p in (ex.get('products') or [])), post_context]
+                         + [x['text'] for x in timeline[-8:]])
+        context = json.dumps({'prices':prices,'canned':canned,'faq':faq,'hours':self.hours_for(about),'dealers':nearby,'history':hist,
                               'videos':videos_for(self.store, ex, {m for _, m in self.MODELS}),
                               **({'install_cases':for_car(self.store, ex)} if SITE_CASES else {})}, ensure_ascii=False)
         from .knowledge import reference
@@ -386,6 +401,7 @@ class Engine:
         from .library import catalog, suggestions
         # Not ig_comment: Instagram comments cannot carry a picture.
         numbered = catalog(self.store) if channel in ('fb_message', 'ig_message', 'line_message', 'fb_comment') else []
+        numbered = [(n, r) for n, r in numbered if card_fits(r, about)]
         if not SCAM.search(convo + ' ' + post_context):
             # Wayne 11/15: a customer asking for the 台南 store got the anti-fraud card. Only for fake pages and knock-offs.
             numbered = [(n, r) for n, r in numbered if '防詐' not in r['filename']]
@@ -397,9 +413,12 @@ class Engine:
                        '沒有任何一張符合時（例如道謝、只問地址、還不知道要裝什麼產品）才回空陣列。草稿文字不要提到圖片。挑好的編號放在 JSON 的 cards 陣列：\n'
                        + '\n'.join(f"{n}｜{r['filename']}｜{r['summary']}｜何時附：{r['use_when']}" for n, r in numbered))
         rules = self.RULES
+        # 11/20 (cost; ChatGPT, Gemini): what never changes goes first so OpenAI's prompt cache bills it at a twentieth;
+        # the examples and decided answers picked for this customer go last.
+        approved_block = settled_block = ''
         if approved:
             # What Wayne actually sent outranks the general tone rules: this is how the desk learns his style.
-            rules += ('\n\nWayne 親自核准送出的回覆範例（最高優先，優先於上面口吻規則裡互相衝突的地方）。'
+            approved_block = ('\n\nWayne 親自核准送出的回覆範例（最高優先，優先於上面口吻規則裡互相衝突的地方）。'
                       '客人問的產品、情境跟範例相近時，就以範例為樣板來寫：沿用它的開頭、條列項目與順序、附的連結、結尾句，'
                       '只把客人的車款、年份、地區等細節換成這位客人的；範例裡出現的連結可以直接使用。'
                       '產品或情境不同時不要硬套。價格數字仍以價格表／制式回覆為準。\n\n'
@@ -424,10 +443,11 @@ class Engine:
         rules += FACTS
         # Wayne 11/18: what he decided on 「衝突題」. Past replies said these things in different ways; his pick is the only one.
         from .kb_conflicts import for_draft, OVERRIDE, ADDED
-        settled = for_draft(self.store, convo + ' ' + post_context + ' ' + ' '.join(str(p) for p in (ex.get('products') or [])))
+        settled = for_draft(self.store, convo + ' ' + post_context + ' ' + ' '.join(str(p) for p in (ex.get('products') or [])),
+                            said + ' ' + post_context)  # the customer's own words decide which general answers apply
         if settled:
             # ChatGPT, Gemini and Claude 11/18: a pick must not silently override the official dealer list or prices.
-            rules += ('\n\nWayne 決定的統一說法（最高優先；過去回覆、範例、制式回覆、常見問答裡跟這裡不同的說法都是舊的，不要用。'
+            settled_block = ('\n\nWayne 決定的統一說法（最高優先；過去回覆、範例、制式回覆、常見問答裡跟這裡不同的說法都是舊的，不要用。'
                       '只在客人問到該題目時使用，不要主動多講。門市地址電話、價格、工時一律以參考資料的經銷商清單、價格表、'
                       '制式回覆、工時表為準：這裡跟它們不同時照正式資料寫，並在 staff_note 寫「衝突題說法跟正式資料不同」；'
                       '標' + OVERRIDE + '的是 Wayne 確認過要蓋過正式資料的，照這裡寫；標' + ADDED + '的是 Wayne 確認新增的門市，'
@@ -485,6 +505,7 @@ class Engine:
         if comment:
             rules += ('\n\n本次是社群公開留言，所有人都看得到。寫得比私訊精簡，最多 8 行；可以照價格資料報完工價；介紹產品或報價時附 1 個最相關的介紹連結；'
                       '不要寫出客人的電話、車牌等個資；結尾可以邀請私訊或加官方 LINE。')
+        rules += settled_block + approved_block
         out = self.provider([{'role':'system','content':rules},{'role':'user','content':prompt}])
         if not isinstance(out, dict) or not isinstance(out.get('draft'), str):
             raise ValueError('擬稿格式不符')
@@ -615,6 +636,15 @@ class Engine:
             ps = f'${prices[0]:,}' if len(prices) == 1 else '依年份 ' + '／'.join(f'${p:,}' for p in prices)
             lines.append(f'{bb} {mm}（{years[0]}～{years[-1]}）｜{series} 系列 {code}｜完工價 {ps}')
         return lines[:40]
+
+    def hours_for(self, about):
+        """Only the rows for products this customer talks about; the whole table when none is named."""
+        items = self.HOURS.get('items') if isinstance(self.HOURS, dict) else None
+        if not isinstance(items, list):
+            return self.HOURS
+        asked = [pat for pat, _ in PRODUCT_TOPICS if re.search(pat, about or '', re.I)]
+        keep = [i for i in items if any(re.search(pat, str(i.get('item', '')), re.I) for pat in asked)]
+        return dict(self.HOURS, items=keep) if keep else self.HOURS
 
     def canned_for(self, text, ex, background=''):
         s = text + ' ' + ' '.join(ex.get('products') or []) + ' ' + (ex.get('model') or '')

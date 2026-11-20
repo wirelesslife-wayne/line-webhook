@@ -239,12 +239,28 @@ PRODUCT_WORDS = {
     '氣氛燈': r'氣氛燈|氛圍燈',
     'Tesla專用配件': r'tesla|特斯拉|model ?[3ysx]',
 }
+# 11/20 (cost; ChatGPT, Gemini): 64 不分產品 lines went into every draft, a thank-you included. A general answer now goes
+# in when its subject comes up; 「其他」 general answers and every answer about the customer's product still always go in.
+TOPIC_WORDS = {
+    '報價': r'價|多少|費用|元|錢|報價|優惠|便宜|預算',
+    '門市地點與營業時間': r'門市|地址|哪裡|在哪|營業|休息|公休|到府|附近|[縣市區]|台北|新北|桃園|台中|台南|高雄|宜蘭|新竹|苗栗|基隆',
+    '能不能裝／適用車款': r'能不能|可以裝|可不可以|可以嗎|適用|支援|裝嗎|車款|年份|\d{4}|款',
+    '預約訂金付款': r'預約|訂金|匯款|付款|刷卡|分期|轉帳|帳號|約|時段|哪天|星期|週|禮拜|明天|今天',
+    '安裝時間': r'多久|小時|時間|工時|等|當天|幾點',
+    '保固售後故障': r'保固|壞|故障|維修|異常|問題|不能|沒反應|重開|當機|退|沒有聲音|黑屏|閃',
+    '功能規格與比較': r'功能|差|比較|規格|哪個|推薦|差別|有什麼|介紹',
+    '使用操作教學': r'怎麼|設定|操作|教學|如何|更新|連|開機',
+    '優惠議價': r'優惠|折|便宜|算|議價|活動|送',
+    '寄送物流': r'寄|運|物流|宅配|收到|出貨',
+}
 OVERRIDE = '【Wayne 確認改用，蓋過正式資料】'
 ADDED = '【Wayne 確認新增，正式清單上的門市也照列】'
 OFFICIAL_WINS = '（門市、電話、價格照正式資料，這句裡不同的不要用）'
 
 
-def for_draft(store, text):
+def for_draft(store, text, asked=None):
+    """asked: what the customer wrote; a general answer goes in when its subject is there (default: text)."""
+    asked = text if asked is None else asked
     """Lines for the drafting prompt: 「題目：Wayne 選的說法」 for each decided question that applies to this conversation."""
     rows = store.all("""SELECT grp,topic,options,choice,answer,override,scope FROM desk_kb_conflicts WHERE status='decided'
       ORDER BY rank,id""")
@@ -253,6 +269,9 @@ def for_draft(store, text):
         product = r['grp'].split('×')[0]
         pat = PRODUCT_WORDS.get(product)
         if product not in ('不分產品', '其他產品') and not (pat and re.search(pat, text or '', re.I)):
+            continue
+        topic = r['grp'].split('×')[-1]
+        if product in ('不分產品', '其他產品') and topic in TOPIC_WORDS and not re.search(TOPIC_WORDS[topic], asked or '', re.I):
             continue
         said = r['options'][r['choice']]['say'] if r['choice'] is not None and 0 <= r['choice'] < len(r['options']) else ''
         rule = said + ('（補充：' + r['answer'] + '）' if said and r['answer'] else r['answer'])
