@@ -128,6 +128,24 @@ def test_new_customer_message_expires_approval(db, logged):
     assert fb.conversation(db, tid())['status'] == 'waiting'
 
 
+def test_older_messages_read_later_keep_the_approval(db, logged):
+    """Wayne 11/20: four approved drafts came back to 待審核 unsent. The 14:26 re-read also saw the older top of the
+    conversation (Meta's 「XX回覆了 1 則廣告。」 line, an earlier question); nothing the customer typed was new."""
+    _, _, staff, _ = logged
+    boss = wayne(db, staff)
+    fb.push(db, [thread(messages=FAQ)])
+    ready(db)
+    fb.approve(db, boss, approval(db))
+    longer = [dict(role='user', text='合成客人回覆了 1 則廣告。', at='上午7:34', note='廣告回覆'),
+              dict(role='user', text='門店在哪？', at='2026年7月12日 下午2:09')] + [dict(m, at='今天 ' + m['at']) for m in FAQ]
+    assert fb.push(db, [thread(messages=longer)])['new_customer_messages'] == 0
+    assert db.one('SELECT status FROM desk_fb_attempts')['status'] == 'approved'
+    assert fb.conversation(db, tid())['status'] == 'approved'
+    newer = longer + [dict(role='user', text='我在高雄', at='下午5:11')]
+    assert fb.push(db, [thread(messages=newer)])['new_customer_messages'] == 1
+    assert db.one('SELECT status FROM desk_fb_attempts')['status'] == 'expired'
+
+
 def test_colleague_reply_closes_and_cancels(db, logged):
     _, _, staff, _ = logged
     boss = wayne(db, staff)

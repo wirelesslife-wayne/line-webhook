@@ -134,6 +134,8 @@ def push(store, payload):
             old = [(kind(e['role'],e['note']),squash(e['content']) or '') for e in cur.fetchall()]
             seen = [(kind(m['role'],m.get('note','')),squash(m['text']) or '') for m in row['messages']]
             def added(role):
+                if old and len(seen) > len(old) and seen[-len(old):] == old:
+                    return False  # Wayne 11/20: this read only reached further back (older messages on top)
                 now_said = said(seen,role)
                 return bool(now_said) and not said(old,role).endswith(now_said[-30:])
             users, changed = added('user'), added('user') or added('page')
